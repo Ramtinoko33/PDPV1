@@ -655,6 +655,16 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         if ticket_data.assigned_to_user_id:
             assigned_user = await db.users.find_one({"id": ticket_data.assigned_to_user_id}, {"_id": 0, "name": 1})
             assigned_name = assigned_user["name"] if assigned_user else ticket_data.assigned_to_user_id
+            
+            # Notify assigned user
+            asyncio.create_task(create_notification(
+                user_id=ticket_data.assigned_to_user_id,
+                title="Ticket Atribuído",
+                body=f"O ticket {ticket['ticket_number']} foi-lhe atribuído",
+                notification_type="info",
+                ticket_id=ticket_id,
+                ticket_number=ticket["ticket_number"]
+            ))
         note_doc = {
             "id": str(uuid.uuid4()),
             "ticket_id": ticket_id,
