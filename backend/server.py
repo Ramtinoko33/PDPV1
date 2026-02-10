@@ -495,6 +495,15 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     }
     await db.tickets.insert_one(ticket_doc)
     
+    # Notify supervisors about new ticket
+    asyncio.create_task(notify_supervisors(
+        title="Novo Ticket",
+        body=f"Ticket {ticket_number} criado - {ticket_data.customer_name}",
+        notification_type="info",
+        ticket_id=ticket_id,
+        ticket_number=ticket_number
+    ))
+    
     ticket_doc["is_overdue"] = check_ticket_overdue(ticket_doc)
     return TicketResponse(**ticket_doc)
 
