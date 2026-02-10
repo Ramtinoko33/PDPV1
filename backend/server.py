@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -7,13 +7,15 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Set
 import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
 from enum import Enum
 import shutil
+import asyncio
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -34,6 +36,48 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # File storage
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# WebSocket connections manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}  # user_id -> websocket
+        self.user_roles: Dict[str, str] = {}  # user_id -> role
+    
+    async def connect(self, websocket: WebSocket, user_id: str, role: str):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+        self.user_roles[user_id] = role
+        logger.info(f"WebSocket connected: {user_id} ({role})")
+    
+    def disconnect(self, user_id: str):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+        if user_id in self.user_roles:
+            del self.user_roles[user_id]
+        logger.info(f"WebSocket disconnected: {user_id}")
+    
+    async def send_to_user(self, user_id: str, message: dict):
+        if user_id in self.active_connections:
+            try:
+                await self.active_connections[user_id].send_json(message)
+            except Exception as e:
+                logger.error(f"Error sending to {user_id}: {e}")
+    
+    async def send_to_role(self, role: str, message: dict):
+        for user_id, user_role in self.user_roles.items():
+            if user_role == role:
+                await self.send_to_user(user_id, message)
+    
+    async def send_to_supervisors(self, message: dict):
+        await self.send_to_role("SUPERVISOR", message)
+        await self.send_to_role("ADMIN", message)
+    
+    async def broadcast(self, message: dict, exclude_user: str = None):
+        for user_id in self.active_connections:
+            if user_id != exclude_user:
+                await self.send_to_user(user_id, message)
+
+manager = ConnectionManager()
 
 # Create the main app
 app = FastAPI(title="PDPV Tickets API")
