@@ -448,14 +448,14 @@ const TicketList = () => {
                       {['ADMIN', 'SUPERVISOR'].includes(user?.role) && (
                         <TableCell>
                           <Select
-                            value={ticket.assigned_to_user_id || ''}
-                            onValueChange={(value) => handleAssignChange(ticket.id, value)}
+                            value={ticket.assigned_to_user_id || 'none'}
+                            onValueChange={(value) => handleAssignChange(ticket.id, value === 'none' ? '' : value)}
                           >
                             <SelectTrigger className="h-8 w-32 text-xs">
                               <SelectValue placeholder="Ninguém" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Ninguém</SelectItem>
+                              <SelectItem value="none">Ninguém</SelectItem>
                               {users.map(u => (
                                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                               ))}
