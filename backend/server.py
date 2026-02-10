@@ -1067,6 +1067,15 @@ async def whatsapp_webhook(data: WhatsAppWebhook):
         }
         await db.alerts.insert_one(alert_doc)
         
+        # Notify supervisors
+        asyncio.create_task(notify_supervisors(
+            title="Novo Ticket WhatsApp",
+            body=f"Mensagem de {data.name} ({data.phone})",
+            notification_type="warning",
+            ticket_id=ticket_id,
+            ticket_number=ticket_number
+        ))
+        
         return {"status": "ticket_created", "ticket_id": ticket_id, "ticket_number": ticket_number}
 
 @api_router.post("/webhook/telegram/transcribed")
