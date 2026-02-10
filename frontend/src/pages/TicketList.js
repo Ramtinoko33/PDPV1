@@ -299,7 +299,7 @@ const TicketList = () => {
                     <SelectValue placeholder="Canal" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos os canais</SelectItem>
+                    <SelectItem value="all">Todos os canais</SelectItem>
                     {channelOptions.map(opt => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
