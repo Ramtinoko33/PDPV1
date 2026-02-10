@@ -314,7 +314,7 @@ const TicketList = () => {
                     <SelectValue placeholder="SLA" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="true">Atrasados</SelectItem>
                   </SelectContent>
                 </Select>
