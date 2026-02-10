@@ -1,0 +1,179 @@
+{
+  "identity": {
+    "name": "PDPV Tickets",
+    "persona": "The Industrial Pilot",
+    "archetype": "Archetype 4 (Swiss & High-Contrast) with Automotive Twist",
+    "vibe": "Rugged, Precise, High-Velocity, Grease-Proof",
+    "principles": [
+      "Clarity is Safety: High contrast text always.",
+      "Touch First: Big buttons (min 48px height) for quick actions.",
+      "Information Hierarchy: Color signals urgency (SLA), not decoration.",
+      "Industrial Aesthetics: Dark chrome containers, clean white paper data surfaces."
+    ]
+  },
+  "typography": {
+    "fonts": {
+      "headings": {
+        "family": "Chivo",
+        "url": "https://fonts.googleapis.com/css2?family=Chivo:wght@400;700;900&display=swap",
+        "usage": "Page titles, Metric numbers, Modal headers",
+        "weights": ["700", "900"]
+      },
+      "body": {
+        "family": "Manrope",
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap",
+        "usage": "General text, Inputs, Buttons, Tables",
+        "weights": ["400", "500", "600"]
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+        "usage": "Ticket IDs, VIN numbers, Timestamps, SLA timers",
+        "weights": ["400", "500"]
+      }
+    },
+    "scale": {
+      "h1": "text-4xl font-black tracking-tight lg:text-5xl",
+      "h2": "text-3xl font-bold tracking-tight",
+      "h3": "text-2xl font-bold tracking-tight",
+      "p": "text-base leading-7",
+      "label": "text-sm font-semibold uppercase tracking-wider text-muted-foreground",
+      "mono_data": "font-mono text-sm font-medium"
+    }
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "name": "Safety Orange",
+        "tw_class": "orange-600",
+        "hex": "#ea580c",
+        "usage": "Primary Buttons, Active States, Key Actions"
+      },
+      "secondary": {
+        "name": "Mechanic Blue",
+        "tw_class": "slate-900",
+        "hex": "#0f172a",
+        "usage": "Sidebar, Header, Secondary Actions, Dark Mode Backgrounds"
+      },
+      "background": {
+        "light": "bg-zinc-50",
+        "dark": "bg-zinc-950",
+        "paper": "bg-white"
+      },
+      "status": {
+        "success": "emerald-600",
+        "warning": "amber-500",
+        "error": "red-600",
+        "info": "blue-600"
+      },
+      "sla": {
+        "ok": "bg-emerald-100 text-emerald-800 border-emerald-200",
+        "warning": "bg-amber-100 text-amber-800 border-amber-200",
+        "overdue": "bg-red-100 text-red-800 border-red-200"
+      }
+    },
+    "contrast_rules": {
+      "text_on_primary": "text-white",
+      "text_on_background": "text-zinc-900",
+      "muted_text": "text-zinc-500"
+    }
+  },
+  "layout": {
+    "spacing": {
+      "container_padding": "p-6 md:p-8 lg:p-12",
+      "section_gap": "gap-8",
+      "component_gap": "gap-4"
+    },
+    "grid_strategy": {
+      "dashboard": {
+        "cols": "grid-cols-1 md:grid-cols-2 lg:grid-cols-4",
+        "gap": "gap-6",
+        "row_height": "auto"
+      },
+      "queue_list": {
+        "type": "table",
+        "density": "compact",
+        "hover_effect": "hover:bg-zinc-50/50"
+      }
+    },
+    "z_index": {
+      "header": "z-40",
+      "modal": "z-50",
+      "toast": "z-60",
+      "sidebar": "z-30"
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "rounded-lg font-bold transition-all active:scale-95",
+      "sizes": {
+        "default": "h-12 px-6 py-3",
+        "lg": "h-14 px-8 text-lg",
+        "sm": "h-9 px-3 text-xs"
+      },
+      "variants": {
+        "primary": "bg-orange-600 hover:bg-orange-700 text-white shadow-md hover:shadow-lg",
+        "secondary": "bg-slate-900 hover:bg-slate-800 text-white",
+        "outline": "border-2 border-slate-200 hover:border-slate-900 text-slate-900 bg-transparent",
+        "ghost": "hover:bg-slate-100 text-slate-700"
+      }
+    },
+    "cards": {
+      "style": "rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md",
+      "header": "border-b border-zinc-100 p-6 bg-zinc-50/50"
+    },
+    "inputs": {
+      "style": "h-12 rounded-lg border-2 border-zinc-200 bg-white px-4 transition-colors focus:border-orange-500 focus:outline-none focus:ring-0",
+      "label_behavior": "outside-top"
+    },
+    "status_pills": {
+      "style": "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide ring-1 ring-inset"
+    }
+  },
+  "visual_assets": {
+    "logo_text": "PDPV Tickets",
+    "images": {
+      "login_bg": {
+        "url": "https://images.unsplash.com/photo-1735361039382-d78a0a0cc185?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Modern clean workshop storefront",
+        "css": "absolute inset-0 h-full w-full object-cover opacity-20 mix-blend-overlay"
+      },
+      "default_avatar": {
+        "url": "https://images.unsplash.com/photo-1586447751596-6c2050a0d335?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Professional Mechanic Avatar"
+      }
+    },
+    "icons": {
+      "library": "lucide-react",
+      "preferred_set": ["Wrench", "Car", "Clock", "CheckCircle2", "AlertTriangle", "FileText", "MessageSquare", "Users", "BarChart3", "LogOut"]
+    }
+  },
+  "motion": {
+    "transitions": "transition-all duration-200 ease-out",
+    "micro_interactions": {
+      "hover_lift": "hover:-translate-y-1",
+      "active_press": "active:scale-95"
+    }
+  },
+  "accessibility": {
+    "contrast_check": "Ensure orange buttons have white text. Ensure grey text is zinc-600 or darker on white.",
+    "focus_states": "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-orange-500",
+    "aria_labels": "Required for all icon-only buttons"
+  },
+  "instructions_to_main_agent": [
+    "INSTALL FONTS: Add Chivo, Manrope, and JetBrains Mono links to index.html immediately.",
+    "SETUP THEME: Update tailwind.config.js with the 'Safety Orange' and 'Mechanic Blue' colors.",
+    "LAYOUT: Use a Sidebar layout for the authenticated app. Login page should be centered with the workshop background.",
+    "LANGUAGE: All UI text (labels, buttons, messages) MUST be in PORTUGUESE (PT-PT preferred, PT-BR acceptable).",
+    "FORM SPEEDS: Optimize for speed. Auto-focus first input. Allow 'Enter' to submit.",
+    "SLA INDICATORS: Use the traffic light system (Green/Yellow/Red) prominently in the Ticket Queue.",
+    "ROLES: Ensure the Sidebar navigation filters links based on the user role (Admin, Supervisor, Agent, Finance, Internal).",
+    "TESTING: Add 'data-testid' to every interactive element."
+  ],
+  "universal_guidelines": [
+    "Do not use gradients for backgrounds, stick to solid colors or subtle noise textures.",
+    "Avoid 'AI slop' rounded generic designs. Go for sharp, reliable, industrial shapes.",
+    "Use 'sonner' for toasts.",
+    "Always check for component existence in /app/frontend/src/components/ui/ before creating new ones."
+  ]
+}
