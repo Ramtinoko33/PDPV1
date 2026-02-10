@@ -378,8 +378,8 @@ async def create_user(user_data: UserCreate, current_user: dict = Depends(get_cu
     return UserResponse(**{k: v for k, v in user_doc.items() if k != "password_hash"})
 
 @api_router.put("/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: str, user_data: UserUpdate, authorization: str = None):
-    current_user = await get_current_user(authorization)
+async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = Depends(get_current_user)):
+    current_user = current_user
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas admins podem editar utilizadores")
     
@@ -400,8 +400,8 @@ async def update_user(user_id: str, user_data: UserUpdate, authorization: str = 
     return UserResponse(**user)
 
 @api_router.delete("/users/{user_id}")
-async def delete_user(user_id: str, authorization: str = None):
-    current_user = await get_current_user(authorization)
+async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    current_user = current_user
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas admins podem eliminar utilizadores")
     
@@ -412,8 +412,8 @@ async def delete_user(user_id: str, authorization: str = None):
 
 # ============== TICKET ROUTES ==============
 @api_router.post("/tickets", response_model=TicketResponse)
-async def create_ticket(ticket_data: TicketCreate, authorization: str = None):
-    user = await get_current_user(authorization)
+async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     # INTERNAL_CREATOR can only create INTERNO tickets
     if user["role"] == UserRole.INTERNAL_CREATOR.value and ticket_data.type != TicketType.INTERNO:
@@ -456,7 +456,7 @@ async def create_ticket(ticket_data: TicketCreate, authorization: str = None):
 
 @api_router.get("/tickets", response_model=List[TicketResponse])
 async def list_tickets(
-    authorization: str = None,
+    current_user: dict = Depends(get_current_user),
     status: Optional[str] = None,
     type: Optional[str] = None,
     assigned_to: Optional[str] = None,
@@ -466,7 +466,7 @@ async def list_tickets(
     limit: int = 100,
     skip: int = 0
 ):
-    user = await get_current_user(authorization)
+    user = current_user
     
     query = {}
     
@@ -523,8 +523,8 @@ async def list_tickets(
     return result
 
 @api_router.get("/tickets/{ticket_id}", response_model=TicketResponse)
-async def get_ticket(ticket_id: str, authorization: str = None):
-    user = await get_current_user(authorization)
+async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -547,8 +547,8 @@ async def get_ticket(ticket_id: str, authorization: str = None):
     return TicketResponse(**ticket)
 
 @api_router.put("/tickets/{ticket_id}", response_model=TicketResponse)
-async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, authorization: str = None):
-    user = await get_current_user(authorization)
+async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -622,8 +622,8 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, authorization
 
 # ============== MESSAGES ==============
 @api_router.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
-async def create_message(ticket_id: str, message_data: MessageCreate, authorization: str = None):
-    user = await get_current_user(authorization)
+async def create_message(ticket_id: str, message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -668,8 +668,8 @@ async def create_message(ticket_id: str, message_data: MessageCreate, authorizat
     return MessageResponse(**message_doc)
 
 @api_router.get("/tickets/{ticket_id}/messages", response_model=List[MessageResponse])
-async def list_messages(ticket_id: str, authorization: str = None):
-    user = await get_current_user(authorization)
+async def list_messages(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -699,8 +699,8 @@ async def list_messages(ticket_id: str, authorization: str = None):
 
 # ============== NOTES ==============
 @api_router.post("/tickets/{ticket_id}/notes", response_model=NoteResponse)
-async def create_note(ticket_id: str, note_data: NoteCreate, authorization: str = None):
-    user = await get_current_user(authorization)
+async def create_note(ticket_id: str, note_data: NoteCreate, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -733,8 +733,8 @@ async def create_note(ticket_id: str, note_data: NoteCreate, authorization: str 
     return NoteResponse(**note_doc)
 
 @api_router.get("/tickets/{ticket_id}/notes", response_model=List[NoteResponse])
-async def list_notes(ticket_id: str, authorization: str = None):
-    user = await get_current_user(authorization)
+async def list_notes(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -764,15 +764,15 @@ async def list_notes(ticket_id: str, authorization: str = None):
 
 # ============== ALERTS ==============
 @api_router.get("/tickets/{ticket_id}/alerts", response_model=List[AlertResponse])
-async def list_alerts(ticket_id: str, authorization: str = None):
-    await get_current_user(authorization)
+async def list_alerts(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    current_user
     
     alerts = await db.alerts.find({"ticket_id": ticket_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return [AlertResponse(**a) for a in alerts]
 
 @api_router.put("/alerts/{alert_id}/resolve")
-async def resolve_alert(alert_id: str, authorization: str = None):
-    await get_current_user(authorization)
+async def resolve_alert(alert_id: str, current_user: dict = Depends(get_current_user)):
+    current_user
     
     result = await db.alerts.update_one({"id": alert_id}, {"$set": {"is_resolved": True}})
     if result.modified_count == 0:
@@ -781,8 +781,8 @@ async def resolve_alert(alert_id: str, authorization: str = None):
 
 # ============== ATTACHMENTS ==============
 @api_router.post("/tickets/{ticket_id}/attachments", response_model=AttachmentResponse)
-async def upload_attachment(ticket_id: str, file: UploadFile = File(...), authorization: str = None):
-    user = await get_current_user(authorization)
+async def upload_attachment(ticket_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
@@ -826,8 +826,8 @@ async def upload_attachment(ticket_id: str, file: UploadFile = File(...), author
     return AttachmentResponse(**attachment_doc)
 
 @api_router.get("/tickets/{ticket_id}/attachments", response_model=List[AttachmentResponse])
-async def list_attachments(ticket_id: str, authorization: str = None):
-    await get_current_user(authorization)
+async def list_attachments(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    current_user
     
     attachments = await db.attachments.find({"ticket_id": ticket_id}, {"_id": 0}).sort("uploaded_at", -1).to_list(1000)
     
@@ -844,8 +844,8 @@ async def list_attachments(ticket_id: str, authorization: str = None):
     return [AttachmentResponse(**a) for a in attachments]
 
 @api_router.get("/attachments/{attachment_id}/download")
-async def download_attachment(attachment_id: str, authorization: str = None):
-    await get_current_user(authorization)
+async def download_attachment(attachment_id: str, current_user: dict = Depends(get_current_user)):
+    current_user
     
     attachment = await db.attachments.find_one({"id": attachment_id}, {"_id": 0})
     if not attachment:
@@ -863,8 +863,8 @@ async def download_attachment(attachment_id: str, authorization: str = None):
 
 # ============== DASHBOARD ==============
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(authorization: str = None):
-    user = await get_current_user(authorization)
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     base_query = {}
     
@@ -1054,8 +1054,8 @@ async def telegram_webhook(data: TelegramWebhook):
 
 # ============== EXPORT ==============
 @api_router.get("/export/tickets")
-async def export_tickets(authorization: str = None):
-    user = await get_current_user(authorization)
+async def export_tickets(current_user: dict = Depends(get_current_user)):
+    user = current_user
     
     if user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas admins podem exportar")
