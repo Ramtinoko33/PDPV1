@@ -269,7 +269,7 @@ const TicketList = () => {
                     <SelectValue placeholder="Estado" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos os estados</SelectItem>
+                    <SelectItem value="all">Todos os estados</SelectItem>
                     {statusOptions.map(opt => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
