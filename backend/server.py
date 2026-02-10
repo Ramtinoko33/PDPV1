@@ -257,10 +257,11 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-async def get_current_user(token: str = None):
-    if not token:
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization:
         raise HTTPException(status_code=401, detail="Token não fornecido")
     try:
+        token = authorization
         if token.startswith("Bearer "):
             token = token[7:]
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
