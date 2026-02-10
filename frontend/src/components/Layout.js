@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
+import NotificationCenter from './NotificationCenter';
 import { 
   LayoutDashboard, 
   Ticket, 
