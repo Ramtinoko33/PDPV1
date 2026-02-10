@@ -322,14 +322,14 @@ const TicketList = () => {
 
               {['ADMIN', 'SUPERVISOR'].includes(user?.role) && users.length > 0 && (
                 <Select 
-                  value={filters.assigned_to} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, assigned_to: value }))}
+                  value={filters.assigned_to || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, assigned_to: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="h-10 max-w-xs" data-testid="filter-assigned">
                     <SelectValue placeholder="Atribuído a" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     {users.map(u => (
                       <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                     ))}
