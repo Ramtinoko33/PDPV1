@@ -262,8 +262,8 @@ const TicketList = () => {
             <div className="pt-4 border-t space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Select 
-                  value={filters.status} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+                  value={filters.status || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, status: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="h-10" data-testid="filter-status">
                     <SelectValue placeholder="Estado" />
@@ -277,8 +277,8 @@ const TicketList = () => {
                 </Select>
 
                 <Select 
-                  value={filters.type} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, type: value }))}
+                  value={filters.type || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, type: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="h-10" data-testid="filter-type">
                     <SelectValue placeholder="Tipo" />
@@ -292,8 +292,8 @@ const TicketList = () => {
                 </Select>
 
                 <Select 
-                  value={filters.channel} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, channel: value }))}
+                  value={filters.channel || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, channel: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="h-10" data-testid="filter-channel">
                     <SelectValue placeholder="Canal" />
@@ -307,8 +307,8 @@ const TicketList = () => {
                 </Select>
 
                 <Select 
-                  value={filters.overdue} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, overdue: value }))}
+                  value={filters.overdue || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, overdue: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="h-10" data-testid="filter-overdue">
                     <SelectValue placeholder="SLA" />
