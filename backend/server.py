@@ -341,14 +341,12 @@ async def login(credentials: UserLogin):
     }
 
 @api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(authorization: str = None):
-    user = await get_current_user(authorization)
+async def get_me(user: dict = Depends(get_current_user)):
     return UserResponse(**user)
 
 # ============== USER MANAGEMENT (ADMIN) ==============
 @api_router.get("/users", response_model=List[UserResponse])
-async def list_users(authorization: str = None):
-    user = await get_current_user(authorization)
+async def list_users(user: dict = Depends(get_current_user)):
     if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="Acesso negado")
     
@@ -356,8 +354,7 @@ async def list_users(authorization: str = None):
     return [UserResponse(**u) for u in users]
 
 @api_router.post("/users", response_model=UserResponse)
-async def create_user(user_data: UserCreate, authorization: str = None):
-    current_user = await get_current_user(authorization)
+async def create_user(user_data: UserCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas admins podem criar utilizadores")
     
