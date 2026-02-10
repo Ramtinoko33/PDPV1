@@ -85,15 +85,20 @@ const Layout = ({ children }) => {
       `}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="h-16 flex items-center px-6 border-b border-slate-800">
-            <Wrench className="h-8 w-8 text-orange-500 mr-3" />
-            <span className="text-xl font-black tracking-tight font-['Chivo']">PDPV Tickets</span>
-            <button 
-              className="ml-auto lg:hidden p-1 hover:bg-slate-800 rounded"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
+          <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
+            <div className="flex items-center">
+              <Wrench className="h-8 w-8 text-orange-500 mr-3" />
+              <span className="text-xl font-black tracking-tight font-['Chivo']">PDPV Tickets</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <NotificationCenter />
+              <button 
+                className="lg:hidden p-1 hover:bg-slate-800 rounded"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Navigation */}
