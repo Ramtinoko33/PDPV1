@@ -328,14 +328,14 @@ const TicketDetail = () => {
           {/* Assign */}
           {['ADMIN', 'SUPERVISOR'].includes(user?.role) && (
             <Select
-              value={ticket.assigned_to_user_id || ''}
-              onValueChange={(value) => updateTicket({ assigned_to_user_id: value || '' })}
+              value={ticket.assigned_to_user_id || 'none'}
+              onValueChange={(value) => updateTicket({ assigned_to_user_id: value === 'none' ? '' : value })}
             >
               <SelectTrigger className="h-10 w-40" data-testid="assign-select">
                 <SelectValue placeholder="Atribuir a..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Ninguém</SelectItem>
+                <SelectItem value="none">Ninguém</SelectItem>
                 {users.map(u => (
                   <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                 ))}
