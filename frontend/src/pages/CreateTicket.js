@@ -89,16 +89,37 @@ const CreateTicket = () => {
   };
 
   const selectCustomer = (customer) => {
+    // Set the customer with all data (phones, vehicles)
     setSelectedCustomer(customer);
     setFormData(prev => ({
       ...prev,
       customer_name: customer.name,
+      // Set first phone/email/vehicle as default, user can change via dropdowns
       customer_phone: customer.phones?.[0] || prev.customer_phone,
       customer_email: customer.emails?.[0] || '',
-      vehicle_plate: customer.vehicle_plate || prev.vehicle_plate
+      vehicle_plate: customer.vehicles?.[0]?.plate || prev.vehicle_plate
     }));
     setShowSuggestions(false);
     setSearchResults([]);
+  };
+
+  const handleSelectPhone = (phone) => {
+    setFormData(prev => ({ ...prev, customer_phone: phone }));
+  };
+
+  const handleSelectVehicle = (plate) => {
+    setFormData(prev => ({ ...prev, vehicle_plate: plate }));
+  };
+
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null);
+    setFormData(prev => ({
+      ...prev,
+      customer_name: '',
+      customer_phone: '',
+      customer_email: '',
+      vehicle_plate: ''
+    }));
   };
 
   const handleChange = (field, value) => {
