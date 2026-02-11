@@ -11,7 +11,8 @@ import {
   CheckCheck, 
   Ticket, 
   X,
-  Settings
+  BellOff,
+  Loader2
 } from 'lucide-react';
 
 const NotificationCenter = () => {
@@ -22,9 +23,11 @@ const NotificationCenter = () => {
     notifications,
     unreadCount,
     webPushEnabled,
+    pushLoading,
     markAsRead,
     markAllAsRead,
-    requestWebPushPermission
+    requestWebPushPermission,
+    disableWebPush
   } = useNotifications();
 
   // Close dropdown when clicking outside
