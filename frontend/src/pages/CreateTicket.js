@@ -202,23 +202,71 @@ const CreateTicket = () => {
             <CardDescription>Informação obrigatória marcada com * | Digite telefone ou matrícula para pesquisar cliente</CardDescription>
           </CardHeader>
           <CardContent className="p-6 space-y-5">
-            {/* Customer selected banner */}
+            {/* Customer selected banner with phone/vehicle selection */}
             {selectedCustomer && (
-              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <History className="h-5 w-5 text-emerald-600" />
-                <div className="flex-1">
-                  <p className="font-semibold text-emerald-800">Cliente existente selecionado</p>
-                  <p className="text-sm text-emerald-600">{selectedCustomer.name}</p>
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <History className="h-5 w-5 text-emerald-600" />
+                    <div>
+                      <p className="font-semibold text-emerald-800">Cliente existente selecionado</p>
+                      <p className="text-sm text-emerald-600">{selectedCustomer.name}</p>
+                    </div>
+                  </div>
+                  <Button 
+                    type="button"
+                    variant="ghost" 
+                    size="sm"
+                    onClick={clearSelectedCustomer}
+                    className="text-emerald-600 hover:text-emerald-800"
+                  >
+                    Limpar
+                  </Button>
                 </div>
-                <Button 
-                  type="button"
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setSelectedCustomer(null)}
-                  className="text-emerald-600"
-                >
-                  Limpar
-                </Button>
+                
+                {/* Phone selection if multiple */}
+                {selectedCustomer.phones?.length > 1 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-emerald-700">
+                      <Phone className="h-3 w-3 inline mr-1" />
+                      Escolher telefone ({selectedCustomer.phones.length} disponíveis)
+                    </Label>
+                    <Select value={formData.customer_phone} onValueChange={handleSelectPhone}>
+                      <SelectTrigger className="border-emerald-300 bg-white" data-testid="select-phone">
+                        <SelectValue placeholder="Selecionar telefone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedCustomer.phones.map((phone, idx) => (
+                          <SelectItem key={idx} value={phone}>
+                            {phone}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                {/* Vehicle selection if multiple */}
+                {selectedCustomer.vehicles?.length > 1 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-emerald-700">
+                      <Car className="h-3 w-3 inline mr-1" />
+                      Escolher veículo ({selectedCustomer.vehicles.length} disponíveis)
+                    </Label>
+                    <Select value={formData.vehicle_plate} onValueChange={handleSelectVehicle}>
+                      <SelectTrigger className="border-emerald-300 bg-white" data-testid="select-vehicle">
+                        <SelectValue placeholder="Selecionar veículo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedCustomer.vehicles.map((v, idx) => (
+                          <SelectItem key={idx} value={v.plate}>
+                            {v.plate} {v.model && `- ${v.model}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -244,7 +292,7 @@ const CreateTicket = () => {
                   />
                   {/* Suggestions dropdown */}
                   {showSuggestions && searchResults.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-orange-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-orange-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                       <div className="p-2 bg-orange-50 border-b text-xs font-semibold text-orange-700">
                         <Search className="h-3 w-3 inline mr-1" />
                         Clientes encontrados
@@ -256,8 +304,25 @@ const CreateTicket = () => {
                           onClick={() => selectCustomer(customer)}
                         >
                           <p className="font-semibold text-slate-900">{customer.name}</p>
-                          <div className="flex items-center gap-3 text-sm text-zinc-500 mt-1">
-                            {customer.phones?.[0] && (
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500 mt-1">
+                            {customer.phones?.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {customer.phones[0]}
+                                {customer.phones.length > 1 && (
+                                  <span className="text-xs text-orange-600">+{customer.phones.length - 1}</span>
+                                )}
+                              </span>
+                            )}
+                            {customer.vehicles?.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Car className="h-3 w-3" />
+                                {customer.vehicles[0].plate}
+                                {customer.vehicles.length > 1 && (
+                                  <span className="text-xs text-orange-600">+{customer.vehicles.length - 1}</span>
+                                )}
+                              </span>
+                            )}
                               <span className="flex items-center gap-1">
                                 <Phone className="h-3 w-3" />
                                 {customer.phones[0]}
