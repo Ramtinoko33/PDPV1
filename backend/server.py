@@ -503,7 +503,7 @@ async def search_customers(
         return []
     
     customer_ids_found = set()
-    results = []
+    customers_data = {}  # id -> customer data
     
     # Search by phone
     customers_by_phone = await db.customers.find(
@@ -514,35 +514,24 @@ async def search_customers(
     for c in customers_by_phone:
         if c["id"] not in customer_ids_found:
             customer_ids_found.add(c["id"])
-            vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(50)
-            results.append({
-                "id": c["id"],
-                "name": c["name"],
-                "phones": c.get("phones", []),
-                "emails": c.get("emails", []),
-                "vehicles": [{"plate": v["plate"], "model": v.get("model")} for v in vehicles]
-            })
+            customers_data[c["id"]] = c
     
-    # Search by plate
+    # Search by plate - get customer_ids from vehicles
     vehicles_by_plate = await db.vehicles.find(
         {"plate": {"$regex": q, "$options": "i"}},
         {"_id": 0}
     ).limit(10).to_list(10)
     
-    for v in vehicles_by_plate:
-        if v["customer_id"] not in customer_ids_found:
-            customer_ids_found.add(v["customer_id"])
-            customer = await db.customers.find_one({"id": v["customer_id"]}, {"_id": 0})
-            if customer:
-                all_vehicles = await db.vehicles.find({"customer_id": v["customer_id"]}, {"_id": 0}).to_list(50)
-                results.append({
-                    "id": customer["id"],
-                    "name": customer["name"],
-                    "phones": customer.get("phones", []),
-                    "emails": customer.get("emails", []),
-                    "vehicles": [{"plate": veh["plate"], "model": veh.get("model")} for veh in all_vehicles],
-                    "matched_plate": v["plate"]  # highlight which plate matched
-                })
+    plate_customer_ids = [v["customer_id"] for v in vehicles_by_plate if v["customer_id"] not in customer_ids_found]
+    if plate_customer_ids:
+        customers_from_plates = await db.customers.find(
+            {"id": {"$in": plate_customer_ids}},
+            {"_id": 0}
+        ).to_list(10)
+        for c in customers_from_plates:
+            if c["id"] not in customer_ids_found:
+                customer_ids_found.add(c["id"])
+                customers_data[c["id"]] = c
     
     # Search by name
     customers_by_name = await db.customers.find(
@@ -553,14 +542,34 @@ async def search_customers(
     for c in customers_by_name:
         if c["id"] not in customer_ids_found:
             customer_ids_found.add(c["id"])
-            vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(50)
-            results.append({
-                "id": c["id"],
-                "name": c["name"],
-                "phones": c.get("phones", []),
-                "emails": c.get("emails", []),
-                "vehicles": [{"plate": v["plate"], "model": v.get("model")} for v in vehicles]
-            })
+            customers_data[c["id"]] = c
+    
+    # Batch fetch all vehicles for found customers (single query instead of N queries)
+    if customer_ids_found:
+        all_vehicles = await db.vehicles.find(
+            {"customer_id": {"$in": list(customer_ids_found)}},
+            {"_id": 0}
+        ).to_list(500)
+        
+        vehicles_by_customer = {}
+        for v in all_vehicles:
+            cid = v["customer_id"]
+            if cid not in vehicles_by_customer:
+                vehicles_by_customer[cid] = []
+            vehicles_by_customer[cid].append({"plate": v["plate"], "model": v.get("model")})
+    else:
+        vehicles_by_customer = {}
+    
+    # Build results
+    results = []
+    for cid, c in customers_data.items():
+        results.append({
+            "id": c["id"],
+            "name": c["name"],
+            "phones": c.get("phones", []),
+            "emails": c.get("emails", []),
+            "vehicles": vehicles_by_customer.get(cid, [])
+        })
     
     return results[:15]
 
