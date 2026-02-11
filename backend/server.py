@@ -488,46 +488,71 @@ async def search_customers(
     current_user: dict = Depends(get_current_user),
     q: str = ""
 ):
-    """Search customers by phone, plate or name for auto-complete"""
+    """Search customers by phone, plate or name for auto-complete - returns full customer data"""
     if len(q) < 2:
         return []
     
+    customer_ids_found = set()
     results = []
     
     # Search by phone
     customers_by_phone = await db.customers.find(
         {"phones": {"$regex": q, "$options": "i"}},
         {"_id": 0}
-    ).limit(5).to_list(5)
+    ).limit(10).to_list(10)
     
     for c in customers_by_phone:
-        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).limit(1).to_list(1)
-        results.append({
-            "id": c["id"],
-            "name": c["name"],
-            "phones": c.get("phones", []),
-            "emails": c.get("emails", []),
-            "vehicle_plate": vehicles[0]["plate"] if vehicles else None,
-            "vehicle_model": vehicles[0].get("model") if vehicles else None
-        })
+        if c["id"] not in customer_ids_found:
+            customer_ids_found.add(c["id"])
+            vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(50)
+            results.append({
+                "id": c["id"],
+                "name": c["name"],
+                "phones": c.get("phones", []),
+                "emails": c.get("emails", []),
+                "vehicles": [{"plate": v["plate"], "model": v.get("model")} for v in vehicles]
+            })
     
     # Search by plate
     vehicles_by_plate = await db.vehicles.find(
         {"plate": {"$regex": q, "$options": "i"}},
         {"_id": 0}
-    ).limit(5).to_list(5)
+    ).limit(10).to_list(10)
     
     for v in vehicles_by_plate:
-        # Check if customer already in results
-        if any(r["id"] == v["customer_id"] for r in results):
-            continue
-        customer = await db.customers.find_one({"id": v["customer_id"]}, {"_id": 0})
-        if customer:
+        if v["customer_id"] not in customer_ids_found:
+            customer_ids_found.add(v["customer_id"])
+            customer = await db.customers.find_one({"id": v["customer_id"]}, {"_id": 0})
+            if customer:
+                all_vehicles = await db.vehicles.find({"customer_id": v["customer_id"]}, {"_id": 0}).to_list(50)
+                results.append({
+                    "id": customer["id"],
+                    "name": customer["name"],
+                    "phones": customer.get("phones", []),
+                    "emails": customer.get("emails", []),
+                    "vehicles": [{"plate": veh["plate"], "model": veh.get("model")} for veh in all_vehicles],
+                    "matched_plate": v["plate"]  # highlight which plate matched
+                })
+    
+    # Search by name
+    customers_by_name = await db.customers.find(
+        {"name": {"$regex": q, "$options": "i"}},
+        {"_id": 0}
+    ).limit(10).to_list(10)
+    
+    for c in customers_by_name:
+        if c["id"] not in customer_ids_found:
+            customer_ids_found.add(c["id"])
+            vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(50)
             results.append({
-                "id": customer["id"],
-                "name": customer["name"],
-                "phones": customer.get("phones", []),
-                "emails": customer.get("emails", []),
+                "id": c["id"],
+                "name": c["name"],
+                "phones": c.get("phones", []),
+                "emails": c.get("emails", []),
+                "vehicles": [{"plate": v["plate"], "model": v.get("model")} for v in vehicles]
+            })
+    
+    return results[:15],
                 "vehicle_plate": v["plate"],
                 "vehicle_model": v.get("model")
             })
