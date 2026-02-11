@@ -447,6 +447,428 @@ async def login(credentials: UserLogin):
 async def get_me(user: dict = Depends(get_current_user)):
     return UserResponse(**user)
 
+# ============== CUSTOMER MANAGEMENT ==============
+@api_router.get("/customers", response_model=List[CustomerResponse])
+async def list_customers(
+    current_user: dict = Depends(get_current_user),
+    search: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    query = {}
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"nif": {"$regex": search, "$options": "i"}},
+            {"phones": {"$regex": search, "$options": "i"}},
+            {"emails": {"$regex": search, "$options": "i"}}
+        ]
+    
+    customers = await db.customers.find(query, {"_id": 0}).sort("name", 1).skip(skip).limit(limit).to_list(limit)
+    
+    result = []
+    for c in customers:
+        # Get vehicles
+        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(100)
+        c["vehicles"] = vehicles
+        # Get ticket count
+        ticket_count = await db.tickets.count_documents({
+            "$or": [
+                {"customer_phone": {"$in": c.get("phones", [])}},
+                {"customer_email": {"$in": c.get("emails", [])}}
+            ]
+        })
+        c["ticket_count"] = ticket_count
+        result.append(CustomerResponse(**c))
+    
+    return result
+
+@api_router.get("/customers/search")
+async def search_customers(
+    current_user: dict = Depends(get_current_user),
+    q: str = ""
+):
+    """Search customers by phone, plate or name for auto-complete"""
+    if len(q) < 2:
+        return []
+    
+    results = []
+    
+    # Search by phone
+    customers_by_phone = await db.customers.find(
+        {"phones": {"$regex": q, "$options": "i"}},
+        {"_id": 0}
+    ).limit(5).to_list(5)
+    
+    for c in customers_by_phone:
+        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).limit(1).to_list(1)
+        results.append({
+            "id": c["id"],
+            "name": c["name"],
+            "phones": c.get("phones", []),
+            "emails": c.get("emails", []),
+            "vehicle_plate": vehicles[0]["plate"] if vehicles else None,
+            "vehicle_model": vehicles[0].get("model") if vehicles else None
+        })
+    
+    # Search by plate
+    vehicles_by_plate = await db.vehicles.find(
+        {"plate": {"$regex": q, "$options": "i"}},
+        {"_id": 0}
+    ).limit(5).to_list(5)
+    
+    for v in vehicles_by_plate:
+        # Check if customer already in results
+        if any(r["id"] == v["customer_id"] for r in results):
+            continue
+        customer = await db.customers.find_one({"id": v["customer_id"]}, {"_id": 0})
+        if customer:
+            results.append({
+                "id": customer["id"],
+                "name": customer["name"],
+                "phones": customer.get("phones", []),
+                "emails": customer.get("emails", []),
+                "vehicle_plate": v["plate"],
+                "vehicle_model": v.get("model")
+            })
+    
+    # Search by name
+    customers_by_name = await db.customers.find(
+        {"name": {"$regex": q, "$options": "i"}},
+        {"_id": 0}
+    ).limit(5).to_list(5)
+    
+    for c in customers_by_name:
+        if any(r["id"] == c["id"] for r in results):
+            continue
+        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).limit(1).to_list(1)
+        results.append({
+            "id": c["id"],
+            "name": c["name"],
+            "phones": c.get("phones", []),
+            "emails": c.get("emails", []),
+            "vehicle_plate": vehicles[0]["plate"] if vehicles else None,
+            "vehicle_model": vehicles[0].get("model") if vehicles else None
+        })
+    
+    return results[:10]
+
+@api_router.get("/customers/{customer_id}", response_model=CustomerResponse)
+async def get_customer(customer_id: str, current_user: dict = Depends(get_current_user)):
+    customer = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    vehicles = await db.vehicles.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    customer["vehicles"] = vehicles
+    
+    ticket_count = await db.tickets.count_documents({
+        "$or": [
+            {"customer_phone": {"$in": customer.get("phones", [])}},
+            {"customer_email": {"$in": customer.get("emails", [])}}
+        ]
+    })
+    customer["ticket_count"] = ticket_count
+    
+    return CustomerResponse(**customer)
+
+@api_router.get("/customers/{customer_id}/history")
+async def get_customer_history(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all tickets and vehicles for a customer"""
+    customer = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    # Get vehicles
+    vehicles = await db.vehicles.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    vehicle_plates = [v["plate"] for v in vehicles]
+    
+    # Get tickets by phone, email, or plate
+    query = {"$or": []}
+    if customer.get("phones"):
+        query["$or"].append({"customer_phone": {"$in": customer["phones"]}})
+    if customer.get("emails"):
+        query["$or"].append({"customer_email": {"$in": customer["emails"]}})
+    if vehicle_plates:
+        query["$or"].append({"vehicle_plate": {"$in": vehicle_plates}})
+    
+    if not query["$or"]:
+        tickets = []
+    else:
+        tickets = await db.tickets.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    return {
+        "customer": customer,
+        "vehicles": vehicles,
+        "tickets": tickets,
+        "total_tickets": len(tickets)
+    }
+
+@api_router.post("/customers", response_model=CustomerResponse)
+async def create_customer(customer_data: CustomerCreate, current_user: dict = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    customer_id = str(uuid.uuid4())
+    
+    customer_doc = {
+        "id": customer_id,
+        "code": customer_data.code,
+        "name": customer_data.name,
+        "nif": customer_data.nif,
+        "customer_type": customer_data.customer_type,
+        "address": customer_data.address,
+        "phones": customer_data.phones,
+        "fax": customer_data.fax,
+        "emails": customer_data.emails,
+        "created_at": now,
+        "updated_at": now
+    }
+    await db.customers.insert_one(customer_doc)
+    
+    # Create vehicles
+    vehicles = []
+    for v in customer_data.vehicles:
+        vehicle_id = str(uuid.uuid4())
+        vehicle_doc = {
+            "id": vehicle_id,
+            "customer_id": customer_id,
+            "plate": v.plate.upper().strip(),
+            "model": v.model,
+            "observations": v.observations
+        }
+        await db.vehicles.insert_one(vehicle_doc)
+        vehicles.append(vehicle_doc)
+    
+    customer_doc["vehicles"] = vehicles
+    customer_doc["ticket_count"] = 0
+    return CustomerResponse(**customer_doc)
+
+@api_router.put("/customers/{customer_id}", response_model=CustomerResponse)
+async def update_customer(customer_id: str, customer_data: CustomerUpdate, current_user: dict = Depends(get_current_user)):
+    customer = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    update_doc = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if customer_data.name is not None:
+        update_doc["name"] = customer_data.name
+    if customer_data.nif is not None:
+        update_doc["nif"] = customer_data.nif
+    if customer_data.customer_type is not None:
+        update_doc["customer_type"] = customer_data.customer_type
+    if customer_data.address is not None:
+        update_doc["address"] = customer_data.address
+    if customer_data.phones is not None:
+        update_doc["phones"] = customer_data.phones
+    if customer_data.fax is not None:
+        update_doc["fax"] = customer_data.fax
+    if customer_data.emails is not None:
+        update_doc["emails"] = customer_data.emails
+    
+    await db.customers.update_one({"id": customer_id}, {"$set": update_doc})
+    
+    updated = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    vehicles = await db.vehicles.find({"customer_id": customer_id}, {"_id": 0}).to_list(100)
+    updated["vehicles"] = vehicles
+    updated["ticket_count"] = 0
+    return CustomerResponse(**updated)
+
+@api_router.delete("/customers/{customer_id}")
+async def delete_customer(customer_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas admins podem eliminar clientes")
+    
+    result = await db.customers.delete_one({"id": customer_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    # Delete associated vehicles
+    await db.vehicles.delete_many({"customer_id": customer_id})
+    
+    return {"message": "Cliente eliminado"}
+
+# ============== VEHICLE MANAGEMENT ==============
+@api_router.post("/customers/{customer_id}/vehicles", response_model=VehicleResponse)
+async def add_vehicle(customer_id: str, vehicle_data: VehicleCreate, current_user: dict = Depends(get_current_user)):
+    customer = await db.customers.find_one({"id": customer_id}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    vehicle_id = str(uuid.uuid4())
+    vehicle_doc = {
+        "id": vehicle_id,
+        "customer_id": customer_id,
+        "plate": vehicle_data.plate.upper().strip(),
+        "model": vehicle_data.model,
+        "observations": vehicle_data.observations
+    }
+    await db.vehicles.insert_one(vehicle_doc)
+    return VehicleResponse(**vehicle_doc)
+
+@api_router.delete("/vehicles/{vehicle_id}")
+async def delete_vehicle(vehicle_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.vehicles.delete_one({"id": vehicle_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Veículo não encontrado")
+    return {"message": "Veículo eliminado"}
+
+# ============== IMPORT CUSTOMERS ==============
+@api_router.post("/customers/import")
+async def import_customers(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Import customers from Excel file"""
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para importar")
+    
+    import pandas as pd
+    import io
+    
+    content = await file.read()
+    xlsx = pd.ExcelFile(io.BytesIO(content))
+    
+    imported_customers = 0
+    imported_vehicles = 0
+    errors = []
+    
+    # Process customers sheet
+    customers_df = None
+    vehicles_df = None
+    
+    for sheet in xlsx.sheet_names:
+        if 'cliente' in sheet.lower():
+            customers_df = pd.read_excel(xlsx, sheet_name=sheet)
+        elif 'viatura' in sheet.lower():
+            vehicles_df = pd.read_excel(xlsx, sheet_name=sheet)
+    
+    if customers_df is None:
+        raise HTTPException(status_code=400, detail="Folha de clientes não encontrada")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Group customers by code to merge contacts
+    customer_map = {}  # code -> customer data
+    
+    for _, row in customers_df.iterrows():
+        try:
+            code = str(row.get('Código', '')).strip()
+            if not code or code == 'nan':
+                continue
+            
+            name = str(row.get('Nome', '')).strip()
+            if not name or name == 'nan':
+                continue
+            
+            if code not in customer_map:
+                customer_map[code] = {
+                    "code": code,
+                    "name": name,
+                    "nif": str(row.get('Nif', '')).strip() if pd.notna(row.get('Nif')) else None,
+                    "customer_type": str(row.get('tipo de cliente', '')).strip() if pd.notna(row.get('tipo de cliente')) else None,
+                    "address": str(row.get('Morada', '')).strip() if pd.notna(row.get('Morada')) else None,
+                    "phones": set(),
+                    "fax": str(row.get('Fax', '')).strip() if pd.notna(row.get('Fax')) else None,
+                    "emails": set()
+                }
+            
+            # Add phones
+            for phone_col in ['Telefone1', 'Telefone2']:
+                phone = row.get(phone_col)
+                if pd.notna(phone):
+                    phone_str = str(int(phone) if isinstance(phone, float) else phone).strip()
+                    if phone_str and phone_str != 'nan':
+                        customer_map[code]["phones"].add(phone_str)
+            
+            # Add email
+            email = row.get('Email')
+            if pd.notna(email):
+                email_str = str(email).strip()
+                if email_str and email_str != 'nan' and '@' in email_str:
+                    customer_map[code]["emails"].add(email_str)
+        except Exception as e:
+            errors.append(f"Erro na linha cliente: {str(e)}")
+    
+    # Insert customers
+    customer_id_map = {}  # name -> id
+    for code, cdata in customer_map.items():
+        try:
+            # Check if exists by code
+            existing = await db.customers.find_one({"code": code})
+            if existing:
+                customer_id_map[cdata["name"]] = existing["id"]
+                # Update phones/emails
+                await db.customers.update_one(
+                    {"id": existing["id"]},
+                    {"$addToSet": {
+                        "phones": {"$each": list(cdata["phones"])},
+                        "emails": {"$each": list(cdata["emails"])}
+                    }}
+                )
+                continue
+            
+            customer_id = str(uuid.uuid4())
+            customer_doc = {
+                "id": customer_id,
+                "code": code,
+                "name": cdata["name"],
+                "nif": cdata["nif"],
+                "customer_type": cdata["customer_type"],
+                "address": cdata["address"],
+                "phones": list(cdata["phones"]),
+                "fax": cdata["fax"],
+                "emails": list(cdata["emails"]),
+                "created_at": now,
+                "updated_at": now
+            }
+            await db.customers.insert_one(customer_doc)
+            customer_id_map[cdata["name"]] = customer_id
+            imported_customers += 1
+        except Exception as e:
+            errors.append(f"Erro ao criar cliente {cdata['name']}: {str(e)}")
+    
+    # Process vehicles
+    if vehicles_df is not None:
+        for _, row in vehicles_df.iterrows():
+            try:
+                plate = str(row.get('Matrícula', '')).strip().upper()
+                if not plate or plate == 'NAN':
+                    continue
+                
+                client_name = str(row.get('Cliente', '')).strip()
+                model = str(row.get('Modelo', '')).strip() if pd.notna(row.get('Modelo')) else None
+                obs = str(row.get('Observações', '')).strip() if pd.notna(row.get('Observações')) else None
+                
+                # Find customer by name
+                customer_id = customer_id_map.get(client_name)
+                if not customer_id:
+                    # Try to find in DB
+                    customer = await db.customers.find_one({"name": client_name}, {"_id": 0, "id": 1})
+                    if customer:
+                        customer_id = customer["id"]
+                    else:
+                        continue
+                
+                # Check if vehicle exists
+                existing = await db.vehicles.find_one({"plate": plate})
+                if existing:
+                    continue
+                
+                vehicle_doc = {
+                    "id": str(uuid.uuid4()),
+                    "customer_id": customer_id,
+                    "plate": plate,
+                    "model": model,
+                    "observations": obs
+                }
+                await db.vehicles.insert_one(vehicle_doc)
+                imported_vehicles += 1
+            except Exception as e:
+                errors.append(f"Erro ao criar veículo: {str(e)}")
+    
+    return {
+        "message": "Importação concluída",
+        "imported_customers": imported_customers,
+        "imported_vehicles": imported_vehicles,
+        "errors": errors[:10]  # Return first 10 errors
+    }
+
 # ============== USER MANAGEMENT (ADMIN) ==============
 @api_router.get("/users", response_model=List[UserResponse])
 async def list_users(user: dict = Depends(get_current_user)):
