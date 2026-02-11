@@ -132,23 +132,51 @@ const NotificationCenter = () => {
             </div>
           </div>
 
-          {/* Web Push Permission Banner */}
-          {!webPushEnabled && 'Notification' in window && Notification.permission !== 'denied' && (
-            <div className="p-3 bg-orange-50 border-b border-orange-100">
+          {/* Web Push Status Banner */}
+          {'serviceWorker' in navigator && 'PushManager' in window && (
+            <div className={`p-3 border-b ${webPushEnabled ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Settings className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm text-orange-800">Ativar notificações do browser?</span>
+                  {webPushEnabled ? (
+                    <>
+                      <Bell className="h-4 w-4 text-emerald-600" />
+                      <span className="text-sm text-emerald-800">Notificações push ativas</span>
+                    </>
+                  ) : (
+                    <>
+                      <BellOff className="h-4 w-4 text-orange-600" />
+                      <span className="text-sm text-orange-800">Ativar notificações push?</span>
+                    </>
+                  )}
                 </div>
-                <Button
-                  size="sm"
-                  className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
-                  onClick={requestWebPushPermission}
-                  data-testid="enable-push"
-                >
-                  Ativar
-                </Button>
+                {webPushEnabled ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100"
+                    onClick={disableWebPush}
+                    disabled={pushLoading}
+                    data-testid="disable-push"
+                  >
+                    {pushLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Desativar'}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+                    onClick={requestWebPushPermission}
+                    disabled={pushLoading}
+                    data-testid="enable-push"
+                  >
+                    {pushLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Ativar'}
+                  </Button>
+                )}
               </div>
+              {!webPushEnabled && (
+                <p className="text-xs text-orange-600 mt-1">
+                  Receba alertas mesmo com o browser fechado
+                </p>
+              )}
             </div>
           )}
 
