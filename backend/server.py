@@ -16,6 +16,7 @@ from enum import Enum
 import shutil
 import asyncio
 import json
+from pywebpush import webpush, WebPushException
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -36,6 +37,11 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # File storage
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# VAPID Config for Web Push
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '').replace('\\n', '\n')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@pdpv.pt')
 
 # WebSocket connections manager
 class ConnectionManager:
