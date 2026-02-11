@@ -48,6 +48,12 @@ const Layout = ({ children }) => {
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
     },
     { 
+      path: '/customers', 
+      label: 'Clientes', 
+      icon: UsersRound,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
+    },
+    { 
       path: '/users', 
       label: 'Utilizadores', 
       icon: Users,
