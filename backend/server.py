@@ -1801,6 +1801,82 @@ async def mark_all_notifications_read(current_user: dict = Depends(get_current_u
     )
     return {"message": "Todas as notificações marcadas como lidas"}
 
+# ============== WEB PUSH NOTIFICATIONS ==============
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict  # Contains p256dh and auth keys
+
+@api_router.get("/push/vapid-public-key")
+async def get_vapid_public_key():
+    """Return the VAPID public key for the frontend to use"""
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+@api_router.post("/push/subscribe")
+async def subscribe_to_push(subscription: PushSubscription, current_user: dict = Depends(get_current_user)):
+    """Save a user's push subscription"""
+    subscription_doc = {
+        "user_id": current_user["id"],
+        "endpoint": subscription.endpoint,
+        "keys": subscription.keys,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Upsert - update if exists, insert if not
+    await db.push_subscriptions.update_one(
+        {"user_id": current_user["id"], "endpoint": subscription.endpoint},
+        {"$set": subscription_doc},
+        upsert=True
+    )
+    
+    return {"message": "Subscrição guardada com sucesso"}
+
+@api_router.delete("/push/unsubscribe")
+async def unsubscribe_from_push(subscription: PushSubscription, current_user: dict = Depends(get_current_user)):
+    """Remove a user's push subscription"""
+    await db.push_subscriptions.delete_one({
+        "user_id": current_user["id"],
+        "endpoint": subscription.endpoint
+    })
+    return {"message": "Subscrição removida"}
+
+async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = None):
+    """Send web push notification to all devices of a user"""
+    if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+        logger.warning("VAPID keys not configured, skipping web push")
+        return
+    
+    subscriptions = await db.push_subscriptions.find(
+        {"user_id": user_id},
+        {"_id": 0}
+    ).to_list(100)
+    
+    payload = json.dumps({
+        "title": title,
+        "body": body,
+        "icon": "/logo192.png",
+        "badge": "/logo192.png",
+        "url": url or "/"
+    })
+    
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": sub["keys"]
+                },
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"}
+            )
+            logger.info(f"Web push sent to user {user_id}")
+        except WebPushException as e:
+            logger.error(f"Web push failed for user {user_id}: {e}")
+            # If subscription is expired/invalid, remove it
+            if e.response and e.response.status_code in [404, 410]:
+                await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+                logger.info(f"Removed invalid subscription for user {user_id}")
+
 # Helper function to create and send notification
 async def create_notification(user_id: str, title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
     now = datetime.now(timezone.utc)
@@ -1824,6 +1900,10 @@ async def create_notification(user_id: str, title: str, body: str, notification_
         "type": "notification",
         "data": notification_doc
     })
+    
+    # Send via Web Push (in background to not block)
+    url = f"/tickets/{ticket_id}" if ticket_id else "/"
+    asyncio.create_task(send_web_push_to_user(user_id, title, body, url))
     
     return notification_doc
 
