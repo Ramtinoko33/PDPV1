@@ -9,6 +9,7 @@ import {
   Ticket, 
   Plus, 
   Users, 
+  UsersRound,
   LogOut, 
   Menu, 
   X,
