@@ -7,9 +7,11 @@ Sistema de gestão de pedidos para oficina automóvel (PDPV Tickets) com UI em p
 
 ### Backend (FastAPI + MongoDB)
 - **Autenticação**: JWT com tokens de 24h
-- **Base de Dados**: MongoDB com coleções para users, tickets, messages, notes, alerts, attachments
+- **Base de Dados**: MongoDB com coleções para users, tickets, messages, notes, alerts, attachments, customers, notifications
 - **APIs**: Todas com prefixo /api
 - **Ficheiros**: Armazenamento local em /app/backend/uploads
+- **WebSockets**: Notificações em tempo real
+- **Health Check**: GET /health e GET /api/health
 
 ### Frontend (React + Tailwind + shadcn/ui)
 - **Design**: Industrial Pilot com cores Safety Orange e Mechanic Blue
@@ -57,18 +59,46 @@ Sistema de gestão de pedidos para oficina automóvel (PDPV Tickets) com UI em p
 - [x] Gestão de utilizadores (CRUD)
 - [x] Exportação CSV de tickets
 
+### 9. Gestão de Clientes e Veículos
+- [x] Importação de dados de Excel (clientes e matrículas)
+- [x] Auto-preenchimento na criação de tickets (por telefone ou matrícula)
+- [x] Seleção de múltiplos contactos/veículos por cliente
+- [x] Visualização do histórico completo do cliente
+
+### 10. Notificações em Tempo Real
+- [x] WebSocket para notificações push
+- [x] Centro de notificações no cabeçalho
+- [x] Marcação como lida (individual e todas)
+- [x] Notificações para supervisores em novos tickets
+
+### 11. Deployment Ready
+- [x] Endpoint /health para Kubernetes health checks
+- [x] Compatibilidade bcrypt/passlib corrigida (bcrypt==4.0.1)
+
 ## Utilizadores de Demonstração
 - Admin: admin@pdpv.pt / admin123
 - Supervisor: supervisor@pdpv.pt / super123
 - Agente: agente@pdpv.pt / agente123
 - Financeiro: financeiro@pdpv.pt / fin123
 
-## Próximas Ações (P1)
-1. Integração real com serviço de email (Resend/SendGrid)
-2. Jobs em background para verificação de SLAs
-3. Notificações em tempo real (WebSockets)
+## Próximas Ações
+### P1 - Prioridade Alta
+1. Implementar Web Push Notifications (service worker + VAPID)
+2. Integração WhatsApp real (Twilio/API Business)
+
+### P2 - Prioridade Média
+3. Integração real com serviço de email (Resend/SendGrid)
 4. Dashboard Kanban alternativo
-5. Integração WhatsApp real (API Business)
+
+### P3 - Backlog
+5. Funcionalidades específicas para papel "Financeiro"
+6. Jobs em background para verificação de SLAs
+7. Refactoring do backend (modularizar server.py)
+
+## Correções de Deployment (12/02/2026)
+- Corrigido conflito bcrypt/passlib: bcrypt==4.0.1
+- Adicionado endpoint GET /health para container orchestration
 
 ## Data de Implementação
 - MVP: 10/02/2026
+- Correções Deployment: 12/02/2026
