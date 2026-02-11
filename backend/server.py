@@ -466,19 +466,29 @@ async def list_customers(
     
     customers = await db.customers.find(query, {"_id": 0}).sort("name", 1).skip(skip).limit(limit).to_list(limit)
     
+    if not customers:
+        return []
+    
+    # Batch fetch all vehicles for these customers (avoid N+1)
+    customer_ids = [c["id"] for c in customers]
+    all_vehicles = await db.vehicles.find(
+        {"customer_id": {"$in": customer_ids}}, 
+        {"_id": 0}
+    ).to_list(1000)
+    
+    # Group vehicles by customer_id
+    vehicles_by_customer = {}
+    for v in all_vehicles:
+        cid = v["customer_id"]
+        if cid not in vehicles_by_customer:
+            vehicles_by_customer[cid] = []
+        vehicles_by_customer[cid].append(v)
+    
+    # Build result with vehicles (ticket_count set to 0 for performance - can be loaded on detail view)
     result = []
     for c in customers:
-        # Get vehicles
-        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).to_list(100)
-        c["vehicles"] = vehicles
-        # Get ticket count
-        ticket_count = await db.tickets.count_documents({
-            "$or": [
-                {"customer_phone": {"$in": c.get("phones", [])}},
-                {"customer_email": {"$in": c.get("emails", [])}}
-            ]
-        })
-        c["ticket_count"] = ticket_count
+        c["vehicles"] = vehicles_by_customer.get(c["id"], [])
+        c["ticket_count"] = 0  # Skip ticket count query for list performance
         result.append(CustomerResponse(**c))
     
     return result
