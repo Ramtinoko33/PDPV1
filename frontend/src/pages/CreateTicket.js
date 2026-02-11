@@ -7,9 +7,13 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle, Search, History } from 'lucide-react';
+import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle, Search, History, Ticket, Eye } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -22,6 +26,9 @@ const CreateTicket = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+  const [customerHistory, setCustomerHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   
   const [formData, setFormData] = useState({
     customer_phone: '',
