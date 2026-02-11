@@ -82,8 +82,20 @@ manager = ConnectionManager()
 # Create the main app
 app = FastAPI(title="PDPV Tickets API")
 
+# Health check endpoint (for Kubernetes/container orchestration)
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration."""
+    return {"status": "healthy", "service": "pdpv-tickets-api"}
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Health check on /api prefix as well
+@api_router.get("/health")
+async def api_health_check():
+    """API health check endpoint."""
+    return {"status": "healthy", "service": "pdpv-tickets-api"}
 
 # ============== ENUMS ==============
 class UserRole(str, Enum):
