@@ -124,3 +124,5 @@ watchfiles==1.1.1
 websockets==15.0.1
 yarl==1.22.0
 zipp==3.23.0
+py-vapid==1.9.4
+pywebpush==2.3.0
