@@ -275,15 +275,28 @@ const CreateTicket = () => {
                       <p className="text-sm text-emerald-600">{selectedCustomer.name}</p>
                     </div>
                   </div>
-                  <Button 
-                    type="button"
-                    variant="ghost" 
-                    size="sm"
-                    onClick={clearSelectedCustomer}
-                    className="text-emerald-600 hover:text-emerald-800"
-                  >
-                    Limpar
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      size="sm"
+                      onClick={fetchCustomerHistory}
+                      className="border-emerald-400 text-emerald-700 hover:bg-emerald-100"
+                      data-testid="view-history-btn"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      Ver Histórico
+                    </Button>
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      size="sm"
+                      onClick={clearSelectedCustomer}
+                      className="text-emerald-600 hover:text-emerald-800"
+                    >
+                      Limpar
+                    </Button>
+                  </div>
                 </div>
                 
                 {/* Phone selection if multiple */}
