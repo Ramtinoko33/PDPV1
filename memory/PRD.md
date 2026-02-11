@@ -108,6 +108,14 @@ Sistema de gestão de pedidos para oficina automóvel (PDPV Tickets) com UI em p
 - Corrigido conflito bcrypt/passlib: bcrypt==4.0.1
 - Adicionado endpoint GET /health para container orchestration
 
+## Web Push Notifications (12/02/2026)
+- Implementado Service Worker (sw.js)
+- Configuradas chaves VAPID para autenticação
+- Endpoints API: vapid-public-key, subscribe, unsubscribe
+- UI integrada no centro de notificações
+- Notificações funcionam com browser fechado
+
 ## Data de Implementação
 - MVP: 10/02/2026
 - Correções Deployment: 12/02/2026
+- Web Push Notifications: 12/02/2026
