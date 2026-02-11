@@ -67,6 +67,12 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       
+      <Route path="/customers" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+          <CustomerManagement />
+        </ProtectedRoute>
+      } />
+      
       <Route path="/users" element={
         <ProtectedRoute allowedRoles={['ADMIN']}>
           <UserManagement />
