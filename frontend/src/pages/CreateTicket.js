@@ -617,6 +617,129 @@ const CreateTicket = () => {
           </Button>
         </div>
       </form>
+
+      {/* Customer History Dialog */}
+      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <History className="h-5 w-5 text-orange-600" />
+              Histórico do Cliente
+            </DialogTitle>
+            {selectedCustomer && (
+              <p className="text-zinc-500">{selectedCustomer.name}</p>
+            )}
+          </DialogHeader>
+          
+          {loadingHistory ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : customerHistory ? (
+            <Tabs defaultValue="tickets" className="w-full">
+              <TabsList className="w-full">
+                <TabsTrigger value="tickets" className="flex-1">
+                  <Ticket className="h-4 w-4 mr-2" />
+                  Tickets ({customerHistory.total_tickets})
+                </TabsTrigger>
+                <TabsTrigger value="vehicles" className="flex-1">
+                  <Car className="h-4 w-4 mr-2" />
+                  Veículos ({customerHistory.vehicles?.length || 0})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="tickets">
+                <ScrollArea className="h-[400px]">
+                  {customerHistory.tickets?.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">
+                      <Ticket className="h-12 w-12 mx-auto mb-3 text-zinc-300" />
+                      <p className="font-medium">Nenhum ticket anterior</p>
+                      <p className="text-sm">Este é um cliente novo!</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {customerHistory.tickets?.map((ticket) => (
+                        <div 
+                          key={ticket.id}
+                          className="p-4 hover:bg-zinc-50 cursor-pointer transition-colors"
+                          onClick={() => {
+                            setShowHistoryDialog(false);
+                            navigate(`/tickets/${ticket.id}`);
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm text-orange-600 font-semibold">
+                                {ticket.ticket_number}
+                              </span>
+                              <Badge className={`text-xs ${getStatusClass(ticket.status)}`}>
+                                {statusLabels[ticket.status] || ticket.status}
+                              </Badge>
+                            </div>
+                            <span className="text-sm text-zinc-500">
+                              {formatDate(ticket.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-zinc-600 line-clamp-2">
+                            {ticket.description || 'Sem descrição'}
+                          </p>
+                          {ticket.vehicle_plate && (
+                            <div className="flex items-center gap-1 mt-2 text-xs text-zinc-400">
+                              <Car className="h-3 w-3" />
+                              <span className="font-mono">{ticket.vehicle_plate}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="vehicles">
+                <ScrollArea className="h-[400px]">
+                  {customerHistory.vehicles?.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">
+                      <Car className="h-12 w-12 mx-auto mb-3 text-zinc-300" />
+                      <p>Nenhum veículo registado</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2">
+                      {customerHistory.vehicles?.map((vehicle) => (
+                        <div 
+                          key={vehicle.id} 
+                          className={`p-4 border rounded-lg ${
+                            formData.vehicle_plate === vehicle.plate 
+                              ? 'border-orange-400 bg-orange-50' 
+                              : 'border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center">
+                              <Car className="h-5 w-5 text-zinc-600" />
+                            </div>
+                            <div>
+                              <p className="font-mono font-bold text-slate-900">{vehicle.plate}</p>
+                              {vehicle.model && (
+                                <p className="text-sm text-zinc-500">{vehicle.model}</p>
+                              )}
+                            </div>
+                          </div>
+                          {formData.vehicle_plate === vehicle.plate && (
+                            <Badge className="mt-2 bg-orange-100 text-orange-700 text-xs">
+                              Selecionado para este ticket
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
