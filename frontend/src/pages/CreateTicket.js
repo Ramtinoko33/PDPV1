@@ -310,28 +310,17 @@ const CreateTicket = () => {
                                 <Phone className="h-3 w-3" />
                                 {customer.phones[0]}
                                 {customer.phones.length > 1 && (
-                                  <span className="text-xs text-orange-600">+{customer.phones.length - 1}</span>
+                                  <span className="text-xs text-orange-600 font-medium">+{customer.phones.length - 1}</span>
                                 )}
                               </span>
                             )}
                             {customer.vehicles?.length > 0 && (
-                              <span className="flex items-center gap-1">
+                              <span className="flex items-center gap-1 font-mono text-xs">
                                 <Car className="h-3 w-3" />
                                 {customer.vehicles[0].plate}
                                 {customer.vehicles.length > 1 && (
-                                  <span className="text-xs text-orange-600">+{customer.vehicles.length - 1}</span>
+                                  <span className="text-xs text-orange-600 font-medium">+{customer.vehicles.length - 1}</span>
                                 )}
-                              </span>
-                            )}
-                              <span className="flex items-center gap-1">
-                                <Phone className="h-3 w-3" />
-                                {customer.phones[0]}
-                              </span>
-                            )}
-                            {customer.vehicle_plate && (
-                              <span className="flex items-center gap-1">
-                                <Car className="h-3 w-3" />
-                                {customer.vehicle_plate}
                               </span>
                             )}
                           </div>
