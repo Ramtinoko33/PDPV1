@@ -314,10 +314,10 @@ export const NotificationProvider = ({ children }) => {
       fetchNotifications();
       connectWebSocket();
 
-      // Check Web Push permission status
-      if ('Notification' in window && Notification.permission === 'granted') {
-        setWebPushEnabled(true);
-      }
+      // Check Web Push subscription status
+      checkPushSubscription().then(isSubscribed => {
+        setWebPushEnabled(isSubscribed);
+      });
     }
 
     return () => {
@@ -328,17 +328,19 @@ export const NotificationProvider = ({ children }) => {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [token, user, fetchNotifications, connectWebSocket]);
+  }, [token, user, fetchNotifications, connectWebSocket, checkPushSubscription]);
 
   return (
     <NotificationContext.Provider value={{
       notifications,
       unreadCount,
       webPushEnabled,
+      pushLoading,
       fetchNotifications,
       markAsRead,
       markAllAsRead,
-      requestWebPushPermission
+      requestWebPushPermission,
+      disableWebPush
     }}>
       {children}
     </NotificationContext.Provider>
