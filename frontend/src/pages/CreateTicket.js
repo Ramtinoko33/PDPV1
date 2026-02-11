@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle, Search, History } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -17,7 +17,11 @@ const CreateTicket = () => {
   const { user, getAuthHeaders } = useAuth();
   const navigate = useNavigate();
   const phoneRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   
   const [formData, setFormData] = useState({
     customer_phone: '',
@@ -36,6 +40,66 @@ const CreateTicket = () => {
       phoneRef.current.focus();
     }
   }, []);
+
+  // Search customers as user types
+  const searchCustomers = useCallback(async (query) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/customers/search?q=${encodeURIComponent(query)}`,
+        { headers: getAuthHeaders() }
+      );
+      setSearchResults(response.data);
+      setShowSuggestions(response.data.length > 0);
+    } catch (error) {
+      console.error('Error searching customers:', error);
+    }
+  }, [getAuthHeaders]);
+
+  const handlePhoneChange = (value) => {
+    setFormData(prev => ({ ...prev, customer_phone: value }));
+    setSelectedCustomer(null);
+    
+    // Debounce search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      searchCustomers(value);
+    }, 300);
+  };
+
+  const handlePlateChange = (value) => {
+    const upperValue = value.toUpperCase();
+    setFormData(prev => ({ ...prev, vehicle_plate: upperValue }));
+    setSelectedCustomer(null);
+    
+    // Debounce search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      searchCustomers(upperValue);
+    }, 300);
+  };
+
+  const selectCustomer = (customer) => {
+    setSelectedCustomer(customer);
+    setFormData(prev => ({
+      ...prev,
+      customer_name: customer.name,
+      customer_phone: customer.phones?.[0] || prev.customer_phone,
+      customer_email: customer.emails?.[0] || '',
+      vehicle_plate: customer.vehicle_plate || prev.vehicle_plate
+    }));
+    setShowSuggestions(false);
+    setSearchResults([]);
+  };
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
