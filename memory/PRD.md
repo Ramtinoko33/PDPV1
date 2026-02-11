@@ -93,17 +93,16 @@ Sistema de gestão de pedidos para oficina automóvel (PDPV Tickets) com UI em p
 
 ## Próximas Ações
 ### P1 - Prioridade Alta
-1. Implementar Web Push Notifications (service worker + VAPID)
-2. Integração WhatsApp real (Twilio/API Business)
+1. Integração WhatsApp real (Twilio/API Business)
 
 ### P2 - Prioridade Média
-3. Integração real com serviço de email (Resend/SendGrid)
-4. Dashboard Kanban alternativo
+2. Integração real com serviço de email (Resend/SendGrid)
+3. Dashboard Kanban alternativo
 
 ### P3 - Backlog
-5. Funcionalidades específicas para papel "Financeiro"
-6. Jobs em background para verificação de SLAs
-7. Refactoring do backend (modularizar server.py)
+4. Funcionalidades específicas para papel "Financeiro"
+5. Jobs em background para verificação de SLAs
+6. Refactoring do backend (modularizar server.py)
 
 ## Correções de Deployment (12/02/2026)
 - Corrigido conflito bcrypt/passlib: bcrypt==4.0.1
