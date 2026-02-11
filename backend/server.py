@@ -552,31 +552,7 @@ async def search_customers(
                 "vehicles": [{"plate": v["plate"], "model": v.get("model")} for v in vehicles]
             })
     
-    return results[:15],
-                "vehicle_plate": v["plate"],
-                "vehicle_model": v.get("model")
-            })
-    
-    # Search by name
-    customers_by_name = await db.customers.find(
-        {"name": {"$regex": q, "$options": "i"}},
-        {"_id": 0}
-    ).limit(5).to_list(5)
-    
-    for c in customers_by_name:
-        if any(r["id"] == c["id"] for r in results):
-            continue
-        vehicles = await db.vehicles.find({"customer_id": c["id"]}, {"_id": 0}).limit(1).to_list(1)
-        results.append({
-            "id": c["id"],
-            "name": c["name"],
-            "phones": c.get("phones", []),
-            "emails": c.get("emails", []),
-            "vehicle_plate": vehicles[0]["plate"] if vehicles else None,
-            "vehicle_model": vehicles[0].get("model") if vehicles else None
-        })
-    
-    return results[:10]
+    return results[:15]
 
 @api_router.get("/customers/{customer_id}", response_model=CustomerResponse)
 async def get_customer(customer_id: str, current_user: dict = Depends(get_current_user)):
