@@ -292,7 +292,7 @@ const CreateTicket = () => {
                 />
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <Label htmlFor="plate" className="text-sm font-semibold">
                   Matrícula
                 </Label>
@@ -302,10 +302,41 @@ const CreateTicket = () => {
                     id="plate"
                     placeholder="AA-00-AA"
                     value={formData.vehicle_plate}
-                    onChange={(e) => handleChange('vehicle_plate', e.target.value.toUpperCase())}
+                    onChange={(e) => handlePlateChange(e.target.value)}
+                    onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
                     className="h-12 pl-11 border-2 focus:border-orange-500 uppercase"
+                    autoComplete="off"
                     data-testid="ticket-plate-input"
                   />
+                  {/* Suggestions dropdown for plate */}
+                  {showSuggestions && searchResults.length > 0 && formData.vehicle_plate.length >= 2 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-orange-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                      <div className="p-2 bg-orange-50 border-b text-xs font-semibold text-orange-700">
+                        <Search className="h-3 w-3 inline mr-1" />
+                        Veículos encontrados
+                      </div>
+                      {searchResults.map((customer) => (
+                        <div
+                          key={customer.id}
+                          className="p-3 hover:bg-zinc-50 cursor-pointer border-b last:border-0"
+                          onClick={() => selectCustomer(customer)}
+                        >
+                          <p className="font-semibold text-slate-900">{customer.name}</p>
+                          <div className="flex items-center gap-3 text-sm text-zinc-500 mt-1">
+                            {customer.vehicle_plate && (
+                              <span className="flex items-center gap-1 font-mono">
+                                <Car className="h-3 w-3" />
+                                {customer.vehicle_plate}
+                              </span>
+                            )}
+                            {customer.vehicle_model && (
+                              <span className="text-xs">{customer.vehicle_model}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
