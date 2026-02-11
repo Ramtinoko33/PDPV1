@@ -71,7 +71,17 @@ Sistema de gestão de pedidos para oficina automóvel (PDPV Tickets) com UI em p
 - [x] Marcação como lida (individual e todas)
 - [x] Notificações para supervisores em novos tickets
 
-### 11. Deployment Ready
+### 11. Web Push Notifications
+- [x] Service Worker registado em /sw.js
+- [x] Chaves VAPID configuradas no backend
+- [x] Endpoint GET /api/push/vapid-public-key
+- [x] Endpoint POST /api/push/subscribe 
+- [x] Endpoint DELETE /api/push/unsubscribe
+- [x] UI para ativar/desativar no NotificationCenter
+- [x] Notificações aparecem no sistema operativo (Windows/Mac/Android)
+- [x] Click na notificação abre o ticket correspondente
+
+### 12. Deployment Ready
 - [x] Endpoint /health para Kubernetes health checks
 - [x] Compatibilidade bcrypt/passlib corrigida (bcrypt==4.0.1)
 
