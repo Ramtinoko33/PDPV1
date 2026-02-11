@@ -8,36 +8,144 @@ const NotificationContext = createContext(null);
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://');
 
+// Convert VAPID key from base64 to Uint8Array
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export const NotificationProvider = ({ children }) => {
   const { user, token } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [webPushEnabled, setWebPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
 
-  // Request Web Push permission
+  // Check if push subscription exists
+  const checkPushSubscription = useCallback(async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return false;
+    }
+    
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      return !!subscription;
+    } catch (err) {
+      console.error('Error checking push subscription:', err);
+      return false;
+    }
+  }, []);
+
+  // Register Service Worker and subscribe to Web Push
   const requestWebPushPermission = useCallback(async () => {
-    if (!('Notification' in window)) {
-      console.log('Este browser não suporta notificações');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      toast.error('Este browser não suporta notificações push');
       return false;
     }
 
-    if (Notification.permission === 'granted') {
-      setWebPushEnabled(true);
-      return true;
+    if (!token) {
+      toast.error('Precisa estar autenticado');
+      return false;
     }
 
-    if (Notification.permission !== 'denied') {
+    setPushLoading(true);
+
+    try {
+      // Request notification permission
       const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        setWebPushEnabled(true);
-        toast.success('Notificações ativadas!');
-        return true;
+      
+      if (permission !== 'granted') {
+        toast.error('Permissão de notificações negada');
+        return false;
       }
+
+      // Register service worker
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      
+      // Get VAPID public key from server
+      const { data } = await axios.get(`${API_URL}/api/push/vapid-public-key`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const vapidPublicKey = urlBase64ToUint8Array(data.publicKey);
+      
+      // Subscribe to push
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidPublicKey
+      });
+      
+      // Send subscription to server
+      await axios.post(`${API_URL}/api/push/subscribe`, subscription.toJSON(), {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      setWebPushEnabled(true);
+      toast.success('Notificações push ativadas!', {
+        description: 'Vai receber alertas mesmo com o browser fechado.'
+      });
+      return true;
+    } catch (err) {
+      console.error('Error subscribing to push:', err);
+      toast.error('Erro ao ativar notificações push');
+      return false;
+    } finally {
+      setPushLoading(false);
     }
-    return false;
-  }, []);
+  }, [token]);
+
+  // Unsubscribe from Web Push
+  const disableWebPush = useCallback(async () => {
+    if (!token) return false;
+
+    setPushLoading(true);
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      
+      if (subscription) {
+        // Notify server
+        await axios.delete(`${API_URL}/api/push/unsubscribe`, {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          data: subscription.toJSON()
+        });
+        
+        // Unsubscribe locally
+        await subscription.unsubscribe();
+      }
+      
+      setWebPushEnabled(false);
+      toast.success('Notificações push desativadas');
+      return true;
+    } catch (err) {
+      console.error('Error unsubscribing:', err);
+      toast.error('Erro ao desativar notificações');
+      return false;
+    } finally {
+      setPushLoading(false);
+    }
+  }, [token]);
 
   // Show browser notification
   const showBrowserNotification = useCallback((title, body, data = {}) => {
