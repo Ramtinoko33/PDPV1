@@ -178,12 +178,32 @@ const CreateTicket = () => {
               <User className="h-5 w-5 text-orange-600" />
               Dados do Cliente
             </CardTitle>
-            <CardDescription>Informação obrigatória marcada com *</CardDescription>
+            <CardDescription>Informação obrigatória marcada com * | Digite telefone ou matrícula para pesquisar cliente</CardDescription>
           </CardHeader>
           <CardContent className="p-6 space-y-5">
+            {/* Customer selected banner */}
+            {selectedCustomer && (
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <History className="h-5 w-5 text-emerald-600" />
+                <div className="flex-1">
+                  <p className="font-semibold text-emerald-800">Cliente existente selecionado</p>
+                  <p className="text-sm text-emerald-600">{selectedCustomer.name}</p>
+                </div>
+                <Button 
+                  type="button"
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="text-emerald-600"
+                >
+                  Limpar
+                </Button>
+              </div>
+            )}
+
             {/* Phone and Name - Required */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <Label htmlFor="phone" className="text-sm font-semibold">
                   Telefone *
                 </Label>
@@ -194,11 +214,45 @@ const CreateTicket = () => {
                     id="phone"
                     placeholder="912 345 678"
                     value={formData.customer_phone}
-                    onChange={(e) => handleChange('customer_phone', e.target.value)}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
                     className="h-12 pl-11 border-2 focus:border-orange-500"
                     required
+                    autoComplete="off"
                     data-testid="ticket-phone-input"
                   />
+                  {/* Suggestions dropdown */}
+                  {showSuggestions && searchResults.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-orange-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                      <div className="p-2 bg-orange-50 border-b text-xs font-semibold text-orange-700">
+                        <Search className="h-3 w-3 inline mr-1" />
+                        Clientes encontrados
+                      </div>
+                      {searchResults.map((customer) => (
+                        <div
+                          key={customer.id}
+                          className="p-3 hover:bg-zinc-50 cursor-pointer border-b last:border-0"
+                          onClick={() => selectCustomer(customer)}
+                        >
+                          <p className="font-semibold text-slate-900">{customer.name}</p>
+                          <div className="flex items-center gap-3 text-sm text-zinc-500 mt-1">
+                            {customer.phones?.[0] && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {customer.phones[0]}
+                              </span>
+                            )}
+                            {customer.vehicle_plate && (
+                              <span className="flex items-center gap-1">
+                                <Car className="h-3 w-3" />
+                                {customer.vehicle_plate}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               
