@@ -120,6 +120,7 @@ const CreateTicket = () => {
 
   const clearSelectedCustomer = () => {
     setSelectedCustomer(null);
+    setCustomerHistory(null);
     setFormData(prev => ({
       ...prev,
       customer_name: '',
@@ -127,6 +128,60 @@ const CreateTicket = () => {
       customer_email: '',
       vehicle_plate: ''
     }));
+  };
+
+  const fetchCustomerHistory = async () => {
+    if (!selectedCustomer?.id) return;
+    
+    setLoadingHistory(true);
+    setShowHistoryDialog(true);
+    
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/customers/${selectedCustomer.id}/history`,
+        { headers: getAuthHeaders() }
+      );
+      setCustomerHistory(response.data);
+    } catch (error) {
+      toast.error('Erro ao carregar histórico');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    return new Date(dateStr).toLocaleDateString('pt-PT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  const statusLabels = {
+    NOVO: 'Novo',
+    TRIAGEM: 'Triagem',
+    EM_ORCAMENTO: 'Em Orçamento',
+    AGUARDA_CLIENTE: 'Aguarda Cliente',
+    AGUARDA_PECA: 'Aguarda Peça',
+    AGENDADO: 'Agendado',
+    FINANCEIRO: 'Financeiro',
+    CONCLUIDO: 'Concluído',
+    CANCELADO: 'Cancelado'
+  };
+
+  const getStatusClass = (status) => {
+    const classes = {
+      NOVO: 'bg-blue-100 text-blue-800',
+      TRIAGEM: 'bg-purple-100 text-purple-800',
+      EM_ORCAMENTO: 'bg-amber-100 text-amber-800',
+      AGUARDA_CLIENTE: 'bg-orange-100 text-orange-800',
+      AGUARDA_PECA: 'bg-yellow-100 text-yellow-800',
+      AGENDADO: 'bg-cyan-100 text-cyan-800',
+      FINANCEIRO: 'bg-indigo-100 text-indigo-800',
+      CONCLUIDO: 'bg-emerald-100 text-emerald-800',
+      CANCELADO: 'bg-zinc-100 text-zinc-800'
+    };
+    return classes[status] || 'bg-zinc-100 text-zinc-800';
   };
 
   const handleChange = (field, value) => {
