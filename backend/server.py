@@ -988,6 +988,9 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     sla_first = compute_sla_first_response(ticket_data.type)
     sla_quote = compute_sla_quote(ticket_data.type)
     
+    # Set status to TRIAGEM if assigned to someone, otherwise NOVO
+    initial_status = TicketStatus.TRIAGEM.value if ticket_data.assigned_to_user_id else TicketStatus.NOVO.value
+    
     ticket_doc = {
         "id": ticket_id,
         "ticket_number": ticket_number,
@@ -995,14 +998,14 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "updated_at": now.isoformat(),
         "channel": ticket_data.channel.value,
         "type": ticket_data.type.value,
-        "status": TicketStatus.NOVO.value,
+        "status": initial_status,
         "priority": ticket_data.priority.value,
         "description": ticket_data.description,
         "customer_name": ticket_data.customer_name,
         "customer_phone": ticket_data.customer_phone,
         "customer_email": ticket_data.customer_email,
         "vehicle_plate": ticket_data.vehicle_plate,
-        "assigned_to_user_id": None,
+        "assigned_to_user_id": ticket_data.assigned_to_user_id if ticket_data.assigned_to_user_id else None,
         "last_public_message_at": None,
         "first_response_done": False,
         "sla_first_response_due": sla_first.isoformat(),
@@ -1021,6 +1024,17 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         ticket_id=ticket_id,
         ticket_number=ticket_number
     ))
+    
+    # If assigned, notify the assigned user
+    if ticket_data.assigned_to_user_id:
+        asyncio.create_task(create_notification(
+            user_id=ticket_data.assigned_to_user_id,
+            title="Ticket Atribuído",
+            body=f"O ticket {ticket_number} foi-lhe atribuído",
+            notification_type="info",
+            ticket_id=ticket_id,
+            ticket_number=ticket_number
+        ))
     
     ticket_doc["is_overdue"] = check_ticket_overdue(ticket_doc)
     return TicketResponse(**ticket_doc)
