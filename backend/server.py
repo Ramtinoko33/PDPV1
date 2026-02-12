@@ -225,6 +225,8 @@ class TicketResponse(BaseModel):
 class MessageCreate(BaseModel):
     body: str
     channel: MessageChannel = MessageChannel.EMAIL
+    is_quote_response: bool = False  # If true, changes ticket status to AGUARDA_CLIENTE
+    attachment_ids: List[str] = []  # List of attachment IDs to link to this message
 
 class MessageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -238,6 +240,7 @@ class MessageResponse(BaseModel):
     to_text: Optional[str] = None
     created_by_user_id: Optional[str] = None
     created_by_name: Optional[str] = None
+    attachment_ids: List[str] = []
 
 class NoteCreate(BaseModel):
     body: str
