@@ -1230,7 +1230,7 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
     # Check permissions
     if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Sem permissão")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
+    if user["role"] == UserRole.FINANCEIRO.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
@@ -1247,7 +1247,8 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
         "body": message_data.body,
         "from_text": user["email"],
         "to_text": ticket.get("customer_email") or ticket.get("customer_phone"),
-        "created_by_user_id": user["id"]
+        "created_by_user_id": user["id"],
+        "attachment_ids": message_data.attachment_ids
     }
     await db.messages.insert_one(message_doc)
     
@@ -1257,10 +1258,17 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
         "last_public_message_at": now.isoformat(),
         "first_response_done": True
     }
+    
+    # If this is a quote response, change status to AGUARDA_CLIENTE
+    if message_data.is_quote_response:
+        update_doc["status"] = TicketStatus.AGUARDA_CLIENTE.value
+        update_doc["quote_sent"] = True
+    
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
     # Mock email sending (in production, integrate with email service)
-    logger.info(f"[MOCK EMAIL] Sending to {message_doc['to_text']}: {message_data.body[:100]}")
+    attachments_info = f" (com {len(message_data.attachment_ids)} anexo(s))" if message_data.attachment_ids else ""
+    logger.info(f"[MOCK EMAIL] Sending to {message_doc['to_text']}: {message_data.body[:100]}{attachments_info}")
     
     message_doc["created_by_name"] = user["name"]
     return MessageResponse(**message_doc)
