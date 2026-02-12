@@ -204,9 +204,7 @@ const TicketDetail = () => {
     { value: 'TRIAGEM', label: 'Triagem' },
     { value: 'EM_ORCAMENTO', label: 'Em Orçamento' },
     { value: 'AGUARDA_CLIENTE', label: 'Aguarda Cliente' },
-    { value: 'AGUARDA_PECA', label: 'Aguarda Peça' },
     { value: 'AGENDADO', label: 'Agendado' },
-    { value: 'FINANCEIRO', label: 'Financeiro' },
     { value: 'CONCLUIDO', label: 'Concluído' },
     { value: 'CANCELADO', label: 'Cancelado' }
   ];
@@ -217,9 +215,7 @@ const TicketDetail = () => {
       TRIAGEM: 'status-triagem',
       EM_ORCAMENTO: 'status-em-orcamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
-      AGUARDA_PECA: 'status-aguarda-peca',
       AGENDADO: 'status-agendado',
-      FINANCEIRO: 'status-financeiro',
       CONCLUIDO: 'status-concluido',
       CANCELADO: 'status-cancelado'
     };
