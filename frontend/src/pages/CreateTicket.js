@@ -358,6 +358,28 @@ const CreateTicket = () => {
                     </Select>
                   </div>
                 )}
+                
+                {/* Email selection if multiple */}
+                {selectedCustomer.emails?.length > 1 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-emerald-700">
+                      <Mail className="h-3 w-3 inline mr-1" />
+                      Escolher email ({selectedCustomer.emails.length} disponíveis)
+                    </Label>
+                    <Select value={formData.customer_email} onValueChange={handleSelectEmail}>
+                      <SelectTrigger className="border-emerald-300 bg-white" data-testid="select-email">
+                        <SelectValue placeholder="Selecionar email" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedCustomer.emails.map((email, idx) => (
+                          <SelectItem key={idx} value={email}>
+                            {email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
 
