@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle, Search, History, Ticket, Eye } from 'lucide-react';
+import { ArrowLeft, Save, Phone, User, Car, FileText, AlertCircle, Search, History, Ticket, Eye, Mail, UserCheck } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
