@@ -597,6 +597,30 @@ const CreateTicket = () => {
               </div>
             </div>
 
+            {/* Assign to user */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-orange-600" />
+                Atribuir a
+              </Label>
+              <Select 
+                value={formData.assigned_to_user_id} 
+                onValueChange={(value) => handleChange('assigned_to_user_id', value)}
+              >
+                <SelectTrigger className="h-12 border-2" data-testid="ticket-assign-select">
+                  <SelectValue placeholder="Selecionar utilizador (opcional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Não atribuído</SelectItem>
+                  {availableUsers.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Description */}
             <div className="space-y-2">
               <Label htmlFor="description" className="text-sm font-semibold">
