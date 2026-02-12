@@ -275,7 +275,6 @@ const TicketDetail = () => {
     ORCAMENTO_MECANICA: 'Orçamento Mecânica',
     MARCACAO: 'Marcação',
     INFORMACAO: 'Informação',
-    FINANCEIRO: 'Financeiro',
     INTERNO: 'Interno',
     RECLAMACAO: 'Reclamação'
   };
@@ -310,8 +309,7 @@ const TicketDetail = () => {
   if (!ticket) return null;
 
   const canEdit = ['ADMIN', 'SUPERVISOR'].includes(user?.role) || 
-    (user?.role === 'AGENT' && ticket.assigned_to_user_id === user.id) ||
-    (user?.role === 'FINANCEIRO' && ticket.type === 'FINANCEIRO');
+    (user?.role === 'AGENT' && ticket.assigned_to_user_id === user.id);
 
   return (
     <div className="space-y-6">
