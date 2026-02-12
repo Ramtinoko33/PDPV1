@@ -548,6 +548,76 @@ const TicketDetail = () => {
                     className="min-h-[100px] border-2 focus:border-orange-500"
                     data-testid="message-input"
                   />
+                  
+                  {/* Attachments section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={messageFileInputRef}
+                        onChange={handleMessageFileUpload}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => messageFileInputRef.current?.click()}
+                        disabled={uploadingMessageFile}
+                        className="border-zinc-300"
+                      >
+                        {uploadingMessageFile ? (
+                          <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin mr-2" />
+                        ) : (
+                          <Paperclip className="h-4 w-4 mr-2" />
+                        )}
+                        Anexar Ficheiro
+                      </Button>
+                      <span className="text-xs text-zinc-500">
+                        PDF, Word, Excel, Imagens
+                      </span>
+                    </div>
+                    
+                    {/* List of attached files */}
+                    {messageAttachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {messageAttachments.map((att) => (
+                          <div 
+                            key={att.id}
+                            className="flex items-center gap-2 bg-zinc-100 px-3 py-1.5 rounded-full text-sm"
+                          >
+                            <FileText className="h-3 w-3 text-zinc-500" />
+                            <span className="max-w-[150px] truncate">{att.original_name}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeMessageAttachment(att.id)}
+                              className="text-zinc-400 hover:text-red-500"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Quote response checkbox */}
+                  <div className="flex items-center space-x-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <Checkbox
+                      id="quote-response"
+                      checked={isQuoteResponse}
+                      onCheckedChange={(checked) => setIsQuoteResponse(checked)}
+                      data-testid="quote-response-checkbox"
+                    />
+                    <Label 
+                      htmlFor="quote-response" 
+                      className="text-sm font-medium text-amber-800 cursor-pointer"
+                    >
+                      Esta é uma resposta de orçamento (altera o estado para "Aguarda Cliente")
+                    </Label>
+                  </div>
+                  
                   <div className="flex justify-end">
                     <Button 
                       type="submit" 
@@ -560,7 +630,7 @@ const TicketDetail = () => {
                       ) : (
                         <>
                           <Send className="h-4 w-4 mr-2" />
-                          Enviar Email
+                          {isQuoteResponse ? 'Enviar Orçamento' : 'Enviar Email'}
                         </>
                       )}
                     </Button>
