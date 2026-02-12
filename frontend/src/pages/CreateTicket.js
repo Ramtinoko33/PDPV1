@@ -600,14 +600,14 @@ const CreateTicket = () => {
                 Atribuir a
               </Label>
               <Select 
-                value={formData.assigned_to_user_id} 
-                onValueChange={(value) => handleChange('assigned_to_user_id', value)}
+                value={formData.assigned_to_user_id || "none"} 
+                onValueChange={(value) => handleChange('assigned_to_user_id', value === "none" ? '' : value)}
               >
                 <SelectTrigger className="h-12 border-2" data-testid="ticket-assign-select">
                   <SelectValue placeholder="Selecionar utilizador (opcional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Não atribuído</SelectItem>
+                  <SelectItem value="none">Não atribuído</SelectItem>
                   {availableUsers.map(u => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name} ({u.role})
