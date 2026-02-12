@@ -187,6 +187,7 @@ class TicketCreate(BaseModel):
     channel: TicketChannel = TicketChannel.TELEFONE
     priority: TicketPriority = TicketPriority.NORMAL
     description: str = ""
+    assigned_to_user_id: Optional[str] = None
 
 class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
