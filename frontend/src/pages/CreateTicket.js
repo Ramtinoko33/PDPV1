@@ -131,6 +131,10 @@ const CreateTicket = () => {
     setFormData(prev => ({ ...prev, vehicle_plate: plate }));
   };
 
+  const handleSelectEmail = (email) => {
+    setFormData(prev => ({ ...prev, customer_email: email }));
+  };
+
   const clearSelectedCustomer = () => {
     setSelectedCustomer(null);
     setCustomerHistory(null);
