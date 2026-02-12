@@ -179,9 +179,7 @@ const CreateTicket = () => {
     TRIAGEM: 'Triagem',
     EM_ORCAMENTO: 'Em Orçamento',
     AGUARDA_CLIENTE: 'Aguarda Cliente',
-    AGUARDA_PECA: 'Aguarda Peça',
     AGENDADO: 'Agendado',
-    FINANCEIRO: 'Financeiro',
     CONCLUIDO: 'Concluído',
     CANCELADO: 'Cancelado'
   };
@@ -192,9 +190,7 @@ const CreateTicket = () => {
       TRIAGEM: 'bg-purple-100 text-purple-800',
       EM_ORCAMENTO: 'bg-amber-100 text-amber-800',
       AGUARDA_CLIENTE: 'bg-orange-100 text-orange-800',
-      AGUARDA_PECA: 'bg-yellow-100 text-yellow-800',
       AGENDADO: 'bg-cyan-100 text-cyan-800',
-      FINANCEIRO: 'bg-indigo-100 text-indigo-800',
       CONCLUIDO: 'bg-emerald-100 text-emerald-800',
       CANCELADO: 'bg-zinc-100 text-zinc-800'
     };
