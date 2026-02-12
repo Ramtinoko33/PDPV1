@@ -117,17 +117,59 @@ const TicketDetail = () => {
     try {
       await axios.post(
         `${API_URL}/api/tickets/${id}/messages`,
-        { body: newMessage, channel: 'EMAIL' },
+        { 
+          body: newMessage, 
+          channel: 'EMAIL',
+          is_quote_response: isQuoteResponse,
+          attachment_ids: messageAttachments.map(a => a.id)
+        },
         { headers: getAuthHeaders() }
       );
-      toast.success('Mensagem enviada');
+      
+      if (isQuoteResponse) {
+        toast.success('Orçamento enviado - Estado alterado para "Aguarda Cliente"');
+      } else {
+        toast.success('Mensagem enviada');
+      }
+      
       setNewMessage('');
+      setIsQuoteResponse(false);
+      setMessageAttachments([]);
       fetchData();
     } catch (error) {
       toast.error('Erro ao enviar mensagem');
     } finally {
       setSendingMessage(false);
     }
+  };
+
+  const handleMessageFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingMessageFile(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await axios.post(
+        `${API_URL}/api/tickets/${id}/attachments`,
+        formData,
+        { headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' } }
+      );
+      
+      setMessageAttachments(prev => [...prev, response.data]);
+      toast.success('Anexo adicionado');
+    } catch (error) {
+      toast.error('Erro ao anexar ficheiro');
+    } finally {
+      setUploadingMessageFile(false);
+      if (messageFileInputRef.current) messageFileInputRef.current.value = '';
+    }
+  };
+
+  const removeMessageAttachment = (attachmentId) => {
+    setMessageAttachments(prev => prev.filter(a => a.id !== attachmentId));
   };
 
   const addNote = async (e) => {
