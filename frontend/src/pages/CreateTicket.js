@@ -236,7 +236,6 @@ const CreateTicket = () => {
         { value: 'ORCAMENTO_MECANICA', label: 'Orçamento Mecânica' },
         { value: 'MARCACAO', label: 'Marcação' },
         { value: 'INFORMACAO', label: 'Informação' },
-        { value: 'FINANCEIRO', label: 'Financeiro' },
         { value: 'INTERNO', label: 'Interno' },
         { value: 'RECLAMACAO', label: 'Reclamação' }
       ];
