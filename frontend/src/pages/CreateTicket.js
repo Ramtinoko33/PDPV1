@@ -29,6 +29,7 @@ const CreateTicket = () => {
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState([]);
   
   const [formData, setFormData] = useState({
     customer_phone: '',
@@ -38,7 +39,8 @@ const CreateTicket = () => {
     type: user?.role === 'INTERNAL_CREATOR' ? 'INTERNO' : 'INFORMACAO',
     channel: 'TELEFONE',
     priority: 'NORMAL',
-    description: ''
+    description: '',
+    assigned_to_user_id: ''
   });
 
   useEffect(() => {
@@ -46,7 +48,18 @@ const CreateTicket = () => {
     if (phoneRef.current) {
       phoneRef.current.focus();
     }
+    // Fetch available users for assignment
+    fetchUsers();
   }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
+      setAvailableUsers(response.data.filter(u => u.role !== 'FINANCEIRO'));
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
 
   // Search customers as user types
   const searchCustomers = useCallback(async (query) => {
