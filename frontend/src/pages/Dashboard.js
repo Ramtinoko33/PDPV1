@@ -65,9 +65,7 @@ const Dashboard = () => {
     TRIAGEM: 'Triagem',
     EM_ORCAMENTO: 'Em Orçamento',
     AGUARDA_CLIENTE: 'Aguarda Cliente',
-    AGUARDA_PECA: 'Aguarda Peça',
     AGENDADO: 'Agendado',
-    FINANCEIRO: 'Financeiro',
     CONCLUIDO: 'Concluído',
     CANCELADO: 'Cancelado'
   };
@@ -78,9 +76,7 @@ const Dashboard = () => {
       TRIAGEM: 'status-triagem',
       EM_ORCAMENTO: 'status-em-orcamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
-      AGUARDA_PECA: 'status-aguarda-peca',
       AGENDADO: 'status-agendado',
-      FINANCEIRO: 'status-financeiro',
       CONCLUIDO: 'status-concluido',
       CANCELADO: 'status-cancelado'
     };

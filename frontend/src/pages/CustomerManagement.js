@@ -216,9 +216,7 @@ const CustomerManagement = () => {
     TRIAGEM: 'Triagem',
     EM_ORCAMENTO: 'Em Orçamento',
     AGUARDA_CLIENTE: 'Aguarda Cliente',
-    AGUARDA_PECA: 'Aguarda Peça',
     AGENDADO: 'Agendado',
-    FINANCEIRO: 'Financeiro',
     CONCLUIDO: 'Concluído',
     CANCELADO: 'Cancelado'
   };
