@@ -39,6 +39,7 @@ const TicketDetail = () => {
   const { user, getAuthHeaders } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const messageFileInputRef = useRef(null);
 
   const [ticket, setTicket] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -54,6 +55,9 @@ const TicketDetail = () => {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendingNote, setSendingNote] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [isQuoteResponse, setIsQuoteResponse] = useState(false);
+  const [messageAttachments, setMessageAttachments] = useState([]);
+  const [uploadingMessageFile, setUploadingMessageFile] = useState(false);
 
   const fetchData = async () => {
     try {
