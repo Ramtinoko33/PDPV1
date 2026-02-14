@@ -14,7 +14,8 @@ import {
   Menu, 
   X,
   Wrench,
-  ChevronRight
+  ChevronRight,
+  Archive
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
