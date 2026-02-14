@@ -250,6 +250,34 @@ const TicketDetail = () => {
     }
   };
 
+  const handleArchive = async () => {
+    setArchiving(true);
+    try {
+      await axios.post(`${API_URL}/api/tickets/${id}/archive`, {}, { headers: getAuthHeaders() });
+      toast.success('Ticket arquivado com sucesso');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao arquivar ticket');
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    setArchiving(true);
+    try {
+      await axios.post(`${API_URL}/api/tickets/${id}/restore`, {}, { headers: getAuthHeaders() });
+      toast.success('Ticket restaurado com sucesso');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao restaurar ticket');
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const canArchive = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
+
   const statusOptions = [
     { value: 'ABERTO', label: 'Aberto' },
     { value: 'EM_TRATAMENTO', label: 'Em Tratamento' },
