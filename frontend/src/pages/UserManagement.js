@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Users, Download, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Download, RefreshCw, Mail, CheckCircle, XCircle } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -21,6 +21,11 @@ const UserManagement = () => {
   const [showDialog, setShowDialog] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [exporting, setExporting] = useState(false);
+  
+  // Email test state
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const [emailConfig, setEmailConfig] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -40,9 +45,41 @@ const UserManagement = () => {
     }
   };
 
+  const fetchEmailConfig = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/email-config`, { headers: getAuthHeaders() });
+      setEmailConfig(response.data);
+    } catch (error) {
+      console.error('Error fetching email config:', error);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchEmailConfig();
   }, []);
+
+  const handleSendTestEmail = async () => {
+    if (!testEmail) {
+      toast.error('Introduza um email de destino');
+      return;
+    }
+    
+    setSendingTestEmail(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/admin/test-email`,
+        { recipient_email: testEmail },
+        { headers: getAuthHeaders() }
+      );
+      toast.success(response.data.message);
+      setTestEmail('');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao enviar email de teste');
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
 
   const handleOpenDialog = (user = null) => {
     if (user) {
