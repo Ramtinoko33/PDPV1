@@ -211,11 +211,22 @@ class TicketResponse(BaseModel):
     assigned_to_name: Optional[str] = None
     last_public_message_at: Optional[str] = None
     first_response_done: bool = False
-    sla_first_response_due: Optional[str] = None
-    sla_quote_due: Optional[str] = None
+    sla_due: Optional[str] = None
     quote_sent: bool = False
     quote_value: Optional[float] = None
     is_overdue: bool = False
+    archived_at: Optional[str] = None
+    archived_by: Optional[str] = None
+
+class TicketStatusHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    ticket_id: str
+    old_status: Optional[str] = None
+    new_status: str
+    changed_by_user_id: str
+    changed_by_name: Optional[str] = None
+    changed_at: str
 
 class MessageCreate(BaseModel):
     body: str
