@@ -62,6 +62,7 @@ const TicketDetail = () => {
   const [isQuoteResponse, setIsQuoteResponse] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState([]);
   const [uploadingMessageFile, setUploadingMessageFile] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const fetchData = async () => {
     try {
