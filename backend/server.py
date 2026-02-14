@@ -357,8 +357,7 @@ class DashboardStats(BaseModel):
     novos: int = 0
     atrasados_sla: int = 0
     aguarda_cliente: int = 0
-    em_orcamento: int = 0
-    financeiro: int = 0
+    em_tratamento: int = 0
     total: int = 0
 
 # ============== HELPERS ==============
@@ -366,19 +365,10 @@ def generate_ticket_number():
     now = datetime.now(timezone.utc)
     return f"TK{now.strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
 
-def compute_sla_first_response(ticket_type: TicketType) -> datetime:
+def compute_sla_due() -> datetime:
+    """Returns SLA due date - 2 hours from now by default"""
     now = datetime.now(timezone.utc)
-    if ticket_type == TicketType.FINANCEIRO:
-        return now + timedelta(hours=4)
     return now + timedelta(hours=2)
-
-def compute_sla_quote(ticket_type: TicketType) -> Optional[datetime]:
-    now = datetime.now(timezone.utc)
-    if ticket_type == TicketType.ORCAMENTO_PNEUS:
-        return now + timedelta(hours=24)
-    elif ticket_type == TicketType.ORCAMENTO_MECANICA:
-        return now + timedelta(hours=48)
-    return None
 
 def create_access_token(data: dict):
     to_encode = data.copy()
