@@ -135,13 +135,10 @@ const TicketList = () => {
   };
 
   const statusOptions = [
-    { value: 'NOVO', label: 'Novo' },
-    { value: 'TRIAGEM', label: 'Triagem' },
-    { value: 'EM_ORCAMENTO', label: 'Em Orçamento' },
+    { value: 'ABERTO', label: 'Aberto' },
+    { value: 'EM_TRATAMENTO', label: 'Em Tratamento' },
     { value: 'AGUARDA_CLIENTE', label: 'Aguarda Cliente' },
-    { value: 'AGENDADO', label: 'Agendado' },
-    { value: 'CONCLUIDO', label: 'Concluído' },
-    { value: 'CANCELADO', label: 'Cancelado' }
+    { value: 'FECHADO', label: 'Fechado' }
   ];
 
   const typeOptions = [
