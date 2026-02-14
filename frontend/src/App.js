@@ -68,6 +68,12 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       
+      <Route path="/tickets/archived" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+          <ArchivedTickets />
+        </ProtectedRoute>
+      } />
+      
       <Route path="/customers" element={
         <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
           <CustomerManagement />
