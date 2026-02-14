@@ -2114,6 +2114,118 @@ async def notify_supervisors(title: str, body: str, notification_type: str = "in
     for sup in supervisors:
         await create_notification(sup["id"], title, body, notification_type, ticket_id, ticket_number)
 
+# ============== EMAIL TEST ==============
+class TestEmailRequest(BaseModel):
+    recipient_email: EmailStr
+
+@api_router.post("/admin/test-email")
+async def test_email(request: TestEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Send a test email to verify Resend configuration - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem testar email")
+    
+    if not RESEND_API_KEY:
+        raise HTTPException(status_code=400, detail="RESEND_API_KEY não configurada. Configure no ficheiro .env")
+    
+    try:
+        html_content = """
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #f97316; padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
+            </div>
+            <div style="padding: 20px; background-color: #f9fafb;">
+                <h2 style="color: #1f2937;">Teste de Email Bem Sucedido!</h2>
+                <p>Este é um email de teste do sistema PDPV Tickets.</p>
+                <p>Se está a receber este email, a configuração do Resend está correta.</p>
+                <div style="background-color: #d1fae5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <p style="color: #065f46; margin: 0;">✅ Configuração verificada com sucesso!</p>
+                </div>
+            </div>
+            <div style="background-color: #1f2937; padding: 15px; text-align: center;">
+                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                    PDPV - Pneus de Pedro V.
+                </p>
+            </div>
+        </div>
+        """
+        
+        params = {
+            "from": EMAIL_FROM,
+            "to": [request.recipient_email],
+            "subject": "[PDPV Tickets] Teste de Email",
+            "html": html_content
+        }
+        
+        email_result = await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"[RESEND TEST] Test email sent to {request.recipient_email}, ID: {email_result.get('id')}")
+        
+        return {
+            "status": "success",
+            "message": f"Email de teste enviado para {request.recipient_email}",
+            "email_id": email_result.get("id")
+        }
+    except Exception as e:
+        logger.error(f"[RESEND TEST] Failed to send test email: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
+
+@api_router.get("/admin/email-config")
+async def get_email_config(current_user: dict = Depends(get_current_user)):
+    """Get email configuration status - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver configuração")
+    
+    return {
+        "resend_configured": bool(RESEND_API_KEY),
+        "email_from": EMAIL_FROM if RESEND_API_KEY else None
+    }
+
+# ============== SLA BACKGROUND JOB ==============
+async def run_sla_check():
+    """Background task to check and mark overdue tickets"""
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+            
+            # Find tickets that are overdue (SLA due passed, no first response, not closed, not archived)
+            overdue_tickets = await db.tickets.find({
+                "archived_at": None,
+                "status": {"$ne": TicketStatus.FECHADO.value},
+                "first_response_done": False,
+                "sla_due": {"$lt": now_iso, "$ne": None}
+            }, {"_id": 0, "id": 1, "ticket_number": 1, "assigned_to_user_id": 1}).to_list(1000)
+            
+            if overdue_tickets:
+                logger.info(f"[SLA CHECK] Found {len(overdue_tickets)} overdue tickets")
+                
+                # Notify assigned users or supervisors about overdue tickets
+                for ticket in overdue_tickets:
+                    if ticket.get("assigned_to_user_id"):
+                        # Notify assigned user
+                        await create_notification(
+                            user_id=ticket["assigned_to_user_id"],
+                            title="Ticket em Atraso SLA",
+                            body=f"O ticket {ticket['ticket_number']} está em atraso no SLA",
+                            notification_type="warning",
+                            ticket_id=ticket["id"],
+                            ticket_number=ticket["ticket_number"]
+                        )
+                    else:
+                        # Notify supervisors if no one assigned
+                        await notify_supervisors(
+                            title="Ticket em Atraso SLA",
+                            body=f"O ticket {ticket['ticket_number']} está em atraso e não tem responsável",
+                            notification_type="warning",
+                            ticket_id=ticket["id"],
+                            ticket_number=ticket["ticket_number"]
+                        )
+            
+        except Exception as e:
+            logger.error(f"[SLA CHECK] Error: {str(e)}")
+        
+        # Wait 15 minutes before next check
+        await asyncio.sleep(15 * 60)
+
 # Include the router
 app.include_router(api_router)
 
