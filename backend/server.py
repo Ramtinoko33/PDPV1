@@ -1399,8 +1399,6 @@ async def upload_attachment(ticket_id: str, file: UploadFile = File(...), curren
     # Check permissions
     if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Sem permissão")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
-        raise HTTPException(status_code=403, detail="Sem permissão")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     
