@@ -50,7 +50,7 @@ function AppRoutes() {
       } />
       
       <Route path="/tickets" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCEIRO']}>
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
           <TicketList />
         </ProtectedRoute>
       } />
@@ -62,7 +62,7 @@ function AppRoutes() {
       } />
       
       <Route path="/tickets/:id" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCEIRO']}>
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
           <TicketDetail />
         </ProtectedRoute>
       } />
