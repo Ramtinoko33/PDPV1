@@ -43,19 +43,25 @@ const Layout = ({ children }) => {
       path: '/dashboard', 
       label: 'Painel', 
       icon: LayoutDashboard,
-      roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCEIRO', 'INTERNAL_CREATOR']
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
     },
     { 
       path: '/tickets', 
       label: 'Tickets', 
       icon: Ticket,
-      roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCEIRO']
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
     },
     { 
       path: '/tickets/new', 
       label: 'Novo Ticket', 
       icon: Plus,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
+    },
+    { 
+      path: '/tickets/archived', 
+      label: 'Arquivados', 
+      icon: Archive,
+      roles: ['ADMIN', 'SUPERVISOR']
     },
     { 
       path: '/customers', 
