@@ -17,6 +17,7 @@ import shutil
 import asyncio
 import json
 from pywebpush import webpush, WebPushException
+import resend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -25,6 +26,12 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Resend config
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+EMAIL_FROM = os.environ.get('EMAIL_FROM', 'onboarding@resend.dev')
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 # JWT Config
 SECRET_KEY = os.environ.get('JWT_SECRET', 'pdpv-tickets-secret-key-2024')
