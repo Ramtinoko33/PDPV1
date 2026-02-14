@@ -31,7 +31,9 @@ import {
   History,
   StickyNote,
   Paperclip,
-  X
+  X,
+  Archive,
+  RotateCcw
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
