@@ -290,6 +290,71 @@ const UserManagement = () => {
         </CardContent>
       </Card>
 
+      {/* Email Configuration Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-orange-600" />
+            Configuração de Email
+          </CardTitle>
+          <CardDescription>
+            Teste a configuração do envio de emails (Resend)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Config Status */}
+            <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
+              {emailConfig?.resend_configured ? (
+                <>
+                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                  <div>
+                    <p className="font-medium text-emerald-800">Resend Configurado</p>
+                    <p className="text-sm text-zinc-500">Email de envio: {emailConfig.email_from}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-5 w-5 text-red-600" />
+                  <div>
+                    <p className="font-medium text-red-800">Resend Não Configurado</p>
+                    <p className="text-sm text-zinc-500">Configure RESEND_API_KEY no ficheiro .env</p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Test Email Form */}
+            <div className="flex gap-3">
+              <Input
+                type="email"
+                placeholder="Email de destino para teste..."
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="h-11 border-2 flex-1"
+                disabled={!emailConfig?.resend_configured}
+                data-testid="test-email-input"
+              />
+              <Button
+                onClick={handleSendTestEmail}
+                disabled={sendingTestEmail || !emailConfig?.resend_configured}
+                className="h-11 bg-orange-600 hover:bg-orange-700 font-bold"
+                data-testid="send-test-email-btn"
+              >
+                {sendingTestEmail ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Enviar Teste
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* User Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-md">
