@@ -2276,3 +2276,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on application startup"""
+    # Start SLA check background task
+    asyncio.create_task(run_sla_check())
+    logger.info("[STARTUP] SLA background check started (runs every 15 minutes)")
