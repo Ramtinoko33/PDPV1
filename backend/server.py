@@ -1228,6 +1228,157 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     
     return TicketResponse(**updated_ticket)
 
+# ============== ARCHIVE SYSTEM ==============
+@api_router.get("/tickets/archived", response_model=List[TicketResponse])
+async def list_archived_tickets(
+    current_user: dict = Depends(get_current_user),
+    search: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    """List archived tickets - only ADMIN and SUPERVISOR can view"""
+    user = current_user
+    
+    if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver tickets arquivados")
+    
+    query = {"archived_at": {"$ne": None}}
+    
+    if search:
+        query["$or"] = [
+            {"customer_phone": {"$regex": search, "$options": "i"}},
+            {"customer_name": {"$regex": search, "$options": "i"}},
+            {"vehicle_plate": {"$regex": search, "$options": "i"}},
+            {"ticket_number": {"$regex": search, "$options": "i"}}
+        ]
+    
+    tickets = await db.tickets.find(query, {"_id": 0}).sort("archived_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Get assigned user names
+    user_ids = list(set([t.get("assigned_to_user_id") for t in tickets if t.get("assigned_to_user_id")]))
+    users_map = {}
+    if user_ids:
+        users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+        users_map = {u["id"]: u["name"] for u in users}
+    
+    result = []
+    for t in tickets:
+        t["assigned_to_name"] = users_map.get(t.get("assigned_to_user_id"))
+        t["is_overdue"] = check_ticket_overdue(t)
+        result.append(TicketResponse(**t))
+    
+    return result
+
+@api_router.post("/tickets/{ticket_id}/archive")
+async def archive_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Archive a ticket - only ADMIN and SUPERVISOR can archive"""
+    user = current_user
+    
+    if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para arquivar tickets")
+    
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    if ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="Ticket já está arquivado")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {
+            "archived_at": now,
+            "archived_by": user["id"],
+            "updated_at": now
+        }}
+    )
+    
+    # Log the archive action in notes
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": now,
+        "created_by_user_id": user["id"],
+        "body": "Ticket arquivado",
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    return {"message": "Ticket arquivado com sucesso", "archived_at": now}
+
+@api_router.post("/tickets/{ticket_id}/restore")
+async def restore_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Restore an archived ticket - only ADMIN and SUPERVISOR can restore"""
+    user = current_user
+    
+    if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para restaurar tickets")
+    
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    if not ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="Ticket não está arquivado")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {
+            "archived_at": None,
+            "archived_by": None,
+            "updated_at": now
+        }}
+    )
+    
+    # Log the restore action in notes
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": now,
+        "created_by_user_id": user["id"],
+        "body": "Ticket restaurado do arquivo",
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    return {"message": "Ticket restaurado com sucesso"}
+
+@api_router.get("/tickets/{ticket_id}/status-history", response_model=List[TicketStatusHistoryResponse])
+async def get_ticket_status_history(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get status change history for a ticket"""
+    user = current_user
+    
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
+    if user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
+    
+    history = await db.ticket_status_history.find(
+        {"ticket_id": ticket_id}, 
+        {"_id": 0}
+    ).sort("changed_at", -1).to_list(1000)
+    
+    # Get user names
+    user_ids = list(set([h.get("changed_by_user_id") for h in history if h.get("changed_by_user_id")]))
+    users_map = {}
+    if user_ids:
+        users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+        users_map = {u["id"]: u["name"] for u in users}
+    
+    for h in history:
+        h["changed_by_name"] = users_map.get(h.get("changed_by_user_id"))
+    
+    return [TicketStatusHistoryResponse(**h) for h in history]
+
 # ============== MESSAGES ==============
 @api_router.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
 async def create_message(ticket_id: str, message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
