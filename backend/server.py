@@ -1433,9 +1433,52 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
     
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
-    # Mock email sending (in production, integrate with email service)
-    attachments_info = f" (com {len(message_data.attachment_ids)} anexo(s))" if message_data.attachment_ids else ""
-    logger.info(f"[MOCK EMAIL] Sending to {message_doc['to_text']}: {message_data.body[:100]}{attachments_info}")
+    # Send email via Resend if customer has email and API key is configured
+    customer_email = ticket.get("customer_email")
+    if customer_email and RESEND_API_KEY:
+        try:
+            subject = f"[Ticket #{ticket['ticket_number']}] Resposta ao seu pedido"
+            
+            # Build HTML content
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #f97316; padding: 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
+                </div>
+                <div style="padding: 20px; background-color: #f9fafb;">
+                    <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
+                    <p>Recebeu uma nova resposta ao seu pedido:</p>
+                    <div style="background-color: white; padding: 15px; border-left: 4px solid #f97316; margin: 20px 0;">
+                        {message_data.body.replace(chr(10), '<br>')}
+                    </div>
+                    <p style="color: #6b7280; font-size: 14px;">
+                        Referência do ticket: <strong>{ticket['ticket_number']}</strong>
+                    </p>
+                    {f'<p style="color: #6b7280; font-size: 14px;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
+                </div>
+                <div style="background-color: #1f2937; padding: 15px; text-align: center;">
+                    <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                        PDPV - Pneus de Pedro V. | Este é um email automático, por favor não responda.
+                    </p>
+                </div>
+            </div>
+            """
+            
+            params = {
+                "from": EMAIL_FROM,
+                "to": [customer_email],
+                "subject": subject,
+                "html": html_content
+            }
+            
+            # Send email in background (non-blocking)
+            email_result = await asyncio.to_thread(resend.Emails.send, params)
+            logger.info(f"[RESEND] Email sent to {customer_email}, ID: {email_result.get('id')}")
+        except Exception as e:
+            logger.error(f"[RESEND] Failed to send email to {customer_email}: {str(e)}")
+    else:
+        attachments_info = f" (com {len(message_data.attachment_ids)} anexo(s))" if message_data.attachment_ids else ""
+        logger.info(f"[EMAIL NOT SENT] No email or API key. Would send to {message_doc['to_text']}: {message_data.body[:100]}{attachments_info}")
     
     message_doc["created_by_name"] = user["name"]
     return MessageResponse(**message_doc)
