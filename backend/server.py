@@ -1321,8 +1321,6 @@ async def create_note(ticket_id: str, note_data: NoteCreate, current_user: dict 
     # Check permissions
     if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Sem permissão")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
-        raise HTTPException(status_code=403, detail="Sem permissão")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     
@@ -1354,8 +1352,6 @@ async def list_notes(ticket_id: str, current_user: dict = Depends(get_current_us
     
     # Check permissions
     if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
-        raise HTTPException(status_code=403, detail="Sem permissão")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
