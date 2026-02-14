@@ -248,24 +248,18 @@ const TicketDetail = () => {
   };
 
   const statusOptions = [
-    { value: 'NOVO', label: 'Novo' },
-    { value: 'TRIAGEM', label: 'Triagem' },
-    { value: 'EM_ORCAMENTO', label: 'Em Orçamento' },
+    { value: 'ABERTO', label: 'Aberto' },
+    { value: 'EM_TRATAMENTO', label: 'Em Tratamento' },
     { value: 'AGUARDA_CLIENTE', label: 'Aguarda Cliente' },
-    { value: 'AGENDADO', label: 'Agendado' },
-    { value: 'CONCLUIDO', label: 'Concluído' },
-    { value: 'CANCELADO', label: 'Cancelado' }
+    { value: 'FECHADO', label: 'Fechado' }
   ];
 
   const getStatusClass = (status) => {
     const classes = {
-      NOVO: 'status-novo',
-      TRIAGEM: 'status-triagem',
-      EM_ORCAMENTO: 'status-em-orcamento',
+      ABERTO: 'status-aberto',
+      EM_TRATAMENTO: 'status-em-tratamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
-      AGENDADO: 'status-agendado',
-      CONCLUIDO: 'status-concluido',
-      CANCELADO: 'status-cancelado'
+      FECHADO: 'status-fechado'
     };
     return classes[status] || 'bg-zinc-100 text-zinc-700';
   };
