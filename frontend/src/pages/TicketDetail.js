@@ -409,8 +409,54 @@ const TicketDetail = () => {
               </SelectContent>
             </Select>
           )}
+
+          {/* Archive/Restore Button */}
+          {canArchive && (
+            ticket.archived_at ? (
+              <Button
+                variant="outline"
+                className="h-10 border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+                onClick={handleRestore}
+                disabled={archiving}
+                data-testid="restore-ticket-btn"
+              >
+                {archiving ? (
+                  <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                )}
+                Restaurar
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="h-10 border-zinc-300 text-zinc-600 hover:bg-zinc-50"
+                onClick={handleArchive}
+                disabled={archiving}
+                data-testid="archive-ticket-btn"
+              >
+                {archiving ? (
+                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <Archive className="h-4 w-4 mr-2" />
+                )}
+                Arquivar
+              </Button>
+            )
+          )}
         </div>
       </div>
+
+      {/* Archived Banner */}
+      {ticket.archived_at && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3">
+          <Archive className="h-5 w-5 text-amber-600" />
+          <div>
+            <p className="font-semibold text-amber-800">Ticket Arquivado</p>
+            <p className="text-sm text-amber-600">Arquivado em {formatDate(ticket.archived_at)}</p>
+          </div>
+        </div>
+      )}
 
       {/* Customer Info Card */}
       <Card>
