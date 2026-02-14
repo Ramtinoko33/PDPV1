@@ -1472,50 +1472,30 @@ async def download_attachment(attachment_id: str, current_user: dict = Depends(g
 async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     user = current_user
     
-    base_query = {}
+    # Base query: exclude archived tickets
+    base_query = {"archived_at": None}
     
     # Role-based filtering
     if user["role"] == UserRole.AGENT.value:
         base_query["assigned_to_user_id"] = user["id"]
-    elif user["role"] == UserRole.FINANCEIRO.value:
-        base_query["type"] = TicketType.FINANCEIRO.value
     elif user["role"] == UserRole.INTERNAL_CREATOR.value:
         return DashboardStats()
     
-    # Count stats
-    novos = await db.tickets.count_documents({**base_query, "status": TicketStatus.NOVO.value})
+    # Count stats with new statuses
+    novos = await db.tickets.count_documents({**base_query, "status": TicketStatus.ABERTO.value})
     aguarda_cliente = await db.tickets.count_documents({**base_query, "status": TicketStatus.AGUARDA_CLIENTE.value})
-    em_orcamento = await db.tickets.count_documents({**base_query, "status": TicketStatus.EM_ORCAMENTO.value})
-    financeiro = await db.tickets.count_documents({**base_query, "type": TicketType.FINANCEIRO.value})
+    em_tratamento = await db.tickets.count_documents({**base_query, "status": TicketStatus.EM_TRATAMENTO.value})
     
-    # Count overdue using efficient query with only required fields
+    # Count overdue using simplified SLA
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     
-    # Query for overdue first response (not done and past due)
-    overdue_first_response = await db.tickets.count_documents({
-        **base_query,
-        "status": {"$nin": [TicketStatus.CONCLUIDO.value, TicketStatus.CANCELADO.value]},
-        "first_response_done": False,
-        "sla_first_response_due": {"$lt": now_iso}
-    })
-    
-    # Query for overdue quotes (not sent and past due)  
-    overdue_quote = await db.tickets.count_documents({
-        **base_query,
-        "status": {"$nin": [TicketStatus.CONCLUIDO.value, TicketStatus.CANCELADO.value]},
-        "quote_sent": False,
-        "sla_quote_due": {"$lt": now_iso, "$ne": None}
-    })
-    
-    # Total overdue (unique tickets that are overdue on either SLA)
+    # Query for overdue (not closed and past SLA due date without first response)
     atrasados = await db.tickets.count_documents({
         **base_query,
-        "status": {"$nin": [TicketStatus.CONCLUIDO.value, TicketStatus.CANCELADO.value]},
-        "$or": [
-            {"first_response_done": False, "sla_first_response_due": {"$lt": now_iso}},
-            {"quote_sent": False, "sla_quote_due": {"$lt": now_iso, "$ne": None}}
-        ]
+        "status": {"$ne": TicketStatus.FECHADO.value},
+        "first_response_done": False,
+        "sla_due": {"$lt": now_iso}
     })
     
     total = await db.tickets.count_documents(base_query)
@@ -1524,8 +1504,7 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         novos=novos,
         atrasados_sla=atrasados,
         aguarda_cliente=aguarda_cliente,
-        em_orcamento=em_orcamento,
-        financeiro=financeiro,
+        em_tratamento=em_tratamento,
         total=total
     )
 
