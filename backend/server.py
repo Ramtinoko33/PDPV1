@@ -1629,7 +1629,7 @@ async def telegram_webhook(data: TelegramWebhook):
     
     ticket_id = str(uuid.uuid4())
     ticket_number = generate_ticket_number()
-    sla_first = compute_sla_first_response(TicketType.INTERNO)
+    sla_due = compute_sla_due()
     
     ticket_doc = {
         "id": ticket_id,
@@ -1638,7 +1638,7 @@ async def telegram_webhook(data: TelegramWebhook):
         "updated_at": now.isoformat(),
         "channel": TicketChannel.TELEGRAM.value,
         "type": TicketType.INTERNO.value,
-        "status": TicketStatus.NOVO.value,
+        "status": TicketStatus.ABERTO.value,
         "priority": TicketPriority.NORMAL.value,
         "description": data.transcript_text,
         "customer_name": data.sender_name,
@@ -1648,11 +1648,12 @@ async def telegram_webhook(data: TelegramWebhook):
         "assigned_to_user_id": None,
         "last_public_message_at": None,
         "first_response_done": False,
-        "sla_first_response_due": sla_first.isoformat(),
-        "sla_quote_due": None,
+        "sla_due": sla_due.isoformat(),
         "quote_sent": False,
         "quote_value": None,
-        "created_by_user_id": None
+        "created_by_user_id": None,
+        "archived_at": None,
+        "archived_by": None
     }
     await db.tickets.insert_one(ticket_doc)
     
