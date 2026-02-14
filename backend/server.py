@@ -397,16 +397,28 @@ async def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 def check_ticket_overdue(ticket: dict) -> bool:
+    """Check if ticket is overdue based on SLA due date and first response status"""
     now = datetime.now(timezone.utc)
-    if ticket.get("sla_first_response_due") and not ticket.get("first_response_done"):
-        sla_due = datetime.fromisoformat(ticket["sla_first_response_due"].replace("Z", "+00:00"))
-        if now > sla_due:
-            return True
-    if ticket.get("sla_quote_due") and not ticket.get("quote_sent"):
-        sla_due = datetime.fromisoformat(ticket["sla_quote_due"].replace("Z", "+00:00"))
+    # Only check SLA if ticket is not closed and hasn't received first response
+    if ticket.get("status") == TicketStatus.FECHADO.value:
+        return False
+    if ticket.get("sla_due") and not ticket.get("first_response_done"):
+        sla_due = datetime.fromisoformat(ticket["sla_due"].replace("Z", "+00:00"))
         if now > sla_due:
             return True
     return False
+
+async def log_status_change(ticket_id: str, old_status: Optional[str], new_status: str, user_id: str):
+    """Log a status change to the ticket_status_history collection"""
+    history_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "old_status": old_status,
+        "new_status": new_status,
+        "changed_by_user_id": user_id,
+        "changed_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.ticket_status_history.insert_one(history_doc)
 
 # ============== AUTH ROUTES ==============
 @api_router.post("/auth/register", response_model=dict)
