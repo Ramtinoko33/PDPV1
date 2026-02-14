@@ -1514,10 +1514,11 @@ async def whatsapp_webhook(data: WhatsAppWebhook):
     now = datetime.now(timezone.utc)
     threshold = now - timedelta(hours=48)
     
-    # Find existing open ticket for this phone
+    # Find existing open ticket for this phone (excluding archived and closed)
     existing_ticket = await db.tickets.find_one({
         "customer_phone": data.phone,
-        "status": {"$nin": [TicketStatus.CONCLUIDO.value, TicketStatus.CANCELADO.value]},
+        "status": {"$ne": TicketStatus.FECHADO.value},
+        "archived_at": None,
         "created_at": {"$gte": threshold.isoformat()}
     }, {"_id": 0}, sort=[("created_at", -1)])
     
