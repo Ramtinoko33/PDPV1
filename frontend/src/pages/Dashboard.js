@@ -184,12 +184,12 @@ const Dashboard = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Link to="/tickets?status=NOVO" data-testid="stat-novos">
+        <Link to="/tickets?status=ABERTO" data-testid="stat-novos">
           <Card className="card-hover cursor-pointer border-l-4 border-l-blue-500">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Novos</p>
+                  <p className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Abertos</p>
                   <p className="text-4xl font-black text-slate-900 mt-1">{stats?.novos || 0}</p>
                 </div>
                 <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
@@ -232,13 +232,13 @@ const Dashboard = () => {
           </Card>
         </Link>
 
-        <Link to="/tickets?status=EM_ORCAMENTO" data-testid="stat-em-orcamento">
+        <Link to="/tickets?status=EM_TRATAMENTO" data-testid="stat-em-tratamento">
           <Card className="card-hover cursor-pointer border-l-4 border-l-amber-500">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Em Orçamento</p>
-                  <p className="text-4xl font-black text-slate-900 mt-1">{stats?.em_orcamento || 0}</p>
+                  <p className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Em Tratamento</p>
+                  <p className="text-4xl font-black text-slate-900 mt-1">{stats?.em_tratamento || 0}</p>
                 </div>
                 <div className="w-14 h-14 bg-amber-100 rounded-xl flex items-center justify-center">
                   <FileText className="h-7 w-7 text-amber-600" />
