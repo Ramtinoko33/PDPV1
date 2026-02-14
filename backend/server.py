@@ -1119,6 +1119,47 @@ async def list_tickets(
     
     return result
 
+# ============== ARCHIVE SYSTEM - GET (must come before /tickets/{ticket_id}) ==============
+@api_router.get("/tickets/archived", response_model=List[TicketResponse])
+async def list_archived_tickets(
+    current_user: dict = Depends(get_current_user),
+    search: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    """List archived tickets - only ADMIN and SUPERVISOR can view"""
+    user = current_user
+    
+    if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver tickets arquivados")
+    
+    query = {"archived_at": {"$ne": None}}
+    
+    if search:
+        query["$or"] = [
+            {"customer_phone": {"$regex": search, "$options": "i"}},
+            {"customer_name": {"$regex": search, "$options": "i"}},
+            {"vehicle_plate": {"$regex": search, "$options": "i"}},
+            {"ticket_number": {"$regex": search, "$options": "i"}}
+        ]
+    
+    tickets = await db.tickets.find(query, {"_id": 0}).sort("archived_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Get assigned user names
+    user_ids = list(set([t.get("assigned_to_user_id") for t in tickets if t.get("assigned_to_user_id")]))
+    users_map = {}
+    if user_ids:
+        users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+        users_map = {u["id"]: u["name"] for u in users}
+    
+    result = []
+    for t in tickets:
+        t["assigned_to_name"] = users_map.get(t.get("assigned_to_user_id"))
+        t["is_overdue"] = check_ticket_overdue(t)
+        result.append(TicketResponse(**t))
+    
+    return result
+
 @api_router.get("/tickets/{ticket_id}", response_model=TicketResponse)
 async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)):
     user = current_user
