@@ -61,24 +61,18 @@ const Dashboard = () => {
   };
 
   const statusLabels = {
-    NOVO: 'Novo',
-    TRIAGEM: 'Triagem',
-    EM_ORCAMENTO: 'Em Orçamento',
+    ABERTO: 'Aberto',
+    EM_TRATAMENTO: 'Em Tratamento',
     AGUARDA_CLIENTE: 'Aguarda Cliente',
-    AGENDADO: 'Agendado',
-    CONCLUIDO: 'Concluído',
-    CANCELADO: 'Cancelado'
+    FECHADO: 'Fechado'
   };
 
   const getStatusClass = (status) => {
     const classes = {
-      NOVO: 'status-novo',
-      TRIAGEM: 'status-triagem',
-      EM_ORCAMENTO: 'status-em-orcamento',
+      ABERTO: 'status-aberto',
+      EM_TRATAMENTO: 'status-em-tratamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
-      AGENDADO: 'status-agendado',
-      CONCLUIDO: 'status-concluido',
-      CANCELADO: 'status-cancelado'
+      FECHADO: 'status-fechado'
     };
     return classes[status] || 'bg-zinc-100 text-zinc-700';
   };
