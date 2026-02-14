@@ -140,7 +140,6 @@ const UserManagement = () => {
     { value: 'ADMIN', label: 'Administrador' },
     { value: 'SUPERVISOR', label: 'Supervisor (Telefonista)' },
     { value: 'AGENT', label: 'Agente (Rececionista)' },
-    { value: 'FINANCEIRO', label: 'Financeiro' },
     { value: 'INTERNAL_CREATOR', label: 'Criador Interno' }
   ];
 
@@ -151,7 +150,6 @@ const UserManagement = () => {
       ADMIN: 'bg-purple-100 text-purple-800',
       SUPERVISOR: 'bg-blue-100 text-blue-800',
       AGENT: 'bg-emerald-100 text-emerald-800',
-      FINANCEIRO: 'bg-amber-100 text-amber-800',
       INTERNAL_CREATOR: 'bg-zinc-100 text-zinc-800'
     };
     return classes[role] || 'bg-zinc-100 text-zinc-800';
