@@ -78,7 +78,6 @@ const Layout = ({ children }) => {
     ADMIN: 'Administrador',
     SUPERVISOR: 'Telefonista',
     AGENT: 'Rececionista',
-    FINANCEIRO: 'Financeiro',
     INTERNAL_CREATOR: 'Criador Interno'
   };
 
