@@ -1893,17 +1893,6 @@ async def seed_data():
     }
     await db.users.insert_one(agent_doc)
     
-    # Create financeiro
-    fin_doc = {
-        "id": str(uuid.uuid4()),
-        "email": "financeiro@pdpv.pt",
-        "password_hash": pwd_context.hash("fin123"),
-        "name": "Ana Costa",
-        "role": UserRole.FINANCEIRO.value,
-        "created_at": now
-    }
-    await db.users.insert_one(fin_doc)
-    
     return {"message": "Dados de seed criados com sucesso"}
 
 # ============== NOTIFICATIONS API ==============
