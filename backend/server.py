@@ -1130,8 +1130,6 @@ async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_us
     # Check permissions
     if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
-        raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
     
@@ -1151,6 +1149,10 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
+    # Check if ticket is archived
+    if ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="Não é possível editar um ticket arquivado")
+    
     # Check permissions
     if user["role"] == UserRole.AGENT.value:
         if ticket.get("assigned_to_user_id") != user["id"]:
@@ -1158,8 +1160,6 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         # Agents cannot change assignment
         if ticket_data.assigned_to_user_id is not None:
             raise HTTPException(status_code=403, detail="Sem permissão para alterar atribuição")
-    if user["role"] == UserRole.FINANCEIRO.value and ticket.get("type") != TicketType.FINANCEIRO.value:
-        raise HTTPException(status_code=403, detail="Sem permissão para editar este ticket")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão para editar tickets")
     
@@ -1182,8 +1182,9 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
-    # Log status/assignment changes
+    # Log status change to history
     if ticket_data.status and ticket_data.status.value != old_status:
+        await log_status_change(ticket_id, old_status, ticket_data.status.value, user["id"])
         note_doc = {
             "id": str(uuid.uuid4()),
             "ticket_id": ticket_id,
