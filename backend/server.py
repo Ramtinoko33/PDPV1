@@ -996,11 +996,10 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     ticket_id = str(uuid.uuid4())
     ticket_number = generate_ticket_number()
     
-    sla_first = compute_sla_first_response(ticket_data.type)
-    sla_quote = compute_sla_quote(ticket_data.type)
+    sla_due = compute_sla_due()
     
-    # Set status to TRIAGEM if assigned to someone, otherwise NOVO
-    initial_status = TicketStatus.TRIAGEM.value if ticket_data.assigned_to_user_id else TicketStatus.NOVO.value
+    # Set status to EM_TRATAMENTO if assigned to someone, otherwise ABERTO
+    initial_status = TicketStatus.EM_TRATAMENTO.value if ticket_data.assigned_to_user_id else TicketStatus.ABERTO.value
     
     ticket_doc = {
         "id": ticket_id,
@@ -1019,13 +1018,17 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "assigned_to_user_id": ticket_data.assigned_to_user_id if ticket_data.assigned_to_user_id else None,
         "last_public_message_at": None,
         "first_response_done": False,
-        "sla_first_response_due": sla_first.isoformat(),
-        "sla_quote_due": sla_quote.isoformat() if sla_quote else None,
+        "sla_due": sla_due.isoformat(),
         "quote_sent": False,
         "quote_value": None,
-        "created_by_user_id": user["id"]
+        "created_by_user_id": user["id"],
+        "archived_at": None,
+        "archived_by": None
     }
     await db.tickets.insert_one(ticket_doc)
+    
+    # Log initial status in history
+    await log_status_change(ticket_id, None, initial_status, user["id"])
     
     # Notify supervisors about new ticket
     asyncio.create_task(notify_supervisors(
