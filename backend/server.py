@@ -1067,13 +1067,12 @@ async def list_tickets(
 ):
     user = current_user
     
-    query = {}
+    # Base query: exclude archived tickets
+    query = {"archived_at": None}
     
     # Role-based filtering
     if user["role"] == UserRole.AGENT.value:
         query["assigned_to_user_id"] = user["id"]
-    elif user["role"] == UserRole.FINANCEIRO.value:
-        query["type"] = TicketType.FINANCEIRO.value
     elif user["role"] == UserRole.INTERNAL_CREATOR.value:
         # Internal creators cannot browse tickets
         raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
@@ -1105,7 +1104,6 @@ async def list_tickets(
         users_map = {u["id"]: u["name"] for u in users}
     
     result = []
-    now = datetime.now(timezone.utc)
     for t in tickets:
         t["assigned_to_name"] = users_map.get(t.get("assigned_to_user_id"))
         t["is_overdue"] = check_ticket_overdue(t)
