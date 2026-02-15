@@ -33,10 +33,108 @@ import {
   Paperclip,
   X,
   Archive,
-  RotateCcw
+  RotateCcw,
+  Link2,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+// Component for generating and managing quote links
+const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
+  const [generating, setGenerating] = useState(false);
+  const [quoteLink, setQuoteLink] = useState(null);
+  
+  const generateLink = async () => {
+    setGenerating(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/tickets/${ticketId}/generate-quote-link`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      
+      const fullLink = `${window.location.origin}/quote/${response.data.token}`;
+      setQuoteLink({
+        ...response.data,
+        fullLink
+      });
+      
+      // Copy to clipboard
+      await navigator.clipboard.writeText(fullLink);
+      toast.success('Link gerado e copiado para a área de transferência!');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao gerar link');
+    } finally {
+      setGenerating(false);
+    }
+  };
+  
+  const copyLink = async () => {
+    if (quoteLink?.fullLink) {
+      await navigator.clipboard.writeText(quoteLink.fullLink);
+      toast.success('Link copiado!');
+    }
+  };
+  
+  return (
+    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+      <div className="flex items-center gap-2">
+        <Link2 className="h-5 w-5 text-amber-600" />
+        <span className="font-semibold text-amber-800">Link de Aceitação de Orçamento</span>
+      </div>
+      
+      {!quoteLink ? (
+        <Button
+          variant="outline"
+          className="border-amber-300 text-amber-700 hover:bg-amber-100"
+          onClick={generateLink}
+          disabled={generating}
+          data-testid="generate-quote-link-btn"
+        >
+          {generating ? (
+            <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mr-2" />
+          ) : (
+            <Link2 className="h-4 w-4 mr-2" />
+          )}
+          Gerar Link para Cliente
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={quoteLink.fullLink}
+              readOnly
+              className="flex-1 bg-white text-sm font-mono"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={copyLink}
+              className="border-amber-300"
+              data-testid="copy-quote-link-btn"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => window.open(quoteLink.fullLink, '_blank')}
+              className="border-amber-300"
+              data-testid="open-quote-link-btn"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-amber-600">
+            Link válido até {new Date(quoteLink.expires_at).toLocaleDateString('pt-PT')}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TicketDetail = () => {
   const { id } = useParams();
