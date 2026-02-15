@@ -2528,10 +2528,83 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
     }
     await db.notes.insert_one(note_doc)
     
+    # Send email with quote link automatically
+    customer_email = ticket.get("customer_email")
+    if customer_email and RESEND_API_KEY:
+        try:
+            # Get frontend URL from settings or use default
+            email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+            frontend_url = email_settings.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com") if email_settings else "https://pdpv-workshop.preview.emergentagent.com"
+            quote_link_url = f"{frontend_url}/quote/{token}"
+            
+            quote_value_formatted = f"{ticket['quote_value']:.2f}".replace('.', ',')
+            
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #f97316; padding: 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
+                </div>
+                <div style="padding: 20px; background-color: #f9fafb;">
+                    <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
+                    <p>Preparámos um orçamento para si referente ao seu pedido.</p>
+                    
+                    <div style="background-color: #fff7ed; border: 2px solid #f97316; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                        <p style="color: #9a3412; font-size: 14px; margin: 0 0 10px 0;">VALOR DO ORÇAMENTO</p>
+                        <p style="color: #f97316; font-size: 32px; font-weight: bold; margin: 0;">{quote_value_formatted} €</p>
+                    </div>
+                    
+                    {f'<p><strong>Veículo:</strong> {ticket["vehicle_plate"]}</p>' if ticket.get('vehicle_plate') else ''}
+                    {f'<p><strong>Descrição:</strong> {ticket["description"]}</p>' if ticket.get('description') else ''}
+                    
+                    <p style="margin-top: 20px;">Clique no botão abaixo para aceitar ou recusar este orçamento:</p>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{quote_link_url}" style="background-color: #f97316; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+                            Ver Orçamento
+                        </a>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">
+                        Este link é válido até {expires_at.strftime('%d/%m/%Y')}.<br>
+                        Referência do ticket: <strong>{ticket['ticket_number']}</strong>
+                    </p>
+                </div>
+                <div style="background-color: #1f2937; padding: 15px; text-align: center;">
+                    <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                        PDPV - Pneus de Pedro V. | Este é um email automático.
+                    </p>
+                </div>
+            </div>
+            """
+            
+            params = {
+                "from": EMAIL_FROM,
+                "to": [customer_email],
+                "subject": f"[Ticket #{ticket['ticket_number']}] Orçamento - {quote_value_formatted}€",
+                "html": html_content
+            }
+            
+            email_result = await asyncio.to_thread(resend.Emails.send, params)
+            logger.info(f"[RESEND] Quote link email sent to {customer_email}, ID: {email_result.get('id')}")
+            
+            # Log that email was sent
+            email_note_doc = {
+                "id": str(uuid.uuid4()),
+                "ticket_id": ticket_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by_user_id": current_user["id"],
+                "body": f"Email com link de orçamento enviado para {customer_email}",
+                "is_system": True
+            }
+            await db.notes.insert_one(email_note_doc)
+        except Exception as e:
+            logger.error(f"[RESEND] Failed to send quote link email: {str(e)}")
+    
     return {
         "token": token,
         "expires_at": expires_at.isoformat(),
-        "link": f"/quote/{token}"
+        "link": f"/quote/{token}",
+        "email_sent": bool(customer_email and RESEND_API_KEY)
     }
 
 @api_router.get("/public/quote/{token}", response_model=QuoteResponseData)
