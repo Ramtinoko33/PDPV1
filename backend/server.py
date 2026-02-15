@@ -1182,20 +1182,36 @@ async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_us
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
+    # Check if user is the creator (within 5 min window)
+    is_creator = ticket.get("created_by_user_id") == user["id"]
+    creator_can_view = False
+    if is_creator:
+        try:
+            created_at = datetime.fromisoformat(ticket["created_at"].replace("Z", "+00:00"))
+            time_since_creation = datetime.now(timezone.utc) - created_at
+            creator_can_view = time_since_creation.total_seconds() <= 300  # 5 minutes
+        except:
+            creator_can_view = False
+    
     # Check permissions
     if user["role"] == UserRole.AGENT.value:
-        # Agents can see: their assigned tickets OR unassigned tickets (to self-assign)
+        # Agents can see: their assigned tickets OR unassigned tickets (to self-assign) OR tickets they created (within 5 min)
         is_assigned_to_agent = ticket.get("assigned_to_user_id") == user["id"]
         is_unassigned = ticket.get("assigned_to_user_id") is None
-        if not is_assigned_to_agent and not is_unassigned:
+        if not is_assigned_to_agent and not is_unassigned and not creator_can_view:
             raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
-        raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
+        # Internal creators can only see tickets they created (within 5 min window)
+        if not creator_can_view:
+            raise HTTPException(status_code=403, detail="Só pode ver tickets que criou nos primeiros 5 minutos")
     
     # Get assigned user name
     if ticket.get("assigned_to_user_id"):
         assigned_user = await db.users.find_one({"id": ticket["assigned_to_user_id"]}, {"_id": 0, "name": 1})
         ticket["assigned_to_name"] = assigned_user["name"] if assigned_user else None
+    
+    # Add edit window info for frontend
+    ticket["creator_can_edit"] = creator_can_view and is_creator
     
     ticket["is_overdue"] = check_ticket_overdue(ticket)
     return TicketResponse(**ticket)
