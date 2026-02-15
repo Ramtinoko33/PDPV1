@@ -2612,7 +2612,7 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
                 sla_due = datetime.fromisoformat(t["sla_due"].replace("Z", "+00:00"))
                 if datetime.now(timezone.utc) > sla_due:
                     overdue_count += 1
-            except:
+            except ValueError:
                 pass
         
         # Quote metrics
