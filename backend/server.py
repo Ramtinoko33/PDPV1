@@ -1206,10 +1206,14 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     # Check permissions
     if user["role"] == UserRole.AGENT.value:
         if ticket.get("assigned_to_user_id") != user["id"]:
-            raise HTTPException(status_code=403, detail="Sem permissão para editar este ticket")
-        # Agents cannot change assignment
-        if ticket_data.assigned_to_user_id is not None:
-            raise HTTPException(status_code=403, detail="Sem permissão para alterar atribuição")
+            # Agent can only self-assign if ticket is unassigned
+            if ticket.get("assigned_to_user_id") is None and ticket_data.assigned_to_user_id == user["id"]:
+                pass  # Allow self-assignment
+            else:
+                raise HTTPException(status_code=403, detail="Sem permissão para editar este ticket")
+        # Agents can only assign tickets to themselves, not to others
+        if ticket_data.assigned_to_user_id is not None and ticket_data.assigned_to_user_id != user["id"] and ticket_data.assigned_to_user_id != "":
+            raise HTTPException(status_code=403, detail="Agentes só podem atribuir tickets a si próprios")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão para editar tickets")
     
