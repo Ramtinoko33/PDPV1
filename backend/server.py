@@ -1232,6 +1232,20 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
+    # Log quote value change to history
+    old_quote_value = ticket.get("quote_value")
+    if ticket_data.quote_value is not None and ticket_data.quote_value != old_quote_value:
+        await log_quote_change(ticket_id, old_quote_value, ticket_data.quote_value, user["id"])
+        note_doc = {
+            "id": str(uuid.uuid4()),
+            "ticket_id": ticket_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by_user_id": user["id"],
+            "body": f"Valor do orçamento alterado de {old_quote_value or 0:.2f}€ para {ticket_data.quote_value:.2f}€",
+            "is_system": True
+        }
+        await db.notes.insert_one(note_doc)
+    
     # Log status change to history
     if ticket_data.status and ticket_data.status.value != old_status:
         await log_status_change(ticket_id, old_status, ticket_data.status.value, user["id"])
