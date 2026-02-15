@@ -54,10 +54,19 @@ const CreateTicket = () => {
 
   const fetchUsers = async () => {
     try {
+      // Agents can only assign to themselves
+      if (user?.role === 'AGENT') {
+        setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
+        return;
+      }
       const response = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
       setAvailableUsers(response.data.filter(u => u.role !== 'FINANCEIRO'));
     } catch (error) {
       console.error('Error fetching users:', error);
+      // If agent gets 403, show only self
+      if (user?.role === 'AGENT') {
+        setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
+      }
     }
   };
 
