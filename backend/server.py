@@ -1081,7 +1081,12 @@ async def list_tickets(
     
     # Role-based filtering
     if user["role"] == UserRole.AGENT.value:
-        query["assigned_to_user_id"] = user["id"]
+        # Agents can see: their assigned tickets OR unassigned tickets (to self-assign)
+        query["$or"] = [
+            {"assigned_to_user_id": user["id"]},
+            {"assigned_to_user_id": None},
+            {"assigned_to_user_id": {"$exists": False}}
+        ]
     elif user["role"] == UserRole.INTERNAL_CREATOR.value:
         # Internal creators cannot browse tickets
         raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
