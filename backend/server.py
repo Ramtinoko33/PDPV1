@@ -2392,6 +2392,281 @@ async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = D
         enabled=config.get("enabled", True)
     )
 
+# ============== ADMIN SETTINGS - EMAIL CONFIG ==============
+class EmailConfigUpdate(BaseModel):
+    resend_api_key: Optional[str] = None
+    email_from: Optional[str] = None
+    frontend_url: Optional[str] = None
+
+class EmailConfigResponse(BaseModel):
+    resend_configured: bool = False
+    email_from: Optional[str] = None
+    frontend_url: Optional[str] = None
+
+@api_router.get("/admin/email-settings", response_model=EmailConfigResponse)
+async def get_email_settings(current_user: dict = Depends(get_current_user)):
+    """Get email settings - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver configurações de email")
+    
+    config = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    
+    return EmailConfigResponse(
+        resend_configured=bool(RESEND_API_KEY or (config and config.get("resend_api_key"))),
+        email_from=EMAIL_FROM if RESEND_API_KEY else (config.get("email_from") if config else None),
+        frontend_url=config.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com") if config else "https://pdpv-workshop.preview.emergentagent.com"
+    )
+
+@api_router.put("/admin/email-settings", response_model=EmailConfigResponse)
+async def update_email_settings(config_data: EmailConfigUpdate, current_user: dict = Depends(get_current_user)):
+    """Update email settings - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar configurações de email")
+    
+    existing = await db.settings.find_one({"type": "email_config"})
+    
+    update_doc = {"type": "email_config", "updated_at": datetime.now(timezone.utc).isoformat()}
+    if config_data.resend_api_key is not None:
+        update_doc["resend_api_key"] = config_data.resend_api_key
+    if config_data.email_from is not None:
+        update_doc["email_from"] = config_data.email_from
+    if config_data.frontend_url is not None:
+        update_doc["frontend_url"] = config_data.frontend_url
+    
+    if existing:
+        await db.settings.update_one({"type": "email_config"}, {"$set": update_doc})
+    else:
+        await db.settings.insert_one(update_doc)
+    
+    config = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    return EmailConfigResponse(
+        resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key")),
+        email_from=EMAIL_FROM if RESEND_API_KEY else config.get("email_from"),
+        frontend_url=config.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com")
+    )
+
+# ============== QUOTE VALUE HISTORY ==============
+class QuoteHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    ticket_id: str
+    old_value: Optional[float] = None
+    new_value: float
+    changed_by_user_id: str
+    changed_by_name: Optional[str] = None
+    changed_at: str
+    reason: Optional[str] = None
+
+@api_router.get("/tickets/{ticket_id}/quote-history", response_model=List[QuoteHistoryResponse])
+async def get_quote_history(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get quote value change history for a ticket"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if current_user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
+    if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
+    
+    history = await db.quote_history.find(
+        {"ticket_id": ticket_id}, 
+        {"_id": 0}
+    ).sort("changed_at", -1).to_list(1000)
+    
+    # Get user names
+    user_ids = list(set([h.get("changed_by_user_id") for h in history if h.get("changed_by_user_id")]))
+    users_map = {}
+    if user_ids:
+        users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000)
+        users_map = {u["id"]: u["name"] for u in users}
+    
+    for h in history:
+        h["changed_by_name"] = users_map.get(h.get("changed_by_user_id"))
+    
+    return [QuoteHistoryResponse(**h) for h in history]
+
+async def log_quote_change(ticket_id: str, old_value: Optional[float], new_value: float, user_id: str, reason: Optional[str] = None):
+    """Log a quote value change to history"""
+    history_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "old_value": old_value,
+        "new_value": new_value,
+        "changed_by_user_id": user_id,
+        "changed_at": datetime.now(timezone.utc).isoformat(),
+        "reason": reason
+    }
+    await db.quote_history.insert_one(history_doc)
+
+# ============== ADMIN REPORTS ==============
+class ReportFilters(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    status: Optional[str] = None
+    type: Optional[str] = None
+    assigned_to: Optional[str] = None
+    channel: Optional[str] = None
+
+class TicketMetrics(BaseModel):
+    total_tickets: int = 0
+    tickets_by_status: Dict[str, int] = {}
+    tickets_by_type: Dict[str, int] = {}
+    tickets_by_channel: Dict[str, int] = {}
+    avg_resolution_time_hours: Optional[float] = None
+    sla_compliance_rate: float = 0.0
+    tickets_overdue: int = 0
+    quotes_sent: int = 0
+    quotes_accepted: int = 0
+    quotes_rejected: int = 0
+    total_quote_value: float = 0.0
+
+class AgentPerformance(BaseModel):
+    user_id: str
+    user_name: str
+    tickets_assigned: int = 0
+    tickets_closed: int = 0
+    avg_response_time_hours: Optional[float] = None
+    sla_compliance_rate: float = 0.0
+
+class ReportResponse(BaseModel):
+    period: Dict[str, Optional[str]]
+    metrics: TicketMetrics
+    agent_performance: List[AgentPerformance] = []
+    daily_ticket_counts: List[Dict[str, any]] = []
+
+@api_router.post("/admin/reports", response_model=ReportResponse)
+async def generate_report(filters: ReportFilters, current_user: dict = Depends(get_current_user)):
+    """Generate comprehensive admin reports - ADMIN/SUPERVISOR only"""
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver relatórios")
+    
+    # Build query
+    query = {"archived_at": None}
+    
+    if filters.start_date:
+        query["created_at"] = {"$gte": filters.start_date}
+    if filters.end_date:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = filters.end_date
+        else:
+            query["created_at"] = {"$lte": filters.end_date}
+    if filters.status:
+        query["status"] = filters.status
+    if filters.type:
+        query["type"] = filters.type
+    if filters.assigned_to:
+        query["assigned_to_user_id"] = filters.assigned_to
+    if filters.channel:
+        query["channel"] = filters.channel
+    
+    tickets = await db.tickets.find(query, {"_id": 0}).to_list(10000)
+    
+    # Calculate metrics
+    metrics = TicketMetrics()
+    metrics.total_tickets = len(tickets)
+    
+    status_counts = {}
+    type_counts = {}
+    channel_counts = {}
+    overdue_count = 0
+    quotes_sent = 0
+    quotes_accepted = 0
+    quotes_rejected = 0
+    total_quote_value = 0.0
+    sla_compliant = 0
+    
+    for t in tickets:
+        # Status counts
+        status = t.get("status", "UNKNOWN")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        
+        # Type counts
+        ticket_type = t.get("type", "UNKNOWN")
+        type_counts[ticket_type] = type_counts.get(ticket_type, 0) + 1
+        
+        # Channel counts
+        channel = t.get("channel", "UNKNOWN")
+        channel_counts[channel] = channel_counts.get(channel, 0) + 1
+        
+        # SLA compliance
+        if t.get("first_response_done"):
+            sla_compliant += 1
+        elif t.get("sla_due"):
+            try:
+                sla_due = datetime.fromisoformat(t["sla_due"].replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > sla_due:
+                    overdue_count += 1
+            except:
+                pass
+        
+        # Quote metrics
+        if t.get("quote_sent"):
+            quotes_sent += 1
+            if t.get("quote_value"):
+                total_quote_value += t["quote_value"]
+        if t.get("quote_response_status") == "ACCEPTED":
+            quotes_accepted += 1
+        elif t.get("quote_response_status") == "REJECTED":
+            quotes_rejected += 1
+    
+    metrics.tickets_by_status = status_counts
+    metrics.tickets_by_type = type_counts
+    metrics.tickets_by_channel = channel_counts
+    metrics.tickets_overdue = overdue_count
+    metrics.quotes_sent = quotes_sent
+    metrics.quotes_accepted = quotes_accepted
+    metrics.quotes_rejected = quotes_rejected
+    metrics.total_quote_value = total_quote_value
+    
+    if metrics.total_tickets > 0:
+        metrics.sla_compliance_rate = round((sla_compliant / metrics.total_tickets) * 100, 1)
+    
+    # Agent performance
+    agent_performance = []
+    agents = await db.users.find(
+        {"role": {"$in": [UserRole.AGENT.value, UserRole.SUPERVISOR.value]}},
+        {"_id": 0, "id": 1, "name": 1}
+    ).to_list(100)
+    
+    for agent in agents:
+        agent_tickets = [t for t in tickets if t.get("assigned_to_user_id") == agent["id"]]
+        closed_tickets = [t for t in agent_tickets if t.get("status") == "FECHADO"]
+        compliant = sum(1 for t in agent_tickets if t.get("first_response_done"))
+        
+        perf = AgentPerformance(
+            user_id=agent["id"],
+            user_name=agent["name"],
+            tickets_assigned=len(agent_tickets),
+            tickets_closed=len(closed_tickets),
+            sla_compliance_rate=round((compliant / len(agent_tickets) * 100), 1) if agent_tickets else 0
+        )
+        agent_performance.append(perf)
+    
+    # Daily ticket counts (last 30 days)
+    daily_counts = []
+    if not filters.start_date:
+        start = datetime.now(timezone.utc) - timedelta(days=30)
+    else:
+        start = datetime.fromisoformat(filters.start_date.replace("Z", "+00:00"))
+    
+    end = datetime.now(timezone.utc) if not filters.end_date else datetime.fromisoformat(filters.end_date.replace("Z", "+00:00"))
+    
+    current = start
+    while current <= end:
+        date_str = current.strftime("%Y-%m-%d")
+        day_count = sum(1 for t in tickets if t.get("created_at", "").startswith(date_str))
+        daily_counts.append({"date": date_str, "count": day_count})
+        current += timedelta(days=1)
+    
+    return ReportResponse(
+        period={"start": filters.start_date, "end": filters.end_date},
+        metrics=metrics,
+        agent_performance=agent_performance,
+        daily_ticket_counts=daily_counts[-30:]  # Last 30 entries
+    )
+
 # ============== EMAIL TEST ==============
 class TestEmailRequest(BaseModel):
     recipient_email: EmailStr
