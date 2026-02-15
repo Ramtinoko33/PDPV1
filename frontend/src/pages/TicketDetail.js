@@ -966,6 +966,9 @@ const TicketDetail = () => {
             </CardContent>
           </Card>
 
+          {/* Quote History */}
+          <QuoteHistorySection ticketId={id} getAuthHeaders={getAuthHeaders} formatDate={formatDate} />
+
           {/* Attachments */}
           <Card>
             <CardHeader className="border-b">
