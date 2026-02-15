@@ -2114,6 +2114,282 @@ async def notify_supervisors(title: str, body: str, notification_type: str = "in
     for sup in supervisors:
         await create_notification(sup["id"], title, body, notification_type, ticket_id, ticket_number)
 
+# ============== ADMIN SETTINGS - TICKET TYPES ==============
+class TicketTypeCreate(BaseModel):
+    code: str
+    label: str
+    color: str = "#f97316"
+
+class TicketTypeUpdate(BaseModel):
+    label: Optional[str] = None
+    color: Optional[str] = None
+
+class TicketTypeResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    code: str
+    label: str
+    color: str
+    created_at: str
+
+@api_router.get("/admin/ticket-types", response_model=List[TicketTypeResponse])
+async def list_ticket_types(current_user: dict = Depends(get_current_user)):
+    """List all ticket types - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver tipos")
+    
+    types = await db.ticket_types.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    
+    # If no types in DB, return defaults
+    if not types:
+        default_types = [
+            {"id": str(uuid.uuid4()), "code": "ORCAMENTO_PNEUS", "label": "Orçamento Pneus", "color": "#f97316", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "ORCAMENTO_MECANICA", "label": "Orçamento Mecânica", "color": "#3b82f6", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "MARCACAO", "label": "Marcação", "color": "#10b981", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "INFORMACAO", "label": "Informação", "color": "#8b5cf6", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "INTERNO", "label": "Interno", "color": "#6b7280", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "RECLAMACAO", "label": "Reclamação", "color": "#ef4444", "created_at": datetime.now(timezone.utc).isoformat()}
+        ]
+        # Insert defaults into DB
+        await db.ticket_types.insert_many(default_types)
+        types = default_types
+    
+    return [TicketTypeResponse(**t) for t in types]
+
+@api_router.post("/admin/ticket-types", response_model=TicketTypeResponse)
+async def create_ticket_type(type_data: TicketTypeCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new ticket type - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem criar tipos")
+    
+    # Check if code already exists
+    existing = await db.ticket_types.find_one({"code": type_data.code})
+    if existing:
+        raise HTTPException(status_code=400, detail="Já existe um tipo com este código")
+    
+    type_doc = {
+        "id": str(uuid.uuid4()),
+        "code": type_data.code.upper().replace(" ", "_"),
+        "label": type_data.label,
+        "color": type_data.color,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.ticket_types.insert_one(type_doc)
+    
+    return TicketTypeResponse(**type_doc)
+
+@api_router.put("/admin/ticket-types/{type_id}", response_model=TicketTypeResponse)
+async def update_ticket_type(type_id: str, type_data: TicketTypeUpdate, current_user: dict = Depends(get_current_user)):
+    """Update a ticket type - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar tipos")
+    
+    type_doc = await db.ticket_types.find_one({"id": type_id}, {"_id": 0})
+    if not type_doc:
+        raise HTTPException(status_code=404, detail="Tipo não encontrado")
+    
+    update_doc = {}
+    if type_data.label:
+        update_doc["label"] = type_data.label
+    if type_data.color:
+        update_doc["color"] = type_data.color
+    
+    if update_doc:
+        await db.ticket_types.update_one({"id": type_id}, {"$set": update_doc})
+    
+    updated = await db.ticket_types.find_one({"id": type_id}, {"_id": 0})
+    return TicketTypeResponse(**updated)
+
+@api_router.delete("/admin/ticket-types/{type_id}")
+async def delete_ticket_type(type_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a ticket type - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem eliminar tipos")
+    
+    # Check if type is being used by any tickets
+    type_doc = await db.ticket_types.find_one({"id": type_id}, {"_id": 0})
+    if not type_doc:
+        raise HTTPException(status_code=404, detail="Tipo não encontrado")
+    
+    tickets_using = await db.tickets.count_documents({"type": type_doc["code"]})
+    if tickets_using > 0:
+        raise HTTPException(status_code=400, detail=f"Não é possível eliminar. {tickets_using} ticket(s) usam este tipo.")
+    
+    await db.ticket_types.delete_one({"id": type_id})
+    return {"message": "Tipo eliminado"}
+
+# ============== ADMIN SETTINGS - TICKET STATUSES ==============
+class TicketStatusCreate(BaseModel):
+    code: str
+    label: str
+    color: str = "#3b82f6"
+    is_final: bool = False
+
+class TicketStatusUpdate(BaseModel):
+    label: Optional[str] = None
+    color: Optional[str] = None
+    is_final: Optional[bool] = None
+
+class TicketStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    code: str
+    label: str
+    color: str
+    is_final: bool
+    order: int = 0
+    created_at: str
+
+@api_router.get("/admin/ticket-statuses", response_model=List[TicketStatusResponse])
+async def list_ticket_statuses(current_user: dict = Depends(get_current_user)):
+    """List all ticket statuses - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver estados")
+    
+    statuses = await db.ticket_statuses.find({}, {"_id": 0}).sort("order", 1).to_list(100)
+    
+    # If no statuses in DB, return defaults
+    if not statuses:
+        default_statuses = [
+            {"id": str(uuid.uuid4()), "code": "ABERTO", "label": "Aberto", "color": "#22c55e", "is_final": False, "order": 0, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "EM_TRATAMENTO", "label": "Em Tratamento", "color": "#3b82f6", "is_final": False, "order": 1, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "AGUARDA_CLIENTE", "label": "Aguarda Cliente", "color": "#f59e0b", "is_final": False, "order": 2, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "FECHADO", "label": "Fechado", "color": "#6b7280", "is_final": True, "order": 3, "created_at": datetime.now(timezone.utc).isoformat()}
+        ]
+        # Insert defaults into DB
+        await db.ticket_statuses.insert_many(default_statuses)
+        statuses = default_statuses
+    
+    return [TicketStatusResponse(**s) for s in statuses]
+
+@api_router.post("/admin/ticket-statuses", response_model=TicketStatusResponse)
+async def create_ticket_status(status_data: TicketStatusCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new ticket status - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem criar estados")
+    
+    # Check if code already exists
+    existing = await db.ticket_statuses.find_one({"code": status_data.code})
+    if existing:
+        raise HTTPException(status_code=400, detail="Já existe um estado com este código")
+    
+    # Get max order
+    max_order_doc = await db.ticket_statuses.find_one({}, sort=[("order", -1)])
+    max_order = max_order_doc.get("order", -1) + 1 if max_order_doc else 0
+    
+    status_doc = {
+        "id": str(uuid.uuid4()),
+        "code": status_data.code.upper().replace(" ", "_"),
+        "label": status_data.label,
+        "color": status_data.color,
+        "is_final": status_data.is_final,
+        "order": max_order,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.ticket_statuses.insert_one(status_doc)
+    
+    return TicketStatusResponse(**status_doc)
+
+@api_router.put("/admin/ticket-statuses/{status_id}", response_model=TicketStatusResponse)
+async def update_ticket_status(status_id: str, status_data: TicketStatusUpdate, current_user: dict = Depends(get_current_user)):
+    """Update a ticket status - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar estados")
+    
+    status_doc = await db.ticket_statuses.find_one({"id": status_id}, {"_id": 0})
+    if not status_doc:
+        raise HTTPException(status_code=404, detail="Estado não encontrado")
+    
+    update_doc = {}
+    if status_data.label:
+        update_doc["label"] = status_data.label
+    if status_data.color:
+        update_doc["color"] = status_data.color
+    if status_data.is_final is not None:
+        update_doc["is_final"] = status_data.is_final
+    
+    if update_doc:
+        await db.ticket_statuses.update_one({"id": status_id}, {"$set": update_doc})
+    
+    updated = await db.ticket_statuses.find_one({"id": status_id}, {"_id": 0})
+    return TicketStatusResponse(**updated)
+
+@api_router.delete("/admin/ticket-statuses/{status_id}")
+async def delete_ticket_status(status_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a ticket status - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem eliminar estados")
+    
+    # Check if status is being used by any tickets
+    status_doc = await db.ticket_statuses.find_one({"id": status_id}, {"_id": 0})
+    if not status_doc:
+        raise HTTPException(status_code=404, detail="Estado não encontrado")
+    
+    tickets_using = await db.tickets.count_documents({"status": status_doc["code"]})
+    if tickets_using > 0:
+        raise HTTPException(status_code=400, detail=f"Não é possível eliminar. {tickets_using} ticket(s) usam este estado.")
+    
+    await db.ticket_statuses.delete_one({"id": status_id})
+    return {"message": "Estado eliminado"}
+
+# ============== ADMIN SETTINGS - SLA CONFIG ==============
+class SlaConfigUpdate(BaseModel):
+    first_response_hours: Optional[int] = None
+    quote_response_hours: Optional[int] = None
+    enabled: Optional[bool] = None
+
+class SlaConfigResponse(BaseModel):
+    first_response_hours: int = 2
+    quote_response_hours: int = 24
+    enabled: bool = True
+
+@api_router.get("/admin/sla-config", response_model=SlaConfigResponse)
+async def get_sla_config(current_user: dict = Depends(get_current_user)):
+    """Get SLA configuration - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver configuração SLA")
+    
+    config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
+    if not config:
+        return SlaConfigResponse()
+    
+    return SlaConfigResponse(
+        first_response_hours=config.get("first_response_hours", 2),
+        quote_response_hours=config.get("quote_response_hours", 24),
+        enabled=config.get("enabled", True)
+    )
+
+@api_router.put("/admin/sla-config", response_model=SlaConfigResponse)
+async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = Depends(get_current_user)):
+    """Update SLA configuration - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar configuração SLA")
+    
+    existing = await db.settings.find_one({"type": "sla_config"})
+    
+    update_doc = {"type": "sla_config", "updated_at": datetime.now(timezone.utc).isoformat()}
+    if config_data.first_response_hours is not None:
+        update_doc["first_response_hours"] = config_data.first_response_hours
+    if config_data.quote_response_hours is not None:
+        update_doc["quote_response_hours"] = config_data.quote_response_hours
+    if config_data.enabled is not None:
+        update_doc["enabled"] = config_data.enabled
+    
+    if existing:
+        await db.settings.update_one({"type": "sla_config"}, {"$set": update_doc})
+    else:
+        update_doc["first_response_hours"] = config_data.first_response_hours or 2
+        update_doc["quote_response_hours"] = config_data.quote_response_hours or 24
+        update_doc["enabled"] = config_data.enabled if config_data.enabled is not None else True
+        await db.settings.insert_one(update_doc)
+    
+    config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
+    return SlaConfigResponse(
+        first_response_hours=config.get("first_response_hours", 2),
+        quote_response_hours=config.get("quote_response_hours", 24),
+        enabled=config.get("enabled", True)
+    )
+
 # ============== EMAIL TEST ==============
 class TestEmailRequest(BaseModel):
     recipient_email: EmailStr
