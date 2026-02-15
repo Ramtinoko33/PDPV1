@@ -384,7 +384,7 @@ const TicketList = () => {
                       onClick={(e) => {
                         // Prevent navigation when clicking on interactive elements (dropdowns, buttons)
                         if (e.target.closest('button') || e.target.closest('[role="combobox"]')) return;
-                        window.location.href = `/tickets/${ticket.id}`;
+                        navigate(`/tickets/${ticket.id}`);
                       }}
                     >
                       <TableCell>
