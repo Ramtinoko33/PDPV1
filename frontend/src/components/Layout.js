@@ -78,6 +78,12 @@ const Layout = ({ children }) => {
       roles: ['ADMIN']
     },
     { 
+      path: '/reports', 
+      label: 'Relatórios', 
+      icon: BarChart3,
+      roles: ['ADMIN', 'SUPERVISOR']
+    },
+    { 
       path: '/settings', 
       label: 'Configurações', 
       icon: Settings,
