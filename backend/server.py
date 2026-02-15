@@ -1212,19 +1212,35 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     if ticket.get("archived_at"):
         raise HTTPException(status_code=400, detail="Não é possível editar um ticket arquivado")
     
+    # Check if creator can edit (within 5 minutes of creation)
+    is_creator = ticket.get("created_by_user_id") == user["id"]
+    creator_can_edit = False
+    if is_creator:
+        try:
+            created_at = datetime.fromisoformat(ticket["created_at"].replace("Z", "+00:00"))
+            time_since_creation = datetime.now(timezone.utc) - created_at
+            creator_can_edit = time_since_creation.total_seconds() <= 300  # 5 minutes = 300 seconds
+        except:
+            creator_can_edit = False
+    
     # Check permissions
     if user["role"] == UserRole.AGENT.value:
         if ticket.get("assigned_to_user_id") != user["id"]:
             # Agent can only self-assign if ticket is unassigned
             if ticket.get("assigned_to_user_id") is None and ticket_data.assigned_to_user_id == user["id"]:
                 pass  # Allow self-assignment
+            # Creator can edit within 5 minutes
+            elif creator_can_edit:
+                pass  # Allow creator to edit
             else:
                 raise HTTPException(status_code=403, detail="Sem permissão para editar este ticket")
         # Agents can only assign tickets to themselves, not to others
         if ticket_data.assigned_to_user_id is not None and ticket_data.assigned_to_user_id != user["id"] and ticket_data.assigned_to_user_id != "":
             raise HTTPException(status_code=403, detail="Agentes só podem atribuir tickets a si próprios")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
-        raise HTTPException(status_code=403, detail="Sem permissão para editar tickets")
+        # Internal creators can only edit tickets they created within 5 minutes
+        if not creator_can_edit:
+            raise HTTPException(status_code=403, detail="Só pode editar tickets que criou nos primeiros 5 minutos")
     
     update_doc = {"updated_at": datetime.now(timezone.utc).isoformat()}
     old_status = ticket.get("status")
