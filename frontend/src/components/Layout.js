@@ -16,7 +16,8 @@ import {
   Wrench,
   ChevronRight,
   Archive,
-  Settings
+  Settings,
+  BarChart3
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
