@@ -2455,6 +2455,201 @@ async def get_email_config(current_user: dict = Depends(get_current_user)):
         "email_from": EMAIL_FROM if RESEND_API_KEY else None
     }
 
+# ============== PUBLIC QUOTE RESPONSE ==============
+class QuoteResponseRequest(BaseModel):
+    status: str  # ACCEPTED or REJECTED
+    comments: Optional[str] = None
+
+class QuoteResponseData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    ticket_number: str
+    customer_name: str
+    vehicle_plate: Optional[str] = None
+    quote_value: float
+    description: Optional[str] = None
+    quote_sent_at: str
+    response_status: Optional[str] = None
+    response_at: Optional[str] = None
+
+@api_router.post("/tickets/{ticket_id}/generate-quote-link")
+async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate a unique link for client to respond to a quote"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if current_user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    if not ticket.get("quote_value"):
+        raise HTTPException(status_code=400, detail="O ticket não tem valor de orçamento definido")
+    
+    # Generate unique token
+    token = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)  # Link valid for 7 days
+    
+    # Save quote link
+    quote_link_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "token": token,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "created_by_user_id": current_user["id"],
+        "response_status": None,
+        "response_at": None,
+        "response_comments": None
+    }
+    await db.quote_links.insert_one(quote_link_doc)
+    
+    # Update ticket
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {
+            "quote_sent": True,
+            "quote_link_token": token,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Log note
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by_user_id": current_user["id"],
+        "body": f"Link de orçamento gerado (válido até {expires_at.strftime('%d/%m/%Y')})",
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    return {
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "link": f"/quote/{token}"
+    }
+
+@api_router.get("/public/quote/{token}", response_model=QuoteResponseData)
+async def get_public_quote(token: str):
+    """Get quote details by public token - NO AUTH REQUIRED"""
+    quote_link = await db.quote_links.find_one({"token": token}, {"_id": 0})
+    if not quote_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    
+    # Check if expired
+    expires_at = datetime.fromisoformat(quote_link["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Link expirado")
+    
+    ticket = await db.tickets.find_one({"id": quote_link["ticket_id"]}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    return QuoteResponseData(
+        ticket_number=ticket["ticket_number"],
+        customer_name=ticket["customer_name"],
+        vehicle_plate=ticket.get("vehicle_plate"),
+        quote_value=ticket.get("quote_value", 0),
+        description=ticket.get("description"),
+        quote_sent_at=quote_link["created_at"],
+        response_status=quote_link.get("response_status"),
+        response_at=quote_link.get("response_at")
+    )
+
+@api_router.post("/public/quote/{token}/respond")
+async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
+    """Client responds to a quote - NO AUTH REQUIRED"""
+    quote_link = await db.quote_links.find_one({"token": token}, {"_id": 0})
+    if not quote_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    
+    # Check if expired
+    expires_at = datetime.fromisoformat(quote_link["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Link expirado")
+    
+    # Check if already responded
+    if quote_link.get("response_status"):
+        raise HTTPException(status_code=400, detail="Já respondeu a este orçamento")
+    
+    if response_data.status not in ["ACCEPTED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Estado inválido")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update quote link
+    await db.quote_links.update_one(
+        {"token": token},
+        {"$set": {
+            "response_status": response_data.status,
+            "response_at": now.isoformat(),
+            "response_comments": response_data.comments
+        }}
+    )
+    
+    ticket = await db.tickets.find_one({"id": quote_link["ticket_id"]}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Update ticket based on response
+    ticket_update = {
+        "updated_at": now.isoformat(),
+        "quote_response_status": response_data.status,
+        "quote_response_at": now.isoformat()
+    }
+    
+    if response_data.status == "ACCEPTED":
+        # Change status to EM_TRATAMENTO if accepted
+        ticket_update["status"] = TicketStatus.EM_TRATAMENTO.value
+    else:
+        # Change status to FECHADO if rejected
+        ticket_update["status"] = TicketStatus.FECHADO.value
+    
+    await db.tickets.update_one({"id": quote_link["ticket_id"]}, {"$set": ticket_update})
+    
+    # Log note
+    status_text = "ACEITE" if response_data.status == "ACCEPTED" else "RECUSADO"
+    note_body = f"Cliente respondeu ao orçamento: {status_text}"
+    if response_data.comments:
+        note_body += f"\nComentários: {response_data.comments}"
+    
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": quote_link["ticket_id"],
+        "created_at": now.isoformat(),
+        "created_by_user_id": "CLIENTE",
+        "body": note_body,
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    # Notify assigned user and supervisors
+    if ticket.get("assigned_to_user_id"):
+        asyncio.create_task(create_notification(
+            user_id=ticket["assigned_to_user_id"],
+            title=f"Orçamento {status_text}",
+            body=f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}",
+            notification_type="success" if response_data.status == "ACCEPTED" else "warning",
+            ticket_id=ticket["id"],
+            ticket_number=ticket["ticket_number"]
+        ))
+    
+    asyncio.create_task(notify_supervisors(
+        title=f"Orçamento {status_text}",
+        body=f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}",
+        notification_type="success" if response_data.status == "ACCEPTED" else "warning",
+        ticket_id=ticket["id"],
+        ticket_number=ticket["ticket_number"]
+    ))
+    
+    return {
+        "status": "success",
+        "message": f"Resposta registada: {status_text}"
+    }
+
 # ============== SLA BACKGROUND JOB ==============
 async def run_sla_check():
     """Background task to check and mark overdue tickets"""
