@@ -84,8 +84,10 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Agent: agente@pdpv.pt / agente123
 
 ## Pending Features (Backlog)
-- [ ] Importação Excel com validação
-- [ ] Portal do cliente (visualização de todos os tickets)
+- [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
+- [ ] P2: Importação Excel com validação
+- [ ] P3: VAPID Keys - configuração correta para Web Push
+- [ ] P4: Portal do cliente (visualização de todos os tickets)
 
 ## Notes
 - Email funciona apenas se RESEND_API_KEY estiver configurada no .env
