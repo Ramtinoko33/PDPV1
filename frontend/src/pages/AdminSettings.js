@@ -1,0 +1,647 @@
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../components/ui/dialog';
+import { toast } from 'sonner';
+import { 
+  Settings, 
+  Tag, 
+  AlertCircle,
+  Clock,
+  Plus,
+  Pencil,
+  Trash2,
+  Save,
+  X,
+  GripVertical
+} from 'lucide-react';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const AdminSettings = () => {
+  const { getAuthHeaders } = useAuth();
+  
+  // Ticket Types State
+  const [ticketTypes, setTicketTypes] = useState([]);
+  const [loadingTypes, setLoadingTypes] = useState(true);
+  const [typeDialogOpen, setTypeDialogOpen] = useState(false);
+  const [editingType, setEditingType] = useState(null);
+  const [typeForm, setTypeForm] = useState({ code: '', label: '', color: '#f97316' });
+  const [savingType, setSavingType] = useState(false);
+  
+  // Ticket Statuses State
+  const [ticketStatuses, setTicketStatuses] = useState([]);
+  const [loadingStatuses, setLoadingStatuses] = useState(true);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [editingStatus, setEditingStatus] = useState(null);
+  const [statusForm, setStatusForm] = useState({ code: '', label: '', color: '#3b82f6', is_final: false });
+  const [savingStatus, setSavingStatus] = useState(false);
+  
+  // SLA Config State
+  const [slaConfig, setSlaConfig] = useState({
+    first_response_hours: 2,
+    quote_response_hours: 24,
+    enabled: true
+  });
+  const [loadingSla, setLoadingSla] = useState(true);
+  const [savingSla, setSavingSla] = useState(false);
+
+  // Fetch all settings on mount
+  useEffect(() => {
+    fetchTicketTypes();
+    fetchTicketStatuses();
+    fetchSlaConfig();
+  }, []);
+
+  // ============== TICKET TYPES ==============
+  const fetchTicketTypes = async () => {
+    setLoadingTypes(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/ticket-types`, { headers: getAuthHeaders() });
+      setTicketTypes(response.data);
+    } catch (error) {
+      console.error('Error fetching ticket types:', error);
+      // Set defaults if endpoint doesn't exist yet
+      setTicketTypes([
+        { id: '1', code: 'ORCAMENTO_PNEUS', label: 'Orçamento Pneus', color: '#f97316' },
+        { id: '2', code: 'ORCAMENTO_MECANICA', label: 'Orçamento Mecânica', color: '#3b82f6' },
+        { id: '3', code: 'MARCACAO', label: 'Marcação', color: '#10b981' },
+        { id: '4', code: 'INFORMACAO', label: 'Informação', color: '#8b5cf6' },
+        { id: '5', code: 'INTERNO', label: 'Interno', color: '#6b7280' },
+        { id: '6', code: 'RECLAMACAO', label: 'Reclamação', color: '#ef4444' }
+      ]);
+    } finally {
+      setLoadingTypes(false);
+    }
+  };
+
+  const openTypeDialog = (type = null) => {
+    if (type) {
+      setEditingType(type);
+      setTypeForm({ code: type.code, label: type.label, color: type.color || '#f97316' });
+    } else {
+      setEditingType(null);
+      setTypeForm({ code: '', label: '', color: '#f97316' });
+    }
+    setTypeDialogOpen(true);
+  };
+
+  const saveTicketType = async () => {
+    if (!typeForm.code || !typeForm.label) {
+      toast.error('Preencha todos os campos');
+      return;
+    }
+    
+    setSavingType(true);
+    try {
+      if (editingType) {
+        await axios.put(
+          `${API_URL}/api/admin/ticket-types/${editingType.id}`,
+          typeForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Tipo atualizado');
+      } else {
+        await axios.post(
+          `${API_URL}/api/admin/ticket-types`,
+          typeForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Tipo criado');
+      }
+      setTypeDialogOpen(false);
+      fetchTicketTypes();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar tipo');
+    } finally {
+      setSavingType(false);
+    }
+  };
+
+  const deleteTicketType = async (typeId) => {
+    if (!window.confirm('Tem a certeza que deseja eliminar este tipo?')) return;
+    
+    try {
+      await axios.delete(`${API_URL}/api/admin/ticket-types/${typeId}`, { headers: getAuthHeaders() });
+      toast.success('Tipo eliminado');
+      fetchTicketTypes();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao eliminar tipo');
+    }
+  };
+
+  // ============== TICKET STATUSES ==============
+  const fetchTicketStatuses = async () => {
+    setLoadingStatuses(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/ticket-statuses`, { headers: getAuthHeaders() });
+      setTicketStatuses(response.data);
+    } catch (error) {
+      console.error('Error fetching ticket statuses:', error);
+      // Set defaults if endpoint doesn't exist yet
+      setTicketStatuses([
+        { id: '1', code: 'ABERTO', label: 'Aberto', color: '#22c55e', is_final: false },
+        { id: '2', code: 'EM_TRATAMENTO', label: 'Em Tratamento', color: '#3b82f6', is_final: false },
+        { id: '3', code: 'AGUARDA_CLIENTE', label: 'Aguarda Cliente', color: '#f59e0b', is_final: false },
+        { id: '4', code: 'FECHADO', label: 'Fechado', color: '#6b7280', is_final: true }
+      ]);
+    } finally {
+      setLoadingStatuses(false);
+    }
+  };
+
+  const openStatusDialog = (status = null) => {
+    if (status) {
+      setEditingStatus(status);
+      setStatusForm({ 
+        code: status.code, 
+        label: status.label, 
+        color: status.color || '#3b82f6',
+        is_final: status.is_final || false
+      });
+    } else {
+      setEditingStatus(null);
+      setStatusForm({ code: '', label: '', color: '#3b82f6', is_final: false });
+    }
+    setStatusDialogOpen(true);
+  };
+
+  const saveTicketStatus = async () => {
+    if (!statusForm.code || !statusForm.label) {
+      toast.error('Preencha todos os campos');
+      return;
+    }
+    
+    setSavingStatus(true);
+    try {
+      if (editingStatus) {
+        await axios.put(
+          `${API_URL}/api/admin/ticket-statuses/${editingStatus.id}`,
+          statusForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Estado atualizado');
+      } else {
+        await axios.post(
+          `${API_URL}/api/admin/ticket-statuses`,
+          statusForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Estado criado');
+      }
+      setStatusDialogOpen(false);
+      fetchTicketStatuses();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar estado');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
+  const deleteTicketStatus = async (statusId) => {
+    if (!window.confirm('Tem a certeza que deseja eliminar este estado?')) return;
+    
+    try {
+      await axios.delete(`${API_URL}/api/admin/ticket-statuses/${statusId}`, { headers: getAuthHeaders() });
+      toast.success('Estado eliminado');
+      fetchTicketStatuses();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao eliminar estado');
+    }
+  };
+
+  // ============== SLA CONFIG ==============
+  const fetchSlaConfig = async () => {
+    setLoadingSla(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/sla-config`, { headers: getAuthHeaders() });
+      setSlaConfig(response.data);
+    } catch (error) {
+      console.error('Error fetching SLA config:', error);
+      // Keep defaults
+    } finally {
+      setLoadingSla(false);
+    }
+  };
+
+  const saveSlaConfig = async () => {
+    setSavingSla(true);
+    try {
+      await axios.put(
+        `${API_URL}/api/admin/sla-config`,
+        slaConfig,
+        { headers: getAuthHeaders() }
+      );
+      toast.success('Configuração SLA guardada');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar configuração');
+    } finally {
+      setSavingSla(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+          Configurações
+        </h1>
+        <p className="text-zinc-500 mt-1">
+          Gerir tipos de ticket, estados e regras SLA
+        </p>
+      </div>
+
+      <Tabs defaultValue="types" className="space-y-6">
+        <TabsList className="bg-zinc-100 p-1">
+          <TabsTrigger value="types" className="data-[state=active]:bg-white" data-testid="tab-types">
+            <Tag className="h-4 w-4 mr-2" />
+            Tipos de Ticket
+          </TabsTrigger>
+          <TabsTrigger value="statuses" className="data-[state=active]:bg-white" data-testid="tab-statuses">
+            <AlertCircle className="h-4 w-4 mr-2" />
+            Estados
+          </TabsTrigger>
+          <TabsTrigger value="sla" className="data-[state=active]:bg-white" data-testid="tab-sla">
+            <Clock className="h-4 w-4 mr-2" />
+            Regras SLA
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Ticket Types Tab */}
+        <TabsContent value="types">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Tipos de Ticket</CardTitle>
+                <CardDescription>Configure as categorias de tickets disponíveis</CardDescription>
+              </div>
+              <Button onClick={() => openTypeDialog()} className="bg-orange-600 hover:bg-orange-700" data-testid="add-type-btn">
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Tipo
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loadingTypes ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {ticketTypes.map((type) => (
+                    <div 
+                      key={type.id}
+                      className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg hover:bg-zinc-100 transition-colors"
+                      data-testid={`type-item-${type.code}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: type.color }}
+                        />
+                        <div>
+                          <p className="font-semibold text-slate-900">{type.label}</p>
+                          <p className="text-xs text-zinc-500 font-mono">{type.code}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => openTypeDialog(type)}
+                          data-testid={`edit-type-${type.code}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => deleteTicketType(type.id)}
+                          data-testid={`delete-type-${type.code}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Statuses Tab */}
+        <TabsContent value="statuses">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Estados de Ticket</CardTitle>
+                <CardDescription>Configure os estados disponíveis para os tickets</CardDescription>
+              </div>
+              <Button onClick={() => openStatusDialog()} className="bg-orange-600 hover:bg-orange-700" data-testid="add-status-btn">
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Estado
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loadingStatuses ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {ticketStatuses.map((status, index) => (
+                    <div 
+                      key={status.id}
+                      className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg hover:bg-zinc-100 transition-colors"
+                      data-testid={`status-item-${status.code}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GripVertical className="h-4 w-4 text-zinc-400" />
+                        <div 
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: status.color }}
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-slate-900">{status.label}</p>
+                            {status.is_final && (
+                              <Badge variant="outline" className="text-xs">Final</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-500 font-mono">{status.code}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => openStatusDialog(status)}
+                          data-testid={`edit-status-${status.code}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => deleteTicketStatus(status.id)}
+                          data-testid={`delete-status-${status.code}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* SLA Tab */}
+        <TabsContent value="sla">
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuração SLA</CardTitle>
+              <CardDescription>Defina os tempos de resposta esperados</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingSla ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="sla-enabled"
+                      checked={slaConfig.enabled}
+                      onChange={(e) => setSlaConfig({ ...slaConfig, enabled: e.target.checked })}
+                      className="w-4 h-4 rounded border-amber-400 text-orange-600 focus:ring-orange-500"
+                    />
+                    <Label htmlFor="sla-enabled" className="font-medium text-amber-800">
+                      Ativar verificação automática de SLA
+                    </Label>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="first-response">Tempo para 1ª Resposta (horas)</Label>
+                      <Input
+                        id="first-response"
+                        type="number"
+                        min="1"
+                        max="168"
+                        value={slaConfig.first_response_hours}
+                        onChange={(e) => setSlaConfig({ ...slaConfig, first_response_hours: parseInt(e.target.value) || 2 })}
+                        className="w-full"
+                        data-testid="sla-first-response-input"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        Tempo máximo até a primeira resposta ao cliente
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="quote-response">Tempo para Envio de Orçamento (horas)</Label>
+                      <Input
+                        id="quote-response"
+                        type="number"
+                        min="1"
+                        max="168"
+                        value={slaConfig.quote_response_hours}
+                        onChange={(e) => setSlaConfig({ ...slaConfig, quote_response_hours: parseInt(e.target.value) || 24 })}
+                        className="w-full"
+                        data-testid="sla-quote-response-input"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        Tempo máximo para enviar orçamento após solicitação
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4 border-t">
+                    <Button 
+                      onClick={saveSlaConfig} 
+                      disabled={savingSla}
+                      className="bg-orange-600 hover:bg-orange-700"
+                      data-testid="save-sla-btn"
+                    >
+                      {savingSla ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Guardar Configuração
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Type Dialog */}
+      <Dialog open={typeDialogOpen} onOpenChange={setTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingType ? 'Editar Tipo' : 'Novo Tipo de Ticket'}</DialogTitle>
+            <DialogDescription>
+              Configure as propriedades do tipo de ticket
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="type-code">Código</Label>
+              <Input
+                id="type-code"
+                placeholder="ex: ORCAMENTO_PNEUS"
+                value={typeForm.code}
+                onChange={(e) => setTypeForm({ ...typeForm, code: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
+                disabled={!!editingType}
+                data-testid="type-code-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="type-label">Nome</Label>
+              <Input
+                id="type-label"
+                placeholder="ex: Orçamento Pneus"
+                value={typeForm.label}
+                onChange={(e) => setTypeForm({ ...typeForm, label: e.target.value })}
+                data-testid="type-label-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="type-color">Cor</Label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="type-color"
+                  type="color"
+                  value={typeForm.color}
+                  onChange={(e) => setTypeForm({ ...typeForm, color: e.target.value })}
+                  className="w-12 h-10 rounded cursor-pointer"
+                />
+                <Input
+                  value={typeForm.color}
+                  onChange={(e) => setTypeForm({ ...typeForm, color: e.target.value })}
+                  className="w-28 font-mono"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTypeDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={saveTicketType} 
+              disabled={savingType}
+              className="bg-orange-600 hover:bg-orange-700"
+              data-testid="save-type-btn"
+            >
+              {savingType ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                'Guardar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Dialog */}
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingStatus ? 'Editar Estado' : 'Novo Estado de Ticket'}</DialogTitle>
+            <DialogDescription>
+              Configure as propriedades do estado de ticket
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="status-code">Código</Label>
+              <Input
+                id="status-code"
+                placeholder="ex: EM_TRATAMENTO"
+                value={statusForm.code}
+                onChange={(e) => setStatusForm({ ...statusForm, code: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
+                disabled={!!editingStatus}
+                data-testid="status-code-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status-label">Nome</Label>
+              <Input
+                id="status-label"
+                placeholder="ex: Em Tratamento"
+                value={statusForm.label}
+                onChange={(e) => setStatusForm({ ...statusForm, label: e.target.value })}
+                data-testid="status-label-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status-color">Cor</Label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="status-color"
+                  type="color"
+                  value={statusForm.color}
+                  onChange={(e) => setStatusForm({ ...statusForm, color: e.target.value })}
+                  className="w-12 h-10 rounded cursor-pointer"
+                />
+                <Input
+                  value={statusForm.color}
+                  onChange={(e) => setStatusForm({ ...statusForm, color: e.target.value })}
+                  className="w-28 font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-lg">
+              <input
+                type="checkbox"
+                id="status-final"
+                checked={statusForm.is_final}
+                onChange={(e) => setStatusForm({ ...statusForm, is_final: e.target.checked })}
+                className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+              />
+              <Label htmlFor="status-final" className="text-sm">
+                Estado final (fecha o ticket)
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={saveTicketStatus} 
+              disabled={savingStatus}
+              className="bg-orange-600 hover:bg-orange-700"
+              data-testid="save-status-btn"
+            >
+              {savingStatus ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                'Guardar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default AdminSettings;
