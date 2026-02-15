@@ -589,6 +589,52 @@ const TicketDetail = () => {
                               </span>
                             </div>
                             <p className="text-slate-700 whitespace-pre-wrap">{msg.body}</p>
+                            
+                            {/* Message Attachments */}
+                            {msg.attachment_ids && msg.attachment_ids.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {msg.attachment_ids.map((attachId) => {
+                                  const att = attachments.find(a => a.id === attachId);
+                                  if (!att) return null;
+                                  
+                                  const isImage = att.file_type?.startsWith('image/');
+                                  const isPdf = att.file_type === 'application/pdf';
+                                  
+                                  return (
+                                    <div 
+                                      key={attachId}
+                                      className="flex items-center gap-2 bg-white border border-zinc-200 rounded-lg p-2 hover:border-orange-300 transition-colors cursor-pointer group"
+                                      onClick={() => downloadFile(attachId, att.original_filename)}
+                                      data-testid={`msg-attachment-${attachId}`}
+                                    >
+                                      {isImage ? (
+                                        <div className="w-10 h-10 rounded overflow-hidden bg-zinc-100">
+                                          <img 
+                                            src={`${API_URL}/api/attachments/${attachId}/download`} 
+                                            alt={att.original_filename}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <div className={`w-10 h-10 rounded flex items-center justify-center ${isPdf ? 'bg-red-100' : 'bg-zinc-100'}`}>
+                                          <FileText className={`h-5 w-5 ${isPdf ? 'text-red-600' : 'text-zinc-600'}`} />
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-slate-700 truncate max-w-[150px]">
+                                          {att.original_filename}
+                                        </p>
+                                        <p className="text-xs text-zinc-500">
+                                          {(att.file_size / 1024).toFixed(1)} KB
+                                        </p>
+                                      </div>
+                                      <Download className="h-4 w-4 text-zinc-400 group-hover:text-orange-600" />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
