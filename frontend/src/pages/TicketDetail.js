@@ -43,7 +43,7 @@ import {
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 // Component for generating and managing quote links
-const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
+const QuoteLinkSection = ({ ticketId, getAuthHeaders, compact = false }) => {
   const [generating, setGenerating] = useState(false);
   const [quoteLink, setQuoteLink] = useState(null);
   
@@ -64,7 +64,9 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
       
       // Copy to clipboard
       await navigator.clipboard.writeText(fullLink);
-      toast.success('Link gerado e copiado para a área de transferência!');
+      toast.success(response.data.email_sent 
+        ? 'Link gerado, copiado e enviado por email!' 
+        : 'Link gerado e copiado!');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao gerar link');
     } finally {
@@ -79,6 +81,50 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
     }
   };
   
+  // Compact version for conversation tab
+  if (compact) {
+    return !quoteLink ? (
+      <Button
+        variant="outline"
+        size="sm"
+        className="border-amber-400 text-amber-700 hover:bg-amber-100"
+        onClick={generateLink}
+        disabled={generating}
+        data-testid="generate-quote-link-btn"
+      >
+        {generating ? (
+          <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mr-1" />
+        ) : (
+          <Link2 className="h-3 w-3 mr-1" />
+        )}
+        Gerar Link
+      </Button>
+    ) : (
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={copyLink}
+          className="border-amber-400 text-amber-700"
+          title="Copiar link"
+        >
+          <Copy className="h-3 w-3 mr-1" />
+          Copiar
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.open(quoteLink.fullLink, '_blank')}
+          className="border-amber-400 text-amber-700"
+          title="Abrir link"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </Button>
+      </div>
+    );
+  }
+  
+  // Full version for documents tab
   return (
     <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
       <div className="flex items-center gap-2">
@@ -92,7 +138,7 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
           className="border-amber-300 text-amber-700 hover:bg-amber-100"
           onClick={generateLink}
           disabled={generating}
-          data-testid="generate-quote-link-btn"
+          data-testid="generate-quote-link-btn-full"
         >
           {generating ? (
             <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mr-2" />
