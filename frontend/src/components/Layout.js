@@ -15,7 +15,8 @@ import {
   X,
   Wrench,
   ChevronRight,
-  Archive
+  Archive,
+  Settings
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
@@ -73,6 +74,12 @@ const Layout = ({ children }) => {
       path: '/users', 
       label: 'Utilizadores', 
       icon: Users,
+      roles: ['ADMIN']
+    },
+    { 
+      path: '/settings', 
+      label: 'Configurações', 
+      icon: Settings,
       roles: ['ADMIN']
     },
   ];
