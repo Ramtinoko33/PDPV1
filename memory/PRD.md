@@ -52,25 +52,54 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - AGENT: apenas tickets atribuídos
 - Permissões validadas no backend (API)
 
-### Funcionalidades Pendentes
+#### 8. Anexos nas Mensagens (P1) ✅ - NEW
+- Mensagens podem incluir anexos (attachment_ids)
+- Anexos aparecem no timeline de mensagens com ícone, nome e tamanho
+- Download de anexos com preview de imagens
+- Suporte para PDF, Word, Excel, imagens
 
-#### P2 - Organização
-- [ ] CRUD de estados (atualmente fixos no código)
-- [ ] CRUD de tipologias (urgente, normal, etc.)
-- [ ] Configuração de SLA via admin
+#### 9. Admin CRUD - Tipos de Ticket (P2) ✅ - NEW
+- Página `/settings` com tab "Tipos de Ticket"
+- CRUD completo para criar, editar, eliminar tipos
+- Cada tipo tem: código, nome, cor
+- Validação de uso antes de eliminar (não permite eliminar tipos em uso)
+- 6 tipos predefinidos: Orçamento Pneus/Mecânica, Marcação, Informação, Interno, Reclamação
+
+#### 10. Admin CRUD - Estados de Ticket (P2) ✅ - NEW
+- Tab "Estados" na página de configurações
+- CRUD completo para criar, editar, eliminar estados
+- Cada estado tem: código, nome, cor, flag "final"
+- 4 estados predefinidos: Aberto, Em Tratamento, Aguarda Cliente, Fechado
+
+#### 11. Admin Configuração SLA (P2) ✅ - NEW
+- Tab "Regras SLA" na página de configurações
+- Tempo para 1ª Resposta (horas) - default: 2h
+- Tempo para Envio de Orçamento (horas) - default: 24h
+- Toggle para ativar/desativar verificação automática de SLA
+
+#### 12. Aceitação de Orçamentos pelo Cliente (P4) ✅ - NEW
+- Botão "Gerar Link para Cliente" no detalhe do ticket (tab Documentos)
+- Link único gerado com validade de 7 dias
+- Página pública `/quote/{token}` - SEM autenticação
+- Cliente pode aceitar ou recusar orçamento com comentários
+- Ao aceitar: ticket muda para EM_TRATAMENTO
+- Ao recusar: ticket muda para FECHADO
+- Notificações enviadas ao agente e supervisores
+
+### Funcionalidades Pendentes
 
 #### P3 - Comunicação
 - [ ] Configuração SMTP via UI (atualmente via .env)
 
 #### P4 - Operacional
 - [ ] Importação Excel com validação
-- [ ] Pré-visualização de anexos (atualmente só download)
-- [ ] Histórico de orçamento
+- [ ] Pré-visualização avançada de anexos (imagens inline, PDF viewer)
+- [ ] Histórico de alterações de orçamento
 - [ ] Relatórios completos
-- [ ] Portal do cliente
+- [ ] Portal do cliente (visualização de todos os tickets)
 
 ## Tech Stack
-- **Backend**: FastAPI, MongoDB (motor), Pydantic, JWT, Resend
+- **Backend**: FastAPI, MongoDB (motor), Pydantic, JWT, Resend, APScheduler
 - **Frontend**: React, Tailwind CSS, shadcn/ui
 - **Notifications**: Web Push (VAPID), WebSocket
 
@@ -78,11 +107,16 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 
 ### Collections
 - `users`: {id, email, password_hash, name, role, created_at}
-- `tickets`: {id, ticket_number, status, type, channel, priority, customer_*, sla_due, first_response_done, archived_at, archived_by, ...}
+- `tickets`: {id, ticket_number, status, type, channel, priority, customer_*, sla_due, first_response_done, archived_at, archived_by, quote_value, quote_sent, quote_link_token, quote_response_status, quote_response_at, ...}
 - `ticket_status_history`: {id, ticket_id, old_status, new_status, changed_by_user_id, changed_at}
 - `messages`: {id, ticket_id, direction, channel, body, attachment_ids, ...}
 - `notes`: {id, ticket_id, body, is_system, ...}
 - `customers`: {id, customer_code, name, nif, phones, emails, vehicles}
+- `attachments`: {id, ticket_id, filename, original_filename, file_type, file_size, uploaded_at, uploaded_by_user_id}
+- `quote_links`: {id, ticket_id, token, expires_at, response_status, response_at, response_comments}
+- `ticket_types`: {id, code, label, color, created_at}
+- `ticket_statuses`: {id, code, label, color, is_final, order, created_at}
+- `settings`: {type: "sla_config", first_response_hours, quote_response_hours, enabled}
 - `notifications`: {id, user_id, title, body, type, read, ...}
 - `push_subscriptions`: {id, user_id, endpoint, keys, ...}
 
@@ -102,14 +136,26 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - POST /api/tickets/{id}/archive (Admin/Supervisor only)
 - POST /api/tickets/{id}/restore (Admin/Supervisor only)
 - GET /api/tickets/{id}/status-history
+- POST /api/tickets/{id}/generate-quote-link (NEW)
 
-### Messages/Notes
+### Messages/Notes/Attachments
 - GET/POST /api/tickets/{id}/messages
 - GET/POST /api/tickets/{id}/notes
+- GET/POST /api/tickets/{id}/attachments
+- GET /api/attachments/{id}/download
 
-### Admin
+### Admin Settings (NEW)
+- GET/POST /api/admin/ticket-types
+- PUT/DELETE /api/admin/ticket-types/{id}
+- GET/POST /api/admin/ticket-statuses
+- PUT/DELETE /api/admin/ticket-statuses/{id}
+- GET/PUT /api/admin/sla-config
 - GET /api/admin/email-config
 - POST /api/admin/test-email
+
+### Public (NO AUTH)
+- GET /api/public/quote/{token} (NEW)
+- POST /api/public/quote/{token}/respond (NEW)
 
 ### Dashboard
 - GET /api/dashboard/stats
@@ -117,7 +163,7 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 ## Test Credentials
 - Admin: admin@pdpv.pt / admin123
 - Supervisor: supervisor@pdpv.pt / super123
-- Agent: agente@pdpv.pt / agente123
+- Agent: agente1@pdpv.pt / agente123
 
 ## Environment Variables
 ```
@@ -131,6 +177,18 @@ VAPID_PRIVATE_KEY=...
 ```
 
 ## Changelog
+
+### 2026-02-15
+- P1: Implementado exibição de anexos nas mensagens do ticket
+- P2: Criada página AdminSettings com CRUD para Tipos de Ticket
+- P2: Criada gestão de Estados de Ticket com flag "final"
+- P2: Implementada configuração de SLA via UI
+- P4: Implementado sistema de aceitação de orçamentos pelo cliente
+  - Geração de link único com validade de 7 dias
+  - Página pública para cliente aceitar/recusar
+  - Atualização automática do status do ticket
+  - Notificações para agente e supervisores
+- Adicionados campos quote_response_status e quote_response_at ao modelo TicketResponse
 
 ### 2026-02-14
 - Implementado sistema de arquivos (P0)
