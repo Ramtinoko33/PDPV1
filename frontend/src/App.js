@@ -10,6 +10,7 @@ import CreateTicket from "./pages/CreateTicket";
 import ArchivedTickets from "./pages/ArchivedTickets";
 import UserManagement from "./pages/UserManagement";
 import CustomerManagement from "./pages/CustomerManagement";
+import AdminSettings from "./pages/AdminSettings";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -83,6 +84,12 @@ function AppRoutes() {
       <Route path="/users" element={
         <ProtectedRoute allowedRoles={['ADMIN']}>
           <UserManagement />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/settings" element={
+        <ProtectedRoute allowedRoles={['ADMIN']}>
+          <AdminSettings />
         </ProtectedRoute>
       } />
       
