@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { 
-  Settings, 
   Tag, 
   AlertCircle,
   Clock,
@@ -18,8 +17,11 @@ import {
   Pencil,
   Trash2,
   Save,
-  X,
-  GripVertical
+  GripVertical,
+  Mail,
+  Send,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -51,12 +53,24 @@ const AdminSettings = () => {
   });
   const [loadingSla, setLoadingSla] = useState(true);
   const [savingSla, setSavingSla] = useState(false);
+  
+  // Email Config State
+  const [emailConfig, setEmailConfig] = useState({
+    resend_configured: false,
+    email_from: '',
+    frontend_url: ''
+  });
+  const [loadingEmail, setLoadingEmail] = useState(true);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
 
   // Fetch all settings on mount
   useEffect(() => {
     fetchTicketTypes();
     fetchTicketStatuses();
     fetchSlaConfig();
+    fetchEmailConfig();
   }, []);
 
   // ============== TICKET TYPES ==============
@@ -67,7 +81,6 @@ const AdminSettings = () => {
       setTicketTypes(response.data);
     } catch (error) {
       console.error('Error fetching ticket types:', error);
-      // Set defaults if endpoint doesn't exist yet
       setTicketTypes([
         { id: '1', code: 'ORCAMENTO_PNEUS', label: 'Orçamento Pneus', color: '#f97316' },
         { id: '2', code: 'ORCAMENTO_MECANICA', label: 'Orçamento Mecânica', color: '#3b82f6' },
@@ -144,7 +157,6 @@ const AdminSettings = () => {
       setTicketStatuses(response.data);
     } catch (error) {
       console.error('Error fetching ticket statuses:', error);
-      // Set defaults if endpoint doesn't exist yet
       setTicketStatuses([
         { id: '1', code: 'ABERTO', label: 'Aberto', color: '#22c55e', is_final: false },
         { id: '2', code: 'EM_TRATAMENTO', label: 'Em Tratamento', color: '#3b82f6', is_final: false },
@@ -224,7 +236,6 @@ const AdminSettings = () => {
       setSlaConfig(response.data);
     } catch (error) {
       console.error('Error fetching SLA config:', error);
-      // Keep defaults
     } finally {
       setLoadingSla(false);
     }
@@ -246,6 +257,57 @@ const AdminSettings = () => {
     }
   };
 
+  // ============== EMAIL CONFIG ==============
+  const fetchEmailConfig = async () => {
+    setLoadingEmail(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/email-settings`, { headers: getAuthHeaders() });
+      setEmailConfig(response.data);
+    } catch (error) {
+      console.error('Error fetching email config:', error);
+    } finally {
+      setLoadingEmail(false);
+    }
+  };
+
+  const saveEmailConfig = async () => {
+    setSavingEmail(true);
+    try {
+      await axios.put(
+        `${API_URL}/api/admin/email-settings`,
+        emailConfig,
+        { headers: getAuthHeaders() }
+      );
+      toast.success('Configuração de email guardada');
+      fetchEmailConfig();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar configuração');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const sendTestEmail = async () => {
+    if (!testEmail) {
+      toast.error('Introduza um email');
+      return;
+    }
+    
+    setSendingTest(true);
+    try {
+      await axios.post(
+        `${API_URL}/api/admin/test-email`,
+        { recipient_email: testEmail },
+        { headers: getAuthHeaders() }
+      );
+      toast.success(`Email de teste enviado para ${testEmail}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao enviar email de teste');
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -254,7 +316,7 @@ const AdminSettings = () => {
           Configurações
         </h1>
         <p className="text-zinc-500 mt-1">
-          Gerir tipos de ticket, estados e regras SLA
+          Gerir tipos de ticket, estados, regras SLA e configurações de email
         </p>
       </div>
 
@@ -271,6 +333,10 @@ const AdminSettings = () => {
           <TabsTrigger value="sla" className="data-[state=active]:bg-white" data-testid="tab-sla">
             <Clock className="h-4 w-4 mr-2" />
             Regras SLA
+          </TabsTrigger>
+          <TabsTrigger value="email" className="data-[state=active]:bg-white" data-testid="tab-email">
+            <Mail className="h-4 w-4 mr-2" />
+            Email
           </TabsTrigger>
         </TabsList>
 
@@ -357,7 +423,7 @@ const AdminSettings = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {ticketStatuses.map((status, index) => (
+                  {ticketStatuses.map((status) => (
                     <div 
                       key={status.id}
                       className="flex items-center justify-between p-4 bg-zinc-50 rounded-lg hover:bg-zinc-100 transition-colors"
@@ -488,6 +554,139 @@ const AdminSettings = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Email Tab */}
+        <TabsContent value="email">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração de Email</CardTitle>
+                <CardDescription>Configure o serviço de envio de emails (Resend)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingEmail ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Status */}
+                    <div className={`flex items-center gap-3 p-4 rounded-lg ${
+                      emailConfig.resend_configured 
+                        ? 'bg-emerald-50 border border-emerald-200' 
+                        : 'bg-red-50 border border-red-200'
+                    }`}>
+                      {emailConfig.resend_configured ? (
+                        <>
+                          <CheckCircle className="h-5 w-5 text-emerald-600" />
+                          <div>
+                            <p className="font-medium text-emerald-800">Resend Configurado</p>
+                            <p className="text-sm text-emerald-600">O serviço de email está ativo</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-5 w-5 text-red-600" />
+                          <div>
+                            <p className="font-medium text-red-800">Resend Não Configurado</p>
+                            <p className="text-sm text-red-600">Configure a API Key no ficheiro .env do backend</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="email-from">Email de Envio</Label>
+                        <Input
+                          id="email-from"
+                          type="email"
+                          placeholder="rececao@empresa.com"
+                          value={emailConfig.email_from || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_from: e.target.value })}
+                          className="w-full"
+                          data-testid="email-from-input"
+                        />
+                        <p className="text-xs text-zinc-500">
+                          Endereço que aparece como remetente
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="frontend-url">URL do Frontend</Label>
+                        <Input
+                          id="frontend-url"
+                          type="url"
+                          placeholder="https://seu-dominio.com"
+                          value={emailConfig.frontend_url || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, frontend_url: e.target.value })}
+                          className="w-full"
+                          data-testid="frontend-url-input"
+                        />
+                        <p className="text-xs text-zinc-500">
+                          URL usado nos links enviados por email
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-4 border-t">
+                      <Button 
+                        onClick={saveEmailConfig} 
+                        disabled={savingEmail}
+                        className="bg-orange-600 hover:bg-orange-700"
+                        data-testid="save-email-btn"
+                      >
+                        {savingEmail ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        Guardar Configuração
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Test Email */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Testar Envio de Email</CardTitle>
+                <CardDescription>Envie um email de teste para verificar a configuração</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end gap-4">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="test-email">Email de Destino</Label>
+                    <Input
+                      id="test-email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      className="w-full"
+                      data-testid="test-email-input"
+                    />
+                  </div>
+                  <Button 
+                    onClick={sendTestEmail} 
+                    disabled={sendingTest || !emailConfig.resend_configured}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    data-testid="send-test-email-btn"
+                  >
+                    {sendingTest ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    Enviar Teste
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
