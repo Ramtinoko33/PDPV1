@@ -1005,29 +1005,63 @@ const TicketDetail = () => {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center justify-between p-4 hover:bg-zinc-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-zinc-600" />
+                  {attachments.map((att) => {
+                    const isImage = att.file_type?.startsWith('image/');
+                    const isPdf = att.file_type === 'application/pdf';
+                    
+                    return (
+                      <div key={att.id} className="p-4 hover:bg-zinc-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                              isImage ? 'bg-blue-100' : isPdf ? 'bg-red-100' : 'bg-zinc-100'
+                            }`}>
+                              <FileText className={`h-5 w-5 ${
+                                isImage ? 'text-blue-600' : isPdf ? 'text-red-600' : 'text-zinc-600'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-900">{att.original_filename}</p>
+                              <p className="text-xs text-zinc-500">
+                                {(att.file_size / 1024).toFixed(1)} KB • {formatDate(att.uploaded_at)} • {att.uploaded_by_name}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => downloadFile(att.id, att.original_filename)}
+                            data-testid={`download-${att.id}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-900">{att.original_filename}</p>
-                          <p className="text-xs text-zinc-500">
-                            {(att.file_size / 1024).toFixed(1)} KB • {formatDate(att.uploaded_at)} • {att.uploaded_by_name}
-                          </p>
-                        </div>
+                        
+                        {/* Preview Section */}
+                        {isImage && (
+                          <div className="mt-2 rounded-lg overflow-hidden border border-zinc-200 max-w-md">
+                            <img 
+                              src={`${API_URL}/api/attachments/${att.id}/download`}
+                              alt={att.original_filename}
+                              className="w-full h-auto max-h-64 object-contain bg-zinc-50"
+                              loading="lazy"
+                            />
+                          </div>
+                        )}
+                        
+                        {isPdf && (
+                          <div className="mt-2 rounded-lg overflow-hidden border border-zinc-200">
+                            <iframe
+                              src={`${API_URL}/api/attachments/${att.id}/download#toolbar=0`}
+                              title={att.original_filename}
+                              className="w-full h-96 bg-zinc-50"
+                              data-testid={`pdf-preview-${att.id}`}
+                            />
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => downloadFile(att.id, att.original_filename)}
-                        data-testid={`download-${att.id}`}
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
