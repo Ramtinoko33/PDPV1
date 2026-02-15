@@ -611,7 +611,7 @@ const TicketDetail = () => {
             </Badge>
           )}
 
-          {/* Assign */}
+          {/* Assign - Different UI for agents vs admin/supervisor */}
           {['ADMIN', 'SUPERVISOR'].includes(user?.role) && (
             <Select
               value={ticket.assigned_to_user_id || 'none'}
@@ -627,6 +627,19 @@ const TicketDetail = () => {
                 ))}
               </SelectContent>
             </Select>
+          )}
+          
+          {/* Agent self-assign button - only show when ticket is unassigned */}
+          {user?.role === 'AGENT' && !ticket.assigned_to_user_id && (
+            <Button
+              variant="outline"
+              className="h-10 border-blue-400 text-blue-700 hover:bg-blue-50"
+              onClick={() => updateTicket({ assigned_to_user_id: user.id })}
+              data-testid="self-assign-btn"
+            >
+              <User className="h-4 w-4 mr-2" />
+              Atribuir a mim
+            </Button>
           )}
 
           {/* Archive/Restore Button */}
