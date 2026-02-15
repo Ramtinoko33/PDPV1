@@ -49,8 +49,10 @@ const CreateTicket = () => {
       phoneRef.current.focus();
     }
     // Fetch available users for assignment
-    fetchUsers();
-  }, []);
+    if (user) {
+      fetchUsers();
+    }
+  }, [user]);
 
   const fetchUsers = async () => {
     try {
