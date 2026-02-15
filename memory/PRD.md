@@ -67,15 +67,16 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - **Frontend**: React, Tailwind CSS, shadcn/ui
 - **Notifications**: Web Push (VAPID), WebSocket
 
-## Key Changes This Session
+## Key Changes This Session (15/02/2026)
 
-### Orçamento na Tab Conversa
-Antes: Orçamento estava na tab "Documentos"
-Depois: Orçamento está na tab "Conversa", integrado com formulário de resposta
+### Bug Fixes Concluídos ✅
+1. **Navegação na Lista de Tickets** - TableRow agora tem onClick handler para navegar para detalhe
+2. **Auto-atribuição na Criação** - Agentes conseguem selecionar-se no dropdown "Atribuir a" ao criar ticket
+3. **assigned_to_name** - Backend agora popula o nome do utilizador atribuído na criação
 
-### Permissões de Agentes
-Antes: Agentes só viam tickets atribuídos a si, não podiam alterar atribuição
-Depois: Agentes veem tickets atribuídos + não atribuídos, podem auto-atribuir com botão
+### Alterações Anteriores
+- Orçamento movido para Tab Conversa (integrado com formulário de resposta)
+- Permissões de Agentes: veem tickets atribuídos + não atribuídos, podem auto-atribuir
 
 ## Test Credentials
 - Admin: admin@pdpv.pt / admin123
