@@ -833,6 +833,38 @@ const TicketDetail = () => {
                   data-testid="quote-value-input"
                 />
               </div>
+              
+              {/* Generate Quote Link */}
+              {canEdit && quoteValue && parseFloat(quoteValue) > 0 && (
+                <QuoteLinkSection ticketId={id} getAuthHeaders={getAuthHeaders} />
+              )}
+              
+              {/* Quote Response Status */}
+              {ticket.quote_response_status && (
+                <div className={`p-4 rounded-lg ${
+                  ticket.quote_response_status === 'ACCEPTED' 
+                    ? 'bg-emerald-50 border border-emerald-200' 
+                    : 'bg-red-50 border border-red-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {ticket.quote_response_status === 'ACCEPTED' ? (
+                      <CheckCircle className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                    <span className={`font-semibold ${
+                      ticket.quote_response_status === 'ACCEPTED' ? 'text-emerald-800' : 'text-red-800'
+                    }`}>
+                      Orçamento {ticket.quote_response_status === 'ACCEPTED' ? 'Aceite' : 'Recusado'} pelo Cliente
+                    </span>
+                  </div>
+                  {ticket.quote_response_at && (
+                    <p className="text-sm text-zinc-500 mt-1">
+                      Em {formatDate(ticket.quote_response_at)}
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
