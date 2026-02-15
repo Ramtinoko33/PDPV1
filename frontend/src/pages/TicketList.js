@@ -380,6 +380,11 @@ const TicketList = () => {
                       key={ticket.id} 
                       className="hover:bg-zinc-50/50 cursor-pointer"
                       data-testid={`ticket-row-${ticket.id}`}
+                      onClick={(e) => {
+                        // Prevent navigation when clicking on interactive elements (dropdowns, buttons)
+                        if (e.target.closest('button') || e.target.closest('[role="combobox"]')) return;
+                        window.location.href = `/tickets/${ticket.id}`;
+                      }}
                     >
                       <TableCell>
                         <span className="font-mono text-sm font-semibold text-orange-600">
