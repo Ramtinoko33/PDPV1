@@ -828,6 +828,66 @@ const TicketDetail = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
+                {/* Compact Quote Section - Integrated in Conversation */}
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-amber-600" />
+                      <span className="font-semibold text-amber-800">Orçamento</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="quote_sent_conv"
+                        checked={ticket.quote_sent}
+                        onCheckedChange={(checked) => updateTicket({ quote_sent: checked })}
+                        data-testid="quote-sent-checkbox-conv"
+                      />
+                      <Label htmlFor="quote_sent_conv" className="text-sm text-amber-700">
+                        Enviado
+                      </Label>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Label className="font-medium text-amber-700 whitespace-nowrap">Valor (€)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={quoteValue}
+                        onChange={(e) => setQuoteValue(e.target.value)}
+                        onBlur={() => updateTicket({ quote_value: parseFloat(quoteValue) || null })}
+                        className="w-32 border-amber-300 focus:border-amber-500"
+                        data-testid="quote-value-input-conv"
+                      />
+                    </div>
+                    
+                    {quoteValue && parseFloat(quoteValue) > 0 && (
+                      <QuoteLinkSection ticketId={id} getAuthHeaders={getAuthHeaders} compact={true} />
+                    )}
+                  </div>
+                  
+                  {/* Quote Response Status - Compact */}
+                  {ticket.quote_response_status && (
+                    <div className={`flex items-center gap-2 p-2 rounded ${
+                      ticket.quote_response_status === 'ACCEPTED' 
+                        ? 'bg-emerald-100 text-emerald-700' 
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {ticket.quote_response_status === 'ACCEPTED' ? (
+                        <CheckCircle className="h-4 w-4" />
+                      ) : (
+                        <XCircle className="h-4 w-4" />
+                      )}
+                      <span className="text-sm font-medium">
+                        {ticket.quote_response_status === 'ACCEPTED' ? 'Aceite' : 'Recusado'} pelo Cliente
+                        {ticket.quote_response_at && ` • ${formatDate(ticket.quote_response_at)}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <form onSubmit={sendMessage} className="space-y-4">
                   <Textarea
                     placeholder="Escreva a sua resposta..."
