@@ -552,8 +552,10 @@ const TicketDetail = () => {
 
   if (!ticket) return null;
 
+  // Check if user can edit (normal permissions OR creator within 5 min)
   const canEdit = ['ADMIN', 'SUPERVISOR'].includes(user?.role) || 
-    (user?.role === 'AGENT' && ticket.assigned_to_user_id === user.id);
+    (user?.role === 'AGENT' && ticket.assigned_to_user_id === user.id) ||
+    ticket.creator_can_edit;
 
   return (
     <div className="space-y-6">
@@ -573,6 +575,12 @@ const TicketDetail = () => {
             <h1 className="text-3xl font-black text-slate-900 tracking-tight font-mono">
               {ticket.ticket_number}
             </h1>
+            {ticket.creator_can_edit && (
+              <Badge className="bg-blue-100 text-blue-700 text-sm">
+                <Clock className="h-4 w-4 mr-1" />
+                Pode editar (5 min)
+              </Badge>
+            )}
             {ticket.is_overdue && (
               <Badge className="sla-overdue text-sm">
                 <AlertTriangle className="h-4 w-4 mr-1" />
