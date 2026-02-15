@@ -98,6 +98,12 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       
+      <Route path="/reports" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+          <AdminReports />
+        </ProtectedRoute>
+      } />
+      
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
