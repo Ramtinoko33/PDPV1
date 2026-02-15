@@ -27,6 +27,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 const TicketList = () => {
   const { user, getAuthHeaders } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
