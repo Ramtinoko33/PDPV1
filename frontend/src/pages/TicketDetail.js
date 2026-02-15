@@ -136,6 +136,80 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders }) => {
   );
 };
 
+// Component for displaying quote value change history
+const QuoteHistorySection = ({ ticketId, getAuthHeaders, formatDate }) => {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  
+  useEffect(() => {
+    fetchHistory();
+  }, [ticketId]);
+  
+  const fetchHistory = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/tickets/${ticketId}/quote-history`,
+        { headers: getAuthHeaders() }
+      );
+      setHistory(response.data);
+    } catch (error) {
+      console.error('Error fetching quote history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  if (loading) return null;
+  if (history.length === 0) return null;
+  
+  return (
+    <Card>
+      <CardHeader className="border-b cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Histórico de Alterações do Orçamento
+            <Badge variant="outline" className="ml-2">{history.length}</Badge>
+          </CardTitle>
+          <ChevronRight className={`h-5 w-5 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="p-0">
+          <div className="divide-y">
+            {history.map((entry) => (
+              <div key={entry.id} className="p-4 hover:bg-zinc-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {entry.old_value !== null ? (
+                          <><span className="text-zinc-500 line-through">{entry.old_value?.toFixed(2)}€</span> → </>
+                        ) : null}
+                        <span className="text-amber-600">{entry.new_value?.toFixed(2)}€</span>
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {entry.changed_by_name || 'Sistema'} • {formatDate(entry.changed_at)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {entry.reason && (
+                  <p className="mt-2 text-sm text-zinc-600 pl-11">{entry.reason}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+};
+
 const TicketDetail = () => {
   const { id } = useParams();
   const { user, getAuthHeaders } = useAuth();
