@@ -216,6 +216,7 @@ class TicketResponse(BaseModel):
     vehicle_plate: Optional[str] = None
     assigned_to_user_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
+    created_by_user_id: Optional[str] = None
     last_public_message_at: Optional[str] = None
     first_response_done: bool = False
     sla_due: Optional[str] = None
@@ -226,6 +227,7 @@ class TicketResponse(BaseModel):
     is_overdue: bool = False
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
+    creator_can_edit: bool = False
 
 class TicketStatusHistoryResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
