@@ -1012,6 +1012,13 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     # Set status to EM_TRATAMENTO if assigned to someone, otherwise ABERTO
     initial_status = TicketStatus.EM_TRATAMENTO.value if ticket_data.assigned_to_user_id else TicketStatus.ABERTO.value
     
+    # Get assigned user name if assigning
+    assigned_to_name = None
+    if ticket_data.assigned_to_user_id:
+        assigned_user = await db.users.find_one({"id": ticket_data.assigned_to_user_id})
+        if assigned_user:
+            assigned_to_name = assigned_user.get("name")
+    
     ticket_doc = {
         "id": ticket_id,
         "ticket_number": ticket_number,
@@ -1027,6 +1034,7 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "customer_email": ticket_data.customer_email,
         "vehicle_plate": ticket_data.vehicle_plate,
         "assigned_to_user_id": ticket_data.assigned_to_user_id if ticket_data.assigned_to_user_id else None,
+        "assigned_to_name": assigned_to_name,
         "last_public_message_at": None,
         "first_response_done": False,
         "sla_due": sla_due.isoformat(),
