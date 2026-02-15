@@ -1183,8 +1183,12 @@ async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_us
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
     # Check permissions
-    if user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != user["id"]:
-        raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
+    if user["role"] == UserRole.AGENT.value:
+        # Agents can see: their assigned tickets OR unassigned tickets (to self-assign)
+        is_assigned_to_agent = ticket.get("assigned_to_user_id") == user["id"]
+        is_unassigned = ticket.get("assigned_to_user_id") is None
+        if not is_assigned_to_agent and not is_unassigned:
+            raise HTTPException(status_code=403, detail="Sem permissão para ver este ticket")
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão para ver tickets")
     
