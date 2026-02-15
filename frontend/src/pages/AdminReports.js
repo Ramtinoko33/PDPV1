@@ -167,12 +167,12 @@ const AdminReports = () => {
             </div>
             <div className="space-y-2">
               <Label>Estado</Label>
-              <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v })}>
+              <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v === 'all' ? '' : v })}>
                 <SelectTrigger data-testid="filter-status">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="ABERTO">Aberto</SelectItem>
                   <SelectItem value="EM_TRATAMENTO">Em Tratamento</SelectItem>
                   <SelectItem value="AGUARDA_CLIENTE">Aguarda Cliente</SelectItem>
@@ -182,12 +182,12 @@ const AdminReports = () => {
             </div>
             <div className="space-y-2">
               <Label>Tipo</Label>
-              <Select value={filters.type} onValueChange={(v) => setFilters({ ...filters, type: v })}>
+              <Select value={filters.type} onValueChange={(v) => setFilters({ ...filters, type: v === 'all' ? '' : v })}>
                 <SelectTrigger data-testid="filter-type">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   {ticketTypes.map((t) => (
                     <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>
                   ))}
@@ -196,12 +196,12 @@ const AdminReports = () => {
             </div>
             <div className="space-y-2">
               <Label>Atribuído a</Label>
-              <Select value={filters.assigned_to} onValueChange={(v) => setFilters({ ...filters, assigned_to: v })}>
+              <Select value={filters.assigned_to} onValueChange={(v) => setFilters({ ...filters, assigned_to: v === 'all' ? '' : v })}>
                 <SelectTrigger data-testid="filter-assigned">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   {users.filter(u => u.role !== 'ADMIN').map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                   ))}
