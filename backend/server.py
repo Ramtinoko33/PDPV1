@@ -2548,7 +2548,7 @@ class ReportResponse(BaseModel):
     period: Dict[str, Optional[str]]
     metrics: TicketMetrics
     agent_performance: List[AgentPerformance] = []
-    daily_ticket_counts: List[Dict[str, any]] = []
+    daily_ticket_counts: List[Dict[str, Any]] = []
 
 @api_router.post("/admin/reports", response_model=ReportResponse)
 async def generate_report(filters: ReportFilters, current_user: dict = Depends(get_current_user)):
