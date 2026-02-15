@@ -2475,7 +2475,7 @@ async def get_email_settings(current_user: dict = Depends(get_current_user)):
     return EmailConfigResponse(
         resend_configured=bool(RESEND_API_KEY or (config and config.get("resend_api_key"))),
         email_from=EMAIL_FROM if RESEND_API_KEY else (config.get("email_from") if config else None),
-        frontend_url=config.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com") if config else "https://pdpv-workshop.preview.emergentagent.com"
+        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com") if config else "https://ticket-flow-15.preview.emergentagent.com"
     )
 
 @api_router.put("/admin/email-settings", response_model=EmailConfigResponse)
@@ -2503,7 +2503,7 @@ async def update_email_settings(config_data: EmailConfigUpdate, current_user: di
     return EmailConfigResponse(
         resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key")),
         email_from=EMAIL_FROM if RESEND_API_KEY else config.get("email_from"),
-        frontend_url=config.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com")
+        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com")
     )
 
 # ============== QUOTE VALUE HISTORY ==============
@@ -2870,7 +2870,7 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
         try:
             # Get frontend URL from settings or use default
             email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
-            frontend_url = email_settings.get("frontend_url", "https://pdpv-workshop.preview.emergentagent.com") if email_settings else "https://pdpv-workshop.preview.emergentagent.com"
+            frontend_url = email_settings.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com") if email_settings else "https://ticket-flow-15.preview.emergentagent.com"
             quote_link_url = f"{frontend_url}/quote/{token}"
             
             quote_value_formatted = f"{ticket['quote_value']:.2f}".replace('.', ',')
