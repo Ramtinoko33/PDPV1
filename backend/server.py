@@ -221,6 +221,8 @@ class TicketResponse(BaseModel):
     sla_due: Optional[str] = None
     quote_sent: bool = False
     quote_value: Optional[float] = None
+    quote_response_status: Optional[str] = None
+    quote_response_at: Optional[str] = None
     is_overdue: bool = False
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
