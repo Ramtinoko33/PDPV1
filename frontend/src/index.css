@@ -90,7 +90,7 @@ code, .font-mono {
 
 /* Priority badges */
 .priority-normal { @apply bg-zinc-100 text-zinc-700; }
-.priority-urgente { @apply bg-red-100 text-red-800 border-red-300; }
+.priority-urgente { @apply bg-red-100 text-red-800 border-red-300 underline decoration-red-400 decoration-2 underline-offset-2; }
 
 /* SLA indicators */
 .sla-ok { @apply bg-emerald-100 text-emerald-800 border-emerald-200; }
