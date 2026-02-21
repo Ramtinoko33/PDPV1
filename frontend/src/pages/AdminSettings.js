@@ -68,6 +68,22 @@ const AdminSettings = () => {
     subscriptions_count: 0
   });
   const [loadingPush, setLoadingPush] = useState(true);
+
+  // Branding Config State
+  const [brandingConfig, setBrandingConfig] = useState({
+    company_name: 'PDPV',
+    company_subtitle: 'Pneus de Pedro V.',
+    company_logo_url: '',
+    primary_color: '#f97316',
+    secondary_color: '#1f2937',
+    company_phone: '',
+    company_email: '',
+    company_address: '',
+    company_website: '',
+    email_templates: {}
+  });
+  const [loadingBranding, setLoadingBranding] = useState(true);
+  const [savingBranding, setSavingBranding] = useState(false);
   
   // Email Config State
   const [emailConfig, setEmailConfig] = useState({
