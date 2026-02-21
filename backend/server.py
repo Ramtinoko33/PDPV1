@@ -3136,23 +3136,51 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
         try:
             # Get frontend URL from settings or use default
             email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+            branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+            templates = await db.settings.find_one({"type": "email_templates"}, {"_id": 0}) or {}
+            
             frontend_url = email_settings.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com") if email_settings else "https://ticket-flow-15.preview.emergentagent.com"
             quote_link_url = f"{frontend_url}/quote/{token}"
             
+            # Get branding values
+            company_name = branding.get("company_name", "PDPV")
+            company_subtitle = branding.get("company_subtitle", "Pneus de Pedro V.")
+            primary_color = branding.get("primary_color", "#f97316")
+            secondary_color = branding.get("secondary_color", "#1f2937")
+            company_logo_url = branding.get("company_logo_url")
+            
+            # Get template values
             quote_value_formatted = f"{ticket['quote_value']:.2f}".replace('.', ',')
+            expiry_date = expires_at.strftime('%d/%m/%Y')
+            
+            email_subject = templates.get("quote_email_subject", "[Ticket #{ticket_number}] Orçamento - {quote_value}€")
+            email_subject = email_subject.replace("{ticket_number}", ticket['ticket_number']).replace("{quote_value}", quote_value_formatted)
+            
+            email_greeting = templates.get("quote_email_greeting", "Olá {customer_name},")
+            email_greeting = email_greeting.replace("{customer_name}", ticket['customer_name'])
+            
+            email_intro = templates.get("quote_email_intro", "Preparámos um orçamento para si referente ao seu pedido.")
+            email_button = templates.get("quote_email_button_text", "Ver Orçamento")
+            email_footer = templates.get("quote_email_footer", "Este link é válido até {expiry_date}.")
+            email_footer = email_footer.replace("{expiry_date}", expiry_date)
+            
+            # Build logo HTML
+            logo_html = f'<img src="{company_logo_url}" alt="{company_name}" style="max-height: 50px; margin-bottom: 10px;" /><br>' if company_logo_url else ""
             
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background-color: #f97316; padding: 20px; text-align: center;">
-                    <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
+                <div style="background-color: {primary_color}; padding: 20px; text-align: center;">
+                    {logo_html}
+                    <h1 style="color: white; margin: 0;">{company_name}</h1>
+                    <p style="color: rgba(255,255,255,0.8); margin: 5px 0 0 0; font-size: 14px;">{company_subtitle}</p>
                 </div>
                 <div style="padding: 20px; background-color: #f9fafb;">
-                    <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
-                    <p>Preparámos um orçamento para si referente ao seu pedido.</p>
+                    <p>{email_greeting}</p>
+                    <p>{email_intro}</p>
                     
-                    <div style="background-color: #fff7ed; border: 2px solid #f97316; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                    <div style="background-color: #fff7ed; border: 2px solid {primary_color}; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
                         <p style="color: #9a3412; font-size: 14px; margin: 0 0 10px 0;">VALOR DO ORÇAMENTO</p>
-                        <p style="color: #f97316; font-size: 32px; font-weight: bold; margin: 0;">{quote_value_formatted} €</p>
+                        <p style="color: {primary_color}; font-size: 32px; font-weight: bold; margin: 0;">{quote_value_formatted} €</p>
                     </div>
                     
                     {f'<p><strong>Veículo:</strong> {ticket["vehicle_plate"]}</p>' if ticket.get('vehicle_plate') else ''}
@@ -3161,19 +3189,19 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
                     <p style="margin-top: 20px;">Clique no botão abaixo para aceitar ou recusar este orçamento:</p>
                     
                     <div style="text-align: center; margin: 30px 0;">
-                        <a href="{quote_link_url}" style="background-color: #f97316; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
-                            Ver Orçamento
+                        <a href="{quote_link_url}" style="background-color: {primary_color}; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+                            {email_button}
                         </a>
                     </div>
                     
                     <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">
-                        Este link é válido até {expires_at.strftime('%d/%m/%Y')}.<br>
+                        {email_footer}<br>
                         Referência do ticket: <strong>{ticket['ticket_number']}</strong>
                     </p>
                 </div>
-                <div style="background-color: #1f2937; padding: 15px; text-align: center;">
+                <div style="background-color: {secondary_color}; padding: 15px; text-align: center;">
                     <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                        PDPV - Pneus de Pedro V. | Este é um email automático.
+                        {company_name} - {company_subtitle} | Este é um email automático.
                     </p>
                 </div>
             </div>
@@ -3182,7 +3210,7 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
             params = {
                 "from": EMAIL_FROM,
                 "to": [customer_email],
-                "subject": f"[Ticket #{ticket['ticket_number']}] Orçamento - {quote_value_formatted}€",
+                "subject": email_subject,
                 "html": html_content
             }
             
