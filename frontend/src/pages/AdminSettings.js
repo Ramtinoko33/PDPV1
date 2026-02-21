@@ -571,10 +571,14 @@ const AdminSettings = () => {
         {/* Email Tab */}
         <TabsContent value="email">
           <div className="space-y-4">
+            {/* SMTP Configuration */}
             <Card>
               <CardHeader>
-                <CardTitle>Configuração de Email</CardTitle>
-                <CardDescription>Configure o serviço de envio de emails (Resend)</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="h-5 w-5" />
+                  Configuração SMTP
+                </CardTitle>
+                <CardDescription>Configure o servidor de email para envio de mensagens</CardDescription>
               </CardHeader>
               <CardContent>
                 {loadingEmail ? (
@@ -585,32 +589,134 @@ const AdminSettings = () => {
                   <div className="space-y-6">
                     {/* Status */}
                     <div className={`flex items-center gap-3 p-4 rounded-lg ${
-                      emailConfig.resend_configured 
+                      emailConfig.smtp_configured 
                         ? 'bg-emerald-50 border border-emerald-200' 
-                        : 'bg-red-50 border border-red-200'
+                        : 'bg-amber-50 border border-amber-200'
                     }`}>
-                      {emailConfig.resend_configured ? (
+                      {emailConfig.smtp_configured ? (
                         <>
                           <CheckCircle className="h-5 w-5 text-emerald-600" />
                           <div>
-                            <p className="font-medium text-emerald-800">Resend Configurado</p>
-                            <p className="text-sm text-emerald-600">O serviço de email está ativo</p>
+                            <p className="font-medium text-emerald-800">SMTP Configurado</p>
+                            <p className="text-sm text-emerald-600">Servidor: {emailConfig.smtp_host}:{emailConfig.smtp_port}</p>
                           </div>
                         </>
                       ) : (
                         <>
-                          <XCircle className="h-5 w-5 text-red-600" />
+                          <AlertCircle className="h-5 w-5 text-amber-600" />
                           <div>
-                            <p className="font-medium text-red-800">Resend Não Configurado</p>
-                            <p className="text-sm text-red-600">Configure a API Key no ficheiro .env do backend</p>
+                            <p className="font-medium text-amber-800">SMTP Não Configurado</p>
+                            <p className="text-sm text-amber-600">Configure as definições abaixo para enviar emails</p>
                           </div>
                         </>
                       )}
                     </div>
 
+                    {/* SMTP Server Settings */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label htmlFor="email-from">Email de Envio</Label>
+                        <Label htmlFor="smtp-host">Servidor SMTP *</Label>
+                        <Input
+                          id="smtp-host"
+                          type="text"
+                          placeholder="smtp.gmail.com"
+                          value={emailConfig.smtp_host || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, smtp_host: e.target.value })}
+                          className="w-full"
+                          data-testid="smtp-host-input"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp-port">Porta *</Label>
+                        <Input
+                          id="smtp-port"
+                          type="number"
+                          placeholder="587"
+                          value={emailConfig.smtp_port || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, smtp_port: parseInt(e.target.value) || 587 })}
+                          className="w-full"
+                          data-testid="smtp-port-input"
+                        />
+                        <p className="text-xs text-zinc-500">
+                          Comum: 587 (TLS) ou 465 (SSL) ou 25
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* SMTP Credentials */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp-username">Username/Email *</Label>
+                        <Input
+                          id="smtp-username"
+                          type="text"
+                          placeholder="seu@email.com"
+                          value={emailConfig.smtp_username || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, smtp_username: e.target.value })}
+                          className="w-full"
+                          data-testid="smtp-username-input"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp-password">Senha</Label>
+                        <div className="relative">
+                          <Input
+                            id="smtp-password"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="••••••••"
+                            value={emailConfig.smtp_password || ''}
+                            onChange={(e) => setEmailConfig({ ...emailConfig, smtp_password: e.target.value })}
+                            className="w-full pr-10"
+                            data-testid="smtp-password-input"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700"
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Para Gmail, use uma App Password
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* SSL/TLS Options */}
+                    <div className="flex flex-wrap gap-6 p-4 bg-zinc-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="smtp-use-tls"
+                          checked={emailConfig.smtp_use_tls || false}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, smtp_use_tls: e.target.checked, smtp_use_ssl: e.target.checked ? false : emailConfig.smtp_use_ssl })}
+                          className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <Label htmlFor="smtp-use-tls" className="text-sm">
+                          Usar STARTTLS (Porta 587)
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="smtp-use-ssl"
+                          checked={emailConfig.smtp_use_ssl || false}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, smtp_use_ssl: e.target.checked, smtp_use_tls: e.target.checked ? false : emailConfig.smtp_use_tls })}
+                          className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <Label htmlFor="smtp-use-ssl" className="text-sm">
+                          Usar SSL/TLS (Porta 465)
+                        </Label>
+                      </div>
+                    </div>
+
+                    {/* Email Identity */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="email-from">Email Remetente</Label>
                         <Input
                           id="email-from"
                           type="email"
@@ -626,20 +732,34 @@ const AdminSettings = () => {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="frontend-url">URL do Frontend</Label>
+                        <Label htmlFor="email-from-name">Nome do Remetente</Label>
                         <Input
-                          id="frontend-url"
-                          type="url"
-                          placeholder="https://seu-dominio.com"
-                          value={emailConfig.frontend_url || ''}
-                          onChange={(e) => setEmailConfig({ ...emailConfig, frontend_url: e.target.value })}
+                          id="email-from-name"
+                          type="text"
+                          placeholder="PDPV Tickets"
+                          value={emailConfig.email_from_name || ''}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_from_name: e.target.value })}
                           className="w-full"
-                          data-testid="frontend-url-input"
+                          data-testid="email-from-name-input"
                         />
-                        <p className="text-xs text-zinc-500">
-                          URL usado nos links enviados por email
-                        </p>
                       </div>
+                    </div>
+
+                    {/* Frontend URL */}
+                    <div className="space-y-2">
+                      <Label htmlFor="frontend-url">URL do Frontend</Label>
+                      <Input
+                        id="frontend-url"
+                        type="url"
+                        placeholder="https://seu-dominio.com"
+                        value={emailConfig.frontend_url || ''}
+                        onChange={(e) => setEmailConfig({ ...emailConfig, frontend_url: e.target.value })}
+                        className="w-full"
+                        data-testid="frontend-url-input"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        URL usado nos links enviados por email
+                      </p>
                     </div>
 
                     <div className="flex justify-end pt-4 border-t">
@@ -684,7 +804,7 @@ const AdminSettings = () => {
                   </div>
                   <Button 
                     onClick={sendTestEmail} 
-                    disabled={sendingTest || !emailConfig.resend_configured}
+                    disabled={sendingTest || !emailConfig.smtp_configured}
                     className="bg-emerald-600 hover:bg-emerald-700"
                     data-testid="send-test-email-btn"
                   >
