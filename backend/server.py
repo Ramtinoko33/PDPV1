@@ -2463,14 +2463,34 @@ async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = D
 
 # ============== ADMIN SETTINGS - EMAIL CONFIG ==============
 class EmailConfigUpdate(BaseModel):
-    resend_api_key: Optional[str] = None
+    # SMTP Settings
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_ssl: Optional[bool] = None
+    smtp_use_tls: Optional[bool] = None
+    # General Settings
     email_from: Optional[str] = None
+    email_from_name: Optional[str] = None
     frontend_url: Optional[str] = None
+    # Legacy Resend (optional)
+    resend_api_key: Optional[str] = None
 
 class EmailConfigResponse(BaseModel):
-    resend_configured: bool = False
+    # SMTP Settings
+    smtp_configured: bool = False
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_use_ssl: bool = False
+    smtp_use_tls: bool = True
+    # General Settings
     email_from: Optional[str] = None
+    email_from_name: Optional[str] = None
     frontend_url: Optional[str] = None
+    # Legacy
+    resend_configured: bool = False
 
 @api_router.get("/admin/email-settings", response_model=EmailConfigResponse)
 async def get_email_settings(current_user: dict = Depends(get_current_user)):
