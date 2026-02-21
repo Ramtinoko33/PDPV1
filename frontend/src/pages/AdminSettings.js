@@ -56,14 +56,23 @@ const AdminSettings = () => {
   
   // Email Config State
   const [emailConfig, setEmailConfig] = useState({
-    resend_configured: false,
+    smtp_configured: false,
+    smtp_host: '',
+    smtp_port: 587,
+    smtp_username: '',
+    smtp_password: '',
+    smtp_use_ssl: false,
+    smtp_use_tls: true,
     email_from: '',
-    frontend_url: ''
+    email_from_name: 'PDPV Tickets',
+    frontend_url: '',
+    resend_configured: false
   });
   const [loadingEmail, setLoadingEmail] = useState(true);
   const [savingEmail, setSavingEmail] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Fetch all settings on mount
   useEffect(() => {
