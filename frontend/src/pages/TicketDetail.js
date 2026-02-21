@@ -540,21 +540,38 @@ const TicketDetail = () => {
 
   const canArchive = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
 
-  const statusOptions = [
-    { value: 'ABERTO', label: 'Aberto' },
-    { value: 'EM_TRATAMENTO', label: 'Em Tratamento' },
-    { value: 'AGUARDA_CLIENTE', label: 'Aguarda Cliente' },
-    { value: 'FECHADO', label: 'Fechado' }
-  ];
+  // Filter out automatic statuses (is_auto: true) from manual selection
+  const statusOptions = allStatuses
+    .filter(s => !s.is_auto)
+    .map(s => ({ value: s.code, label: s.label, color: s.color }));
 
+  // Build status class map dynamically
   const getStatusClass = (status) => {
-    const classes = {
+    const statusObj = allStatuses.find(s => s.code === status);
+    if (statusObj) {
+      // Return inline style-compatible color
+      return `bg-opacity-20 border`;
+    }
+    const defaultClasses = {
       ABERTO: 'status-aberto',
       EM_TRATAMENTO: 'status-em-tratamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
-      FECHADO: 'status-fechado'
+      FECHADO: 'status-fechado',
+      ACEITE_LINK: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      REJEITADO_LINK: 'bg-red-100 text-red-800 border-red-300',
+      AGENDADO: 'bg-purple-100 text-purple-800 border-purple-300'
     };
-    return classes[status] || 'bg-zinc-100 text-zinc-700';
+    return defaultClasses[status] || 'bg-zinc-100 text-zinc-700';
+  };
+
+  const getStatusLabel = (status) => {
+    const statusObj = allStatuses.find(s => s.code === status);
+    return statusObj?.label || status;
+  };
+
+  const getStatusColor = (status) => {
+    const statusObj = allStatuses.find(s => s.code === status);
+    return statusObj?.color || '#6b7280';
   };
 
   const typeLabels = {
