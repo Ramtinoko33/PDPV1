@@ -52,9 +52,14 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Preview inline de imagens
 - PDF viewer integrado
 
-### 10. Aceitação de Orçamentos pelo Cliente ✅
+### 10. Aceitação de Orçamentos pelo Cliente ✅ (ATUALIZADO 21/02/2026)
 - Link único gerado com validade de 7 dias
 - Página pública sem autenticação
+- Estados automáticos:
+  - **ACEITE_LINK** - Quando cliente aceita via link
+  - **REJEITADO_LINK** - Quando cliente recusa via link
+- Estes estados NÃO aparecem no dropdown manual
+- Após resposta, utilizador pode mudar para AGENDADO ou FECHADO
 
 ### 11. Admin CRUD ✅
 - Tipos de Ticket, Estados, SLA, Email
