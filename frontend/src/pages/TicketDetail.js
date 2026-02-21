@@ -287,6 +287,7 @@ const TicketDetail = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
+  const [allStatuses, setAllStatuses] = useState([]);
 
   const fetchData = async () => {
     try {
