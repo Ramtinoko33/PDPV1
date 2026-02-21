@@ -2326,6 +2326,7 @@ class TicketStatusResponse(BaseModel):
     label: str
     color: str
     is_final: bool
+    is_auto: bool = False
     order: int = 0
     created_at: str
 
