@@ -1378,6 +1378,123 @@ const TicketDetail = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Ticket Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-orange-600" />
+              Editar Ticket
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Nome do Cliente *</Label>
+                <Input
+                  id="edit-name"
+                  value={editForm.customer_name || ''}
+                  onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
+                  data-testid="edit-customer-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Telefone *</Label>
+                <Input
+                  id="edit-phone"
+                  value={editForm.customer_phone || ''}
+                  onChange={(e) => setEditForm({ ...editForm, customer_phone: e.target.value })}
+                  data-testid="edit-customer-phone"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editForm.customer_email || ''}
+                  onChange={(e) => setEditForm({ ...editForm, customer_email: e.target.value })}
+                  data-testid="edit-customer-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-plate">Matrícula</Label>
+                <Input
+                  id="edit-plate"
+                  value={editForm.vehicle_plate || ''}
+                  onChange={(e) => setEditForm({ ...editForm, vehicle_plate: e.target.value.toUpperCase() })}
+                  data-testid="edit-vehicle-plate"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <Select 
+                  value={editForm.type || 'INFORMACAO'} 
+                  onValueChange={(value) => setEditForm({ ...editForm, type: value })}
+                >
+                  <SelectTrigger data-testid="edit-type-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ORCAMENTO_PNEUS">Orçamento Pneus</SelectItem>
+                    <SelectItem value="ORCAMENTO_MECANICA">Orçamento Mecânica</SelectItem>
+                    <SelectItem value="MARCACAO">Marcação</SelectItem>
+                    <SelectItem value="INFORMACAO">Informação</SelectItem>
+                    <SelectItem value="INTERNO">Interno</SelectItem>
+                    <SelectItem value="RECLAMACAO">Reclamação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Prioridade</Label>
+                <Select 
+                  value={editForm.priority || 'NORMAL'} 
+                  onValueChange={(value) => setEditForm({ ...editForm, priority: value })}
+                >
+                  <SelectTrigger data-testid="edit-priority-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                    <SelectItem value="URGENTE">Urgente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Descrição</Label>
+              <Textarea
+                id="edit-description"
+                value={editForm.description || ''}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                className="min-h-[100px]"
+                data-testid="edit-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={saveTicketEdit} 
+              disabled={savingEdit || !editForm.customer_name || !editForm.customer_phone}
+              className="bg-orange-600 hover:bg-orange-700"
+              data-testid="save-edit-btn"
+            >
+              {savingEdit ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+              ) : null}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
