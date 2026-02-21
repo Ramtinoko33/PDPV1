@@ -24,20 +24,20 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Job de background a cada 15 minutos
 - Indicador visual "OK" / "Atrasado"
 
-### 4. Email Real via Resend ✅
-- Integração completa com Resend API
+### 4. Email com SMTP ✅ (ATUALIZADO 21/02/2026)
+- Configuração completa SMTP via UI admin
+- Campos: servidor, porta, username, senha, SSL/TLS
 - Envio automático de email com link de orçamento
-- Configuração via UI admin
+- Teste de email integrado
 
-### 5. Secção de Orçamento na Tab Conversa ✅ (REORGANIZADO)
-- Orçamento agora integrado no formulário de resposta
-- Campo valor + checkbox enviado + botão gerar link - tudo compacto
+### 5. Secção de Orçamento na Tab Conversa ✅
+- Orçamento integrado no formulário de resposta
+- Campo valor + checkbox enviado + botão gerar link
 - Status de resposta do cliente visível inline
 
-### 6. Permissões de Atribuição para Agentes ✅ (NEW)
-- Agentes podem ver: tickets atribuídos a si + tickets não atribuídos
-- Agentes podem apenas auto-atribuir (botão "Atribuir a mim")
-- Agentes NÃO podem atribuir tickets a outros utilizadores
+### 6. Permissões de Atribuição para Agentes ✅
+- Agentes veem: tickets atribuídos a si + tickets não atribuídos
+- Agentes podem apenas auto-atribuir
 - Admin/Supervisor podem atribuir a qualquer pessoa
 
 ### 7. Histórico de Alterações de Orçamento ✅
@@ -45,43 +45,51 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Secção expansível no detalhe do ticket
 
 ### 8. Relatórios Administrativos ✅
-- Página `/reports` com filtros completos
-- Métricas: total tickets, taxa SLA, em atraso, valor total
-- Distribuição por estado e tipo com gráficos
-- Desempenho por agente
+- Página `/reports` com métricas
+- Distribuição por estado e tipo
 
-### 9. Pré-visualização Avançada de Anexos ✅
+### 9. Pré-visualização de Anexos ✅
 - Preview inline de imagens
 - PDF viewer integrado
 
 ### 10. Aceitação de Orçamentos pelo Cliente ✅
 - Link único gerado com validade de 7 dias
 - Página pública sem autenticação
-- Email automático enviado ao cliente
 
 ### 11. Admin CRUD ✅
-- Tipos de Ticket, Estados, SLA, Email - tudo via UI
+- Tipos de Ticket, Estados, SLA, Email
+
+### 12. Edição de Ticket ✅ (NOVO 21/02/2026)
+- Modal de edição completa no detalhe do ticket
+- Permite editar: nome, telefone, email, matrícula, tipo, prioridade, descrição
+- Permissões baseadas em role
+
+### 13. Dashboard com Tickets Urgentes ✅ (NOVO 21/02/2026)
+- Tickets urgentes destacados com sublinhado vermelho
+- Borda lateral vermelha e fundo diferenciado
+- Badge "URGENTE" visível
 
 ## Tech Stack
-- **Backend**: FastAPI, MongoDB (motor), Pydantic, JWT, Resend, APScheduler
+- **Backend**: FastAPI, MongoDB (motor), Pydantic, JWT, SMTP/Resend, APScheduler
 - **Frontend**: React, Tailwind CSS, shadcn/ui
 - **Notifications**: Web Push (VAPID), WebSocket
 
-## Key Changes This Session (15/02/2026)
+## Key Changes (21/02/2026)
 
-### Bug Fixes Concluídos ✅
-1. **Navegação na Lista de Tickets** - TableRow agora tem onClick handler para navegar para detalhe
-2. **Auto-atribuição na Criação** - Agentes conseguem selecionar-se no dropdown "Atribuir a" ao criar ticket
-3. **assigned_to_name** - Backend agora popula o nome do utilizador atribuído na criação
+### Funcionalidades Adicionadas
+1. **Configuração SMTP Completa** - Servidor, porta, username, senha, SSL/TLS na UI
+2. **Edição de Ticket** - Modal completo para editar todos os campos
+3. **Dashboard Urgentes** - Tickets urgentes com destaque visual (sublinhado vermelho)
 
-### Alterações Anteriores
-- Orçamento movido para Tab Conversa (integrado com formulário de resposta)
-- Permissões de Agentes: veem tickets atribuídos + não atribuídos, podem auto-atribuir
+### Bug Fixes
+- Navegação na lista de tickets
+- Auto-atribuição de agentes na criação
+- assigned_to_name preenchido na criação
 
-## Test Credentials
-- Admin: admin@pdpv.pt / admin123
-- Supervisor: supervisor@pdpv.pt / super123
-- Agent: agente@pdpv.pt / agente123
+## Test Credentials (ATUALIZADAS)
+- Admin: admin@pdpv.pt / HCNMEnKMLq
+- Supervisor: supervisor@pdpv.pt / f9pSIn6zRP
+- Agent: agente@pdpv.pt / yHprFGvPUJ
 
 ## Pending Features (Backlog)
 - [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
@@ -90,5 +98,5 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - [ ] P4: Portal do cliente (visualização de todos os tickets)
 
 ## Notes
-- Email funciona apenas se RESEND_API_KEY estiver configurada no .env
-- O sistema está 100% funcional e testado
+- Email via SMTP configurável na UI admin (/admin/settings > Email)
+- Sistema 100% funcional e testado
