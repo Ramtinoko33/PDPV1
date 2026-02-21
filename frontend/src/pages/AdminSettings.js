@@ -57,6 +57,14 @@ const AdminSettings = () => {
   });
   const [loadingSla, setLoadingSla] = useState(true);
   const [savingSla, setSavingSla] = useState(false);
+
+  // Push Config State
+  const [pushConfig, setPushConfig] = useState({
+    vapid_configured: false,
+    vapid_public_key: '',
+    subscriptions_count: 0
+  });
+  const [loadingPush, setLoadingPush] = useState(true);
   
   // Email Config State
   const [emailConfig, setEmailConfig] = useState({
