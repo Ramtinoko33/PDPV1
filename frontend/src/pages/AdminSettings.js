@@ -112,6 +112,7 @@ const AdminSettings = () => {
     fetchSlaConfig();
     fetchEmailConfig();
     fetchPushConfig();
+    fetchBrandingConfig();
   }, []);
 
   // ============== TICKET TYPES ==============
