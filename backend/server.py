@@ -1289,6 +1289,16 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         update_doc["quote_value"] = ticket_data.quote_value
     if ticket_data.description is not None:
         update_doc["description"] = ticket_data.description
+    if ticket_data.customer_name is not None:
+        update_doc["customer_name"] = ticket_data.customer_name
+    if ticket_data.customer_phone is not None:
+        update_doc["customer_phone"] = ticket_data.customer_phone
+    if ticket_data.customer_email is not None:
+        update_doc["customer_email"] = ticket_data.customer_email if ticket_data.customer_email != "" else None
+    if ticket_data.vehicle_plate is not None:
+        update_doc["vehicle_plate"] = ticket_data.vehicle_plate if ticket_data.vehicle_plate != "" else None
+    if ticket_data.type is not None:
+        update_doc["type"] = ticket_data.type.value
     
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
