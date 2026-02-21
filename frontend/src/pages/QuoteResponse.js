@@ -123,11 +123,29 @@ const QuoteResponse = () => {
   return (
     <div className="min-h-screen bg-zinc-100">
       {/* Header */}
-      <header className="bg-slate-900 py-4 px-6">
+      <header 
+        className="py-4 px-6"
+        style={{ backgroundColor: branding?.secondary_color || '#1f2937' }}
+      >
         <div className="max-w-2xl mx-auto flex items-center">
-          <Wrench className="h-8 w-8 text-orange-500 mr-3" />
-          <span className="text-xl font-black tracking-tight text-white">PDPV</span>
-          <span className="text-zinc-400 ml-2">Pneus de Pedro V.</span>
+          {branding?.company_logo_url ? (
+            <img 
+              src={branding.company_logo_url} 
+              alt={branding?.company_name || 'Logo'} 
+              className="h-10 mr-3 object-contain"
+            />
+          ) : (
+            <Wrench 
+              className="h-8 w-8 mr-3" 
+              style={{ color: branding?.primary_color || '#f97316' }}
+            />
+          )}
+          <span className="text-xl font-black tracking-tight text-white">
+            {branding?.company_name || 'PDPV'}
+          </span>
+          <span className="text-zinc-400 ml-2">
+            {branding?.company_subtitle || 'Pneus de Pedro V.'}
+          </span>
         </div>
       </header>
 
@@ -180,18 +198,35 @@ const QuoteResponse = () => {
             </div>
 
             {/* Quote Details */}
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
+            <div 
+              className="rounded-lg p-6"
+              style={{ 
+                backgroundColor: `${branding?.primary_color || '#f97316'}10`,
+                border: `2px solid ${branding?.primary_color || '#f97316'}`
+              }}
+            >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-orange-600" />
-                  <span className="font-semibold text-orange-800">Valor do Orçamento</span>
+                  <FileText 
+                    className="h-5 w-5" 
+                    style={{ color: branding?.primary_color || '#f97316' }}
+                  />
+                  <span 
+                    className="font-semibold"
+                    style={{ color: branding?.primary_color || '#f97316' }}
+                  >
+                    Valor do Orçamento
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-orange-600">
+                <div className="flex items-center gap-2 text-sm" style={{ color: branding?.primary_color || '#f97316' }}>
                   <Clock className="h-4 w-4" />
                   {formatDate(quote.quote_sent_at)}
                 </div>
               </div>
-              <div className="text-4xl font-black text-orange-600">
+              <div 
+                className="text-4xl font-black"
+                style={{ color: branding?.primary_color || '#f97316' }}
+              >
                 {formatCurrency(quote.quote_value)}
               </div>
               {quote.description && (
@@ -231,7 +266,8 @@ const QuoteResponse = () => {
                     Recusar
                   </Button>
                   <Button
-                    className="h-14 text-lg bg-emerald-600 hover:bg-emerald-700"
+                    className="h-14 text-lg"
+                    style={{ backgroundColor: branding?.primary_color || '#16a34a' }}
                     onClick={() => submitResponse('ACCEPTED')}
                     disabled={submitting}
                     data-testid="accept-quote-btn"
@@ -255,20 +291,20 @@ const QuoteResponse = () => {
                   <>
                     <CheckCircle className="h-16 w-16 text-emerald-600 mx-auto mb-4" />
                     <h3 className="text-xl font-bold text-emerald-800 mb-2">
-                      Orçamento Aceite!
+                      {branding?.quote_page_accepted_title || 'Orçamento Aceite!'}
                     </h3>
                     <p className="text-emerald-700">
-                      Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço.
+                      {branding?.quote_page_accepted_message || 'Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço.'}
                     </p>
                   </>
                 ) : (
                   <>
                     <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
                     <h3 className="text-xl font-bold text-red-800 mb-2">
-                      Orçamento Recusado
+                      {branding?.quote_page_rejected_title || 'Orçamento Recusado'}
                     </h3>
                     <p className="text-red-700">
-                      Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.
+                      {branding?.quote_page_rejected_message || 'Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.'}
                     </p>
                   </>
                 )}
@@ -278,9 +314,25 @@ const QuoteResponse = () => {
         </Card>
 
         {/* Footer */}
-        <div className="text-center mt-6 text-sm text-zinc-500">
-          <p>PDPV - Pneus de Pedro V.</p>
-          <p>Este é um link único e pessoal. Não o partilhe.</p>
+        <div className="text-center mt-6 text-sm text-zinc-500 space-y-2">
+          <p className="font-semibold">{branding?.company_name || 'PDPV'} - {branding?.company_subtitle || 'Pneus de Pedro V.'}</p>
+          {(branding?.company_phone || branding?.company_email) && (
+            <div className="flex items-center justify-center gap-4">
+              {branding?.company_phone && (
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" />
+                  {branding.company_phone}
+                </span>
+              )}
+              {branding?.company_email && (
+                <span className="flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" />
+                  {branding.company_email}
+                </span>
+              )}
+            </div>
+          )}
+          <p className="text-xs">Este é um link único e pessoal. Não o partilhe.</p>
         </div>
       </main>
     </div>
