@@ -2097,6 +2097,15 @@ async def get_vapid_public_key():
     """Return the VAPID public key for the frontend to use"""
     return {"publicKey": VAPID_PUBLIC_KEY}
 
+@api_router.get("/admin/push-stats")
+async def get_push_stats(current_user: dict = Depends(get_current_user)):
+    """Get push notification statistics - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver estatísticas de push")
+    
+    count = await db.push_subscriptions.count_documents({})
+    return {"subscriptions_count": count, "vapid_configured": bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)}
+
 @api_router.post("/push/subscribe")
 async def subscribe_to_push(subscription: PushSubscription, current_user: dict = Depends(get_current_user)):
     """Save a user's push subscription"""
