@@ -350,6 +350,10 @@ const AdminSettings = () => {
             <Mail className="h-4 w-4 mr-2" />
             Email
           </TabsTrigger>
+          <TabsTrigger value="push" className="data-[state=active]:bg-white" data-testid="tab-push">
+            <Bell className="h-4 w-4 mr-2" />
+            Push
+          </TabsTrigger>
         </TabsList>
 
         {/* Ticket Types Tab */}
