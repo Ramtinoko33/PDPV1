@@ -86,7 +86,10 @@ code, .font-mono {
 .status-aberto { @apply bg-blue-100 text-blue-800 border-blue-200; }
 .status-em-tratamento { @apply bg-purple-100 text-purple-800 border-purple-200; }
 .status-aguarda-cliente { @apply bg-orange-100 text-orange-800 border-orange-200; }
-.status-fechado { @apply bg-emerald-100 text-emerald-800 border-emerald-200; }
+.status-fechado { @apply bg-zinc-100 text-zinc-700 border-zinc-200; }
+.status-aceite-link { @apply bg-emerald-100 text-emerald-800 border-emerald-300; }
+.status-rejeitado-link { @apply bg-red-100 text-red-800 border-red-300; }
+.status-agendado { @apply bg-violet-100 text-violet-800 border-violet-300; }
 
 /* Priority badges */
 .priority-normal { @apply bg-zinc-100 text-zinc-700; }
