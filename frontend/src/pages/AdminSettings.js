@@ -852,6 +852,90 @@ const AdminSettings = () => {
             </Card>
           </div>
         </TabsContent>
+
+        {/* Push Tab */}
+        <TabsContent value="push">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                Notificações Push (Web Push)
+              </CardTitle>
+              <CardDescription>Configuração de notificações push para browsers</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingPush ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Status */}
+                  <div className={`flex items-center gap-3 p-4 rounded-lg ${
+                    pushConfig.vapid_configured 
+                      ? 'bg-emerald-50 border border-emerald-200' 
+                      : 'bg-amber-50 border border-amber-200'
+                  }`}>
+                    {pushConfig.vapid_configured ? (
+                      <>
+                        <CheckCircle className="h-5 w-5 text-emerald-600" />
+                        <div>
+                          <p className="font-medium text-emerald-800">VAPID Configurado</p>
+                          <p className="text-sm text-emerald-600">Notificações push estão ativas</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                        <div>
+                          <p className="font-medium text-amber-800">VAPID Não Configurado</p>
+                          <p className="text-sm text-amber-600">Configure as chaves VAPID no backend/.env</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-zinc-50 rounded-lg">
+                      <p className="text-sm text-zinc-500">Dispositivos Registados</p>
+                      <p className="text-2xl font-bold text-zinc-900">{pushConfig.subscriptions_count}</p>
+                    </div>
+                    <div className="p-4 bg-zinc-50 rounded-lg">
+                      <p className="text-sm text-zinc-500">Estado</p>
+                      <p className="text-lg font-semibold text-zinc-900">
+                        {pushConfig.vapid_configured ? 'Ativo' : 'Inativo'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* VAPID Public Key */}
+                  {pushConfig.vapid_configured && (
+                    <div className="space-y-2">
+                      <Label>Chave Pública VAPID</Label>
+                      <div className="p-3 bg-zinc-100 rounded-lg font-mono text-xs break-all">
+                        {pushConfig.vapid_public_key}
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Esta chave é usada pelo browser para subscrever notificações push
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-2">Como funciona?</h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>1. Os utilizadores ativam notificações no sino do menu</li>
+                      <li>2. O browser regista o dispositivo no servidor</li>
+                      <li>3. Quando há novos tickets ou atualizações, recebem notificação</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Type Dialog */}
