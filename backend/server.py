@@ -198,6 +198,11 @@ class TicketUpdate(BaseModel):
     quote_sent: Optional[bool] = None
     quote_value: Optional[float] = None
     description: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+    type: Optional[TicketType] = None
 
 class TicketResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
