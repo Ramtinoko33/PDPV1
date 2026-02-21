@@ -382,6 +382,10 @@ const AdminSettings = () => {
             <Bell className="h-4 w-4 mr-2" />
             Push
           </TabsTrigger>
+          <TabsTrigger value="branding" className="data-[state=active]:bg-white" data-testid="tab-branding">
+            <Palette className="h-4 w-4 mr-2" />
+            Branding
+          </TabsTrigger>
         </TabsList>
 
         {/* Ticket Types Tab */}
