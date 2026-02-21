@@ -2500,10 +2500,22 @@ async def get_email_settings(current_user: dict = Depends(get_current_user)):
     
     config = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
     
+    if not config:
+        config = {}
+    
+    smtp_configured = bool(config.get("smtp_host") and config.get("smtp_port") and config.get("smtp_username"))
+    
     return EmailConfigResponse(
-        resend_configured=bool(RESEND_API_KEY or (config and config.get("resend_api_key"))),
-        email_from=EMAIL_FROM if RESEND_API_KEY else (config.get("email_from") if config else None),
-        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com") if config else "https://ticket-flow-15.preview.emergentagent.com"
+        smtp_configured=smtp_configured,
+        smtp_host=config.get("smtp_host"),
+        smtp_port=config.get("smtp_port"),
+        smtp_username=config.get("smtp_username"),
+        smtp_use_ssl=config.get("smtp_use_ssl", False),
+        smtp_use_tls=config.get("smtp_use_tls", True),
+        email_from=config.get("email_from") or EMAIL_FROM,
+        email_from_name=config.get("email_from_name", "PDPV Tickets"),
+        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com"),
+        resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key"))
     )
 
 @api_router.put("/admin/email-settings", response_model=EmailConfigResponse)
@@ -2515,12 +2527,32 @@ async def update_email_settings(config_data: EmailConfigUpdate, current_user: di
     existing = await db.settings.find_one({"type": "email_config"})
     
     update_doc = {"type": "email_config", "updated_at": datetime.now(timezone.utc).isoformat()}
-    if config_data.resend_api_key is not None:
-        update_doc["resend_api_key"] = config_data.resend_api_key
+    
+    # SMTP Settings
+    if config_data.smtp_host is not None:
+        update_doc["smtp_host"] = config_data.smtp_host
+    if config_data.smtp_port is not None:
+        update_doc["smtp_port"] = config_data.smtp_port
+    if config_data.smtp_username is not None:
+        update_doc["smtp_username"] = config_data.smtp_username
+    if config_data.smtp_password is not None:
+        update_doc["smtp_password"] = config_data.smtp_password
+    if config_data.smtp_use_ssl is not None:
+        update_doc["smtp_use_ssl"] = config_data.smtp_use_ssl
+    if config_data.smtp_use_tls is not None:
+        update_doc["smtp_use_tls"] = config_data.smtp_use_tls
+    
+    # General Settings
     if config_data.email_from is not None:
         update_doc["email_from"] = config_data.email_from
+    if config_data.email_from_name is not None:
+        update_doc["email_from_name"] = config_data.email_from_name
     if config_data.frontend_url is not None:
         update_doc["frontend_url"] = config_data.frontend_url
+    
+    # Legacy Resend
+    if config_data.resend_api_key is not None:
+        update_doc["resend_api_key"] = config_data.resend_api_key
     
     if existing:
         await db.settings.update_one({"type": "email_config"}, {"$set": update_doc})
@@ -2528,10 +2560,19 @@ async def update_email_settings(config_data: EmailConfigUpdate, current_user: di
         await db.settings.insert_one(update_doc)
     
     config = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    smtp_configured = bool(config.get("smtp_host") and config.get("smtp_port") and config.get("smtp_username"))
+    
     return EmailConfigResponse(
-        resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key")),
-        email_from=EMAIL_FROM if RESEND_API_KEY else config.get("email_from"),
-        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com")
+        smtp_configured=smtp_configured,
+        smtp_host=config.get("smtp_host"),
+        smtp_port=config.get("smtp_port"),
+        smtp_username=config.get("smtp_username"),
+        smtp_use_ssl=config.get("smtp_use_ssl", False),
+        smtp_use_tls=config.get("smtp_use_tls", True),
+        email_from=config.get("email_from") or EMAIL_FROM,
+        email_from_name=config.get("email_from_name", "PDPV Tickets"),
+        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com"),
+        resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key"))
     )
 
 # ============== QUOTE VALUE HISTORY ==============
