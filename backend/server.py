@@ -2629,6 +2629,149 @@ async def update_email_settings(config_data: EmailConfigUpdate, current_user: di
         resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key"))
     )
 
+# ============== ADMIN SETTINGS - BRANDING & TEMPLATES ==============
+class BrandingConfig(BaseModel):
+    company_name: Optional[str] = "PDPV"
+    company_subtitle: Optional[str] = "Pneus de Pedro V."
+    company_logo_url: Optional[str] = None
+    primary_color: Optional[str] = "#f97316"
+    secondary_color: Optional[str] = "#1f2937"
+    company_phone: Optional[str] = None
+    company_email: Optional[str] = None
+    company_address: Optional[str] = None
+    company_website: Optional[str] = None
+
+class EmailTemplateConfig(BaseModel):
+    quote_email_subject: Optional[str] = "[Ticket #{ticket_number}] Orçamento - {quote_value}€"
+    quote_email_greeting: Optional[str] = "Olá {customer_name},"
+    quote_email_intro: Optional[str] = "Preparámos um orçamento para si referente ao seu pedido."
+    quote_email_button_text: Optional[str] = "Ver Orçamento"
+    quote_email_footer: Optional[str] = "Este link é válido até {expiry_date}."
+    quote_page_accepted_title: Optional[str] = "Orçamento Aceite!"
+    quote_page_accepted_message: Optional[str] = "Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço."
+    quote_page_rejected_title: Optional[str] = "Orçamento Recusado"
+    quote_page_rejected_message: Optional[str] = "Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos."
+
+class BrandingResponse(BaseModel):
+    company_name: str = "PDPV"
+    company_subtitle: str = "Pneus de Pedro V."
+    company_logo_url: Optional[str] = None
+    primary_color: str = "#f97316"
+    secondary_color: str = "#1f2937"
+    company_phone: Optional[str] = None
+    company_email: Optional[str] = None
+    company_address: Optional[str] = None
+    company_website: Optional[str] = None
+    email_templates: dict = {}
+
+@api_router.get("/admin/branding")
+async def get_branding_config(current_user: dict = Depends(get_current_user)):
+    """Get branding configuration - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver configuração de branding")
+    
+    config = await db.settings.find_one({"type": "branding_config"}, {"_id": 0})
+    templates = await db.settings.find_one({"type": "email_templates"}, {"_id": 0})
+    
+    if not config:
+        config = {}
+    if not templates:
+        templates = {}
+    
+    return {
+        "company_name": config.get("company_name", "PDPV"),
+        "company_subtitle": config.get("company_subtitle", "Pneus de Pedro V."),
+        "company_logo_url": config.get("company_logo_url"),
+        "primary_color": config.get("primary_color", "#f97316"),
+        "secondary_color": config.get("secondary_color", "#1f2937"),
+        "company_phone": config.get("company_phone"),
+        "company_email": config.get("company_email"),
+        "company_address": config.get("company_address"),
+        "company_website": config.get("company_website"),
+        "email_templates": {
+            "quote_email_subject": templates.get("quote_email_subject", "[Ticket #{ticket_number}] Orçamento - {quote_value}€"),
+            "quote_email_greeting": templates.get("quote_email_greeting", "Olá {customer_name},"),
+            "quote_email_intro": templates.get("quote_email_intro", "Preparámos um orçamento para si referente ao seu pedido."),
+            "quote_email_button_text": templates.get("quote_email_button_text", "Ver Orçamento"),
+            "quote_email_footer": templates.get("quote_email_footer", "Este link é válido até {expiry_date}."),
+            "quote_page_accepted_title": templates.get("quote_page_accepted_title", "Orçamento Aceite!"),
+            "quote_page_accepted_message": templates.get("quote_page_accepted_message", "Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço."),
+            "quote_page_rejected_title": templates.get("quote_page_rejected_title", "Orçamento Recusado"),
+            "quote_page_rejected_message": templates.get("quote_page_rejected_message", "Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.")
+        }
+    }
+
+@api_router.put("/admin/branding")
+async def update_branding_config(config_data: BrandingConfig, current_user: dict = Depends(get_current_user)):
+    """Update branding configuration - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar configuração de branding")
+    
+    update_doc = {"type": "branding_config", "updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    for field in ["company_name", "company_subtitle", "company_logo_url", "primary_color", 
+                  "secondary_color", "company_phone", "company_email", "company_address", "company_website"]:
+        value = getattr(config_data, field, None)
+        if value is not None:
+            update_doc[field] = value
+    
+    existing = await db.settings.find_one({"type": "branding_config"})
+    if existing:
+        await db.settings.update_one({"type": "branding_config"}, {"$set": update_doc})
+    else:
+        await db.settings.insert_one(update_doc)
+    
+    return await get_branding_config(current_user)
+
+@api_router.put("/admin/email-templates")
+async def update_email_templates(templates: EmailTemplateConfig, current_user: dict = Depends(get_current_user)):
+    """Update email templates - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar templates de email")
+    
+    update_doc = {"type": "email_templates", "updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    for field in ["quote_email_subject", "quote_email_greeting", "quote_email_intro", 
+                  "quote_email_button_text", "quote_email_footer", "quote_page_accepted_title",
+                  "quote_page_accepted_message", "quote_page_rejected_title", "quote_page_rejected_message"]:
+        value = getattr(templates, field, None)
+        if value is not None:
+            update_doc[field] = value
+    
+    existing = await db.settings.find_one({"type": "email_templates"})
+    if existing:
+        await db.settings.update_one({"type": "email_templates"}, {"$set": update_doc})
+    else:
+        await db.settings.insert_one(update_doc)
+    
+    return {"message": "Templates atualizados com sucesso"}
+
+# Public endpoint to get branding for quote page
+@api_router.get("/public/branding")
+async def get_public_branding():
+    """Get public branding info for quote response page"""
+    config = await db.settings.find_one({"type": "branding_config"}, {"_id": 0})
+    templates = await db.settings.find_one({"type": "email_templates"}, {"_id": 0})
+    
+    if not config:
+        config = {}
+    if not templates:
+        templates = {}
+    
+    return {
+        "company_name": config.get("company_name", "PDPV"),
+        "company_subtitle": config.get("company_subtitle", "Pneus de Pedro V."),
+        "company_logo_url": config.get("company_logo_url"),
+        "primary_color": config.get("primary_color", "#f97316"),
+        "secondary_color": config.get("secondary_color", "#1f2937"),
+        "company_phone": config.get("company_phone"),
+        "company_email": config.get("company_email"),
+        "quote_page_accepted_title": templates.get("quote_page_accepted_title", "Orçamento Aceite!"),
+        "quote_page_accepted_message": templates.get("quote_page_accepted_message", "Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço."),
+        "quote_page_rejected_title": templates.get("quote_page_rejected_title", "Orçamento Recusado"),
+        "quote_page_rejected_message": templates.get("quote_page_rejected_message", "Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.")
+    }
+
 # ============== QUOTE VALUE HISTORY ==============
 class QuoteHistoryResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
