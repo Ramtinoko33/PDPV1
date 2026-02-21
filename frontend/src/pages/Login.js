@@ -124,18 +124,6 @@ const Login = () => {
                 )}
               </Button>
             </form>
-
-            {/* Demo credentials */}
-            <div className="mt-6 p-4 bg-zinc-50 rounded-lg border border-zinc-200">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">
-                Credenciais de demonstração
-              </p>
-              <div className="space-y-1 text-sm text-zinc-600">
-                <p><span className="font-medium">Admin:</span> admin@pdpv.pt / HCNMEnKMLq</p>
-                <p><span className="font-medium">Supervisor:</span> supervisor@pdpv.pt / f9pSIn6zRP</p>
-                <p><span className="font-medium">Agente:</span> agente@pdpv.pt / yHprFGvPUJ</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
