@@ -138,6 +138,9 @@ class TicketStatus(str, Enum):
     EM_TRATAMENTO = "EM_TRATAMENTO"
     AGUARDA_CLIENTE = "AGUARDA_CLIENTE"
     FECHADO = "FECHADO"
+    ACEITE_LINK = "ACEITE_LINK"
+    REJEITADO_LINK = "REJEITADO_LINK"
+    AGENDADO = "AGENDADO"
 
 class TicketPriority(str, Enum):
     NORMAL = "NORMAL"
