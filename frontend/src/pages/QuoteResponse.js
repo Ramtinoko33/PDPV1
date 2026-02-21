@@ -15,7 +15,9 @@ import {
   User,
   Car,
   AlertCircle,
-  Loader2
+  Loader2,
+  Phone,
+  Mail
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -27,22 +29,29 @@ const QuoteResponse = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [quote, setQuote] = useState(null);
+  const [branding, setBranding] = useState(null);
   const [error, setError] = useState(null);
   const [response, setResponse] = useState(null);
   const [comments, setComments] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    fetchQuote();
+    fetchData();
   }, [token]);
 
-  const fetchQuote = async () => {
+  const fetchData = async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/public/quote/${token}`);
-      setQuote(res.data);
-      if (res.data.response_status) {
+      const [quoteRes, brandingRes] = await Promise.all([
+        axios.get(`${API_URL}/api/public/quote/${token}`),
+        axios.get(`${API_URL}/api/public/branding`)
+      ]);
+      
+      setQuote(quoteRes.data);
+      setBranding(brandingRes.data);
+      
+      if (quoteRes.data.response_status) {
         setSubmitted(true);
-        setResponse(res.data.response_status);
+        setResponse(quoteRes.data.response_status);
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Link inválido ou expirado');
