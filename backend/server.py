@@ -2340,10 +2340,13 @@ async def list_ticket_statuses(current_user: dict = Depends(get_current_user)):
     # If no statuses in DB, return defaults
     if not statuses:
         default_statuses = [
-            {"id": str(uuid.uuid4()), "code": "ABERTO", "label": "Aberto", "color": "#22c55e", "is_final": False, "order": 0, "created_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "code": "EM_TRATAMENTO", "label": "Em Tratamento", "color": "#3b82f6", "is_final": False, "order": 1, "created_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "code": "AGUARDA_CLIENTE", "label": "Aguarda Cliente", "color": "#f59e0b", "is_final": False, "order": 2, "created_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "code": "FECHADO", "label": "Fechado", "color": "#6b7280", "is_final": True, "order": 3, "created_at": datetime.now(timezone.utc).isoformat()}
+            {"id": str(uuid.uuid4()), "code": "ABERTO", "label": "Aberto", "color": "#22c55e", "is_final": False, "is_auto": False, "order": 0, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "EM_TRATAMENTO", "label": "Em Tratamento", "color": "#3b82f6", "is_final": False, "is_auto": False, "order": 1, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "AGUARDA_CLIENTE", "label": "Aguarda Cliente", "color": "#f59e0b", "is_final": False, "is_auto": False, "order": 2, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "ACEITE_LINK", "label": "Aceite (Link)", "color": "#10b981", "is_final": False, "is_auto": True, "order": 3, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "REJEITADO_LINK", "label": "Rejeitado (Link)", "color": "#ef4444", "is_final": False, "is_auto": True, "order": 4, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "AGENDADO", "label": "Agendado", "color": "#8b5cf6", "is_final": False, "is_auto": False, "order": 5, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "FECHADO", "label": "Fechado", "color": "#6b7280", "is_final": True, "is_auto": False, "order": 6, "created_at": datetime.now(timezone.utc).isoformat()}
         ]
         # Insert defaults into DB
         await db.ticket_statuses.insert_many(default_statuses)
