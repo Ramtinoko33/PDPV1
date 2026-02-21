@@ -3100,11 +3100,11 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     }
     
     if response_data.status == "ACCEPTED":
-        # Change status to EM_TRATAMENTO if accepted
-        ticket_update["status"] = TicketStatus.EM_TRATAMENTO.value
+        # Change status to ACEITE_LINK if accepted
+        ticket_update["status"] = TicketStatus.ACEITE_LINK.value
     else:
-        # Change status to FECHADO if rejected
-        ticket_update["status"] = TicketStatus.FECHADO.value
+        # Change status to REJEITADO_LINK if rejected
+        ticket_update["status"] = TicketStatus.REJEITADO_LINK.value
     
     await db.tickets.update_one({"id": quote_link["ticket_id"]}, {"$set": ticket_update})
     
