@@ -334,7 +334,34 @@ const TicketDetail = () => {
       toast.success('Ticket atualizado');
       fetchData();
     } catch (error) {
-      toast.error('Erro ao atualizar ticket');
+      toast.error(error.response?.data?.detail || 'Erro ao atualizar ticket');
+    }
+  };
+
+  const openEditDialog = () => {
+    setEditForm({
+      customer_name: ticket.customer_name || '',
+      customer_phone: ticket.customer_phone || '',
+      customer_email: ticket.customer_email || '',
+      vehicle_plate: ticket.vehicle_plate || '',
+      description: ticket.description || '',
+      type: ticket.type || 'INFORMACAO',
+      priority: ticket.priority || 'NORMAL'
+    });
+    setEditDialogOpen(true);
+  };
+
+  const saveTicketEdit = async () => {
+    setSavingEdit(true);
+    try {
+      await axios.put(`${API_URL}/api/tickets/${id}`, editForm, { headers: getAuthHeaders() });
+      toast.success('Ticket atualizado com sucesso');
+      setEditDialogOpen(false);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao atualizar ticket');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
