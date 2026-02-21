@@ -674,8 +674,15 @@ const TicketDetail = () => {
               </SelectContent>
             </Select>
           ) : (
-            <Badge className={`text-sm py-2 px-4 ${getStatusClass(ticket.status)}`}>
-              {statusOptions.find(s => s.value === ticket.status)?.label}
+            <Badge 
+              className="text-sm py-2 px-4"
+              style={{ 
+                backgroundColor: `${getStatusColor(ticket.status)}20`, 
+                color: getStatusColor(ticket.status),
+                borderColor: getStatusColor(ticket.status)
+              }}
+            >
+              {getStatusLabel(ticket.status)}
             </Badge>
           )}
 
