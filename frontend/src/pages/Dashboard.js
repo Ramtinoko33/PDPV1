@@ -275,14 +275,17 @@ const Dashboard = () => {
                   <Link 
                     key={ticket.id} 
                     to={`/tickets/${ticket.id}`}
-                    className="flex items-center gap-4 p-4 hover:bg-zinc-50 transition-colors"
+                    className={`flex items-center gap-4 p-4 hover:bg-zinc-50 transition-colors ${ticket.priority === 'URGENTE' ? 'bg-red-50/50 border-l-4 border-l-red-500' : ''}`}
                     data-testid={`recent-ticket-${ticket.id}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-sm font-medium text-orange-600">
+                        <span className={`font-mono text-sm font-medium ${ticket.priority === 'URGENTE' ? 'text-red-600 underline decoration-red-400 decoration-2' : 'text-orange-600'}`}>
                           {ticket.ticket_number}
                         </span>
+                        {ticket.priority === 'URGENTE' && (
+                          <Badge className="priority-urgente text-xs">URGENTE</Badge>
+                        )}
                         <Badge className={`text-xs ${getStatusClass(ticket.status)}`}>
                           {statusLabels[ticket.status]}
                         </Badge>
@@ -290,7 +293,7 @@ const Dashboard = () => {
                           <Badge className="sla-overdue text-xs">SLA</Badge>
                         )}
                       </div>
-                      <p className="font-semibold text-slate-900 truncate">
+                      <p className={`font-semibold truncate ${ticket.priority === 'URGENTE' ? 'text-red-900' : 'text-slate-900'}`}>
                         {ticket.customer_name}
                       </p>
                       <div className="flex items-center gap-3 text-sm text-zinc-500 mt-1">
