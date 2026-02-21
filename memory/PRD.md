@@ -99,7 +99,7 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 ## Pending Features (Backlog)
 - [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
 - [ ] P2: Importação Excel com validação
-- [ ] P3: VAPID Keys - configuração correta para Web Push
+- [x] P3: VAPID Keys - configuração correta para Web Push ✅ (21/02/2026)
 - [ ] P4: Portal do cliente (visualização de todos os tickets)
 
 ## Notes
