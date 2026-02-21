@@ -2313,11 +2313,13 @@ class TicketStatusCreate(BaseModel):
     label: str
     color: str = "#3b82f6"
     is_final: bool = False
+    is_auto: bool = False
 
 class TicketStatusUpdate(BaseModel):
     label: Optional[str] = None
     color: Optional[str] = None
     is_final: Optional[bool] = None
+    is_auto: Optional[bool] = None
 
 class TicketStatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
