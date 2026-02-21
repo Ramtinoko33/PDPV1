@@ -278,6 +278,24 @@ const AdminSettings = () => {
     }
   };
 
+  // ============== PUSH CONFIG ==============
+  const fetchPushConfig = async () => {
+    setLoadingPush(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/push/vapid-public-key`, { headers: getAuthHeaders() });
+      const statsResponse = await axios.get(`${API_URL}/api/admin/push-stats`, { headers: getAuthHeaders() }).catch(() => ({ data: { subscriptions_count: 0 } }));
+      setPushConfig({
+        vapid_configured: !!response.data.publicKey,
+        vapid_public_key: response.data.publicKey || '',
+        subscriptions_count: statsResponse.data?.subscriptions_count || 0
+      });
+    } catch (error) {
+      console.error('Error fetching push config:', error);
+    } finally {
+      setLoadingPush(false);
+    }
+  };
+
   // ============== EMAIL CONFIG ==============
   const fetchEmailConfig = async () => {
     setLoadingEmail(true);
