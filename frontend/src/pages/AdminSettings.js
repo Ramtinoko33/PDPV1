@@ -92,6 +92,7 @@ const AdminSettings = () => {
     fetchTicketStatuses();
     fetchSlaConfig();
     fetchEmailConfig();
+    fetchPushConfig();
   }, []);
 
   // ============== TICKET TYPES ==============
