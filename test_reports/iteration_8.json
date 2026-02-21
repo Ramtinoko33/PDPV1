@@ -1,0 +1,91 @@
+{
+  "summary": "Completed testing of ticket status feature for iteration 8. All requested features verified working: API returns statuses with is_auto flag, automatic statuses (ACEITE_LINK, REJEITADO_LINK) have is_auto: true, manual statuses have is_auto: false, frontend dropdown filters out automatic statuses, and quote link response correctly changes ticket status.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ticket_statuses_iteration8.py",
+    "/app/test_reports/pytest/pytest_iteration_8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_ticket_statuses_iteration8.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin": "admin@pdpv.pt / HCNMEnKMLq"
+  },
+  "seed_data_creation": "Created TEST_ prefixed tickets during pytest for status change validation",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All ticket status features verified working. Status dropdown correctly filters automatic statuses.",
+  "feature_verification": {
+    "api_ticket_statuses_returns_is_auto": {
+      "status": "WORKING",
+      "details": "GET /api/ticket-statuses returns all 7 statuses with is_auto boolean flag"
+    },
+    "aceite_link_is_auto_true": {
+      "status": "WORKING",
+      "details": "ACEITE_LINK status has is_auto: true"
+    },
+    "rejeitado_link_is_auto_true": {
+      "status": "WORKING",
+      "details": "REJEITADO_LINK status has is_auto: true"
+    },
+    "manual_statuses_is_auto_false": {
+      "status": "WORKING",
+      "details": "ABERTO, EM_TRATAMENTO, AGUARDA_CLIENTE, AGENDADO, FECHADO all have is_auto: false"
+    },
+    "dropdown_filters_auto_statuses": {
+      "status": "WORKING",
+      "details": "Status dropdown in TicketDetail.js shows only: Aberto, Em Tratamento, Aguarda Cliente, Agendado, Fechado. ACEITE_LINK and REJEITADO_LINK correctly NOT shown"
+    },
+    "agendado_in_dropdown": {
+      "status": "WORKING",
+      "details": "AGENDADO appears in dropdown and can be selected manually"
+    },
+    "client_accept_changes_to_aceite_link": {
+      "status": "WORKING",
+      "details": "When client responds ACCEPTED via /api/public/quote/{token}/respond, ticket status changes to ACEITE_LINK"
+    },
+    "client_reject_changes_to_rejeitado_link": {
+      "status": "WORKING",
+      "details": "When client responds REJECTED via /api/public/quote/{token}/respond, ticket status changes to REJEITADO_LINK"
+    }
+  },
+  "tests_executed": {
+    "pytest_api_tests": [
+      "test_get_ticket_statuses_returns_all_statuses - PASSED",
+      "test_statuses_have_is_auto_flag - PASSED",
+      "test_aceite_link_has_is_auto_true - PASSED",
+      "test_rejeitado_link_has_is_auto_true - PASSED",
+      "test_manual_statuses_have_is_auto_false - PASSED",
+      "test_agendado_status_exists_with_correct_label - PASSED",
+      "test_create_ticket_generate_link_and_accept - PASSED",
+      "test_create_ticket_generate_link_and_reject - PASSED",
+      "test_public_quote_endpoint_requires_no_auth - PASSED",
+      "test_can_change_status_to_agendado_manually - PASSED",
+      "test_can_change_status_through_all_manual_options - PASSED"
+    ],
+    "playwright_ui_tests": [
+      "Login as admin - PASSED",
+      "Navigate to tickets list - PASSED",
+      "Open ticket detail - PASSED",
+      "Click status dropdown - PASSED",
+      "Verify dropdown shows only manual statuses (Aberto, Em Tratamento, Aguarda Cliente, Agendado, Fechado) - PASSED",
+      "Verify ACEITE_LINK NOT in dropdown - PASSED",
+      "Verify REJEITADO_LINK NOT in dropdown - PASSED",
+      "Select AGENDADO status - PASSED"
+    ]
+  }
+}
