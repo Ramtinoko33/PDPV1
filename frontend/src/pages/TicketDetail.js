@@ -324,9 +324,19 @@ const TicketDetail = () => {
     }
   };
 
+  const fetchStatuses = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/ticket-statuses`, { headers: getAuthHeaders() });
+      setAllStatuses(response.data);
+    } catch (error) {
+      console.error('Error fetching statuses:', error);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     fetchUsers();
+    fetchStatuses();
   }, [id]);
 
   const updateTicket = async (updates) => {
