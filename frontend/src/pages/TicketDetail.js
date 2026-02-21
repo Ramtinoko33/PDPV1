@@ -682,6 +682,19 @@ const TicketDetail = () => {
             </Button>
           )}
 
+          {/* Edit Button */}
+          {canEdit && !ticket.archived_at && (
+            <Button
+              variant="outline"
+              className="h-10 border-blue-400 text-blue-700 hover:bg-blue-50"
+              onClick={openEditDialog}
+              data-testid="edit-ticket-btn"
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Editar
+            </Button>
+          )}
+
           {/* Archive/Restore Button */}
           {canArchive && (
             ticket.archived_at ? (
