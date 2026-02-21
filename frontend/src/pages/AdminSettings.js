@@ -1000,6 +1000,310 @@ const AdminSettings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Branding Tab */}
+        <TabsContent value="branding">
+          <div className="space-y-4">
+            {/* Company Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="h-5 w-5" />
+                  Informação da Empresa
+                </CardTitle>
+                <CardDescription>Configure o nome, logo e contactos da empresa</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingBranding ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="company-name">Nome da Empresa</Label>
+                        <Input
+                          id="company-name"
+                          value={brandingConfig.company_name || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_name: e.target.value })}
+                          placeholder="PDPV"
+                          data-testid="company-name-input"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="company-subtitle">Subtítulo / Slogan</Label>
+                        <Input
+                          id="company-subtitle"
+                          value={brandingConfig.company_subtitle || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_subtitle: e.target.value })}
+                          placeholder="Pneus de Pedro V."
+                          data-testid="company-subtitle-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="company-logo">URL do Logo</Label>
+                      <Input
+                        id="company-logo"
+                        value={brandingConfig.company_logo_url || ''}
+                        onChange={(e) => setBrandingConfig({ ...brandingConfig, company_logo_url: e.target.value })}
+                        placeholder="https://exemplo.com/logo.png"
+                        data-testid="company-logo-input"
+                      />
+                      <p className="text-xs text-zinc-500">URL de uma imagem para usar como logo nos emails e página de orçamento</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="primary-color">Cor Principal</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="primary-color"
+                            type="color"
+                            value={brandingConfig.primary_color || '#f97316'}
+                            onChange={(e) => setBrandingConfig({ ...brandingConfig, primary_color: e.target.value })}
+                            className="w-16 h-10 p-1 cursor-pointer"
+                          />
+                          <Input
+                            value={brandingConfig.primary_color || '#f97316'}
+                            onChange={(e) => setBrandingConfig({ ...brandingConfig, primary_color: e.target.value })}
+                            placeholder="#f97316"
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="secondary-color">Cor Secundária</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="secondary-color"
+                            type="color"
+                            value={brandingConfig.secondary_color || '#1f2937'}
+                            onChange={(e) => setBrandingConfig({ ...brandingConfig, secondary_color: e.target.value })}
+                            className="w-16 h-10 p-1 cursor-pointer"
+                          />
+                          <Input
+                            value={brandingConfig.secondary_color || '#1f2937'}
+                            onChange={(e) => setBrandingConfig({ ...brandingConfig, secondary_color: e.target.value })}
+                            placeholder="#1f2937"
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="company-phone">Telefone</Label>
+                        <Input
+                          id="company-phone"
+                          value={brandingConfig.company_phone || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_phone: e.target.value })}
+                          placeholder="+351 912 345 678"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="company-email">Email de Contacto</Label>
+                        <Input
+                          id="company-email"
+                          type="email"
+                          value={brandingConfig.company_email || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_email: e.target.value })}
+                          placeholder="geral@empresa.pt"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="company-address">Morada</Label>
+                        <Input
+                          id="company-address"
+                          value={brandingConfig.company_address || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_address: e.target.value })}
+                          placeholder="Rua Exemplo, 123, Lisboa"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="company-website">Website</Label>
+                        <Input
+                          id="company-website"
+                          value={brandingConfig.company_website || ''}
+                          onChange={(e) => setBrandingConfig({ ...brandingConfig, company_website: e.target.value })}
+                          placeholder="https://www.empresa.pt"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Email Templates */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Templates de Email
+                </CardTitle>
+                <CardDescription>Personalize os textos dos emails de orçamento</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingBranding ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                      <p className="font-medium text-blue-800 mb-2">Variáveis disponíveis:</p>
+                      <code className="text-blue-700">
+                        {'{customer_name}'} {'{ticket_number}'} {'{quote_value}'} {'{expiry_date}'}
+                      </code>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Assunto do Email</Label>
+                      <Input
+                        value={brandingConfig.email_templates?.quote_email_subject || '[Ticket #{ticket_number}] Orçamento - {quote_value}€'}
+                        onChange={(e) => setBrandingConfig({ 
+                          ...brandingConfig, 
+                          email_templates: { ...brandingConfig.email_templates, quote_email_subject: e.target.value }
+                        })}
+                        placeholder="[Ticket #{ticket_number}] Orçamento - {quote_value}€"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Saudação</Label>
+                      <Input
+                        value={brandingConfig.email_templates?.quote_email_greeting || 'Olá {customer_name},'}
+                        onChange={(e) => setBrandingConfig({ 
+                          ...brandingConfig, 
+                          email_templates: { ...brandingConfig.email_templates, quote_email_greeting: e.target.value }
+                        })}
+                        placeholder="Olá {customer_name},"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Texto de Introdução</Label>
+                      <Textarea
+                        value={brandingConfig.email_templates?.quote_email_intro || 'Preparámos um orçamento para si referente ao seu pedido.'}
+                        onChange={(e) => setBrandingConfig({ 
+                          ...brandingConfig, 
+                          email_templates: { ...brandingConfig.email_templates, quote_email_intro: e.target.value }
+                        })}
+                        placeholder="Preparámos um orçamento para si referente ao seu pedido."
+                        className="min-h-[80px]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label>Texto do Botão</Label>
+                        <Input
+                          value={brandingConfig.email_templates?.quote_email_button_text || 'Ver Orçamento'}
+                          onChange={(e) => setBrandingConfig({ 
+                            ...brandingConfig, 
+                            email_templates: { ...brandingConfig.email_templates, quote_email_button_text: e.target.value }
+                          })}
+                          placeholder="Ver Orçamento"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Texto de Validade</Label>
+                        <Input
+                          value={brandingConfig.email_templates?.quote_email_footer || 'Este link é válido até {expiry_date}.'}
+                          onChange={(e) => setBrandingConfig({ 
+                            ...brandingConfig, 
+                            email_templates: { ...brandingConfig.email_templates, quote_email_footer: e.target.value }
+                          })}
+                          placeholder="Este link é válido até {expiry_date}."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t">
+                      <h4 className="font-medium mb-4">Página de Resposta ao Orçamento</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                          <p className="text-sm font-medium text-emerald-800">Quando Aceite:</p>
+                          <div className="space-y-2">
+                            <Label className="text-emerald-700">Título</Label>
+                            <Input
+                              value={brandingConfig.email_templates?.quote_page_accepted_title || 'Orçamento Aceite!'}
+                              onChange={(e) => setBrandingConfig({ 
+                                ...brandingConfig, 
+                                email_templates: { ...brandingConfig.email_templates, quote_page_accepted_title: e.target.value }
+                              })}
+                              className="bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-emerald-700">Mensagem</Label>
+                            <Textarea
+                              value={brandingConfig.email_templates?.quote_page_accepted_message || 'Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço.'}
+                              onChange={(e) => setBrandingConfig({ 
+                                ...brandingConfig, 
+                                email_templates: { ...brandingConfig.email_templates, quote_page_accepted_message: e.target.value }
+                              })}
+                              className="bg-white min-h-[80px]"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-800">Quando Recusado:</p>
+                          <div className="space-y-2">
+                            <Label className="text-red-700">Título</Label>
+                            <Input
+                              value={brandingConfig.email_templates?.quote_page_rejected_title || 'Orçamento Recusado'}
+                              onChange={(e) => setBrandingConfig({ 
+                                ...brandingConfig, 
+                                email_templates: { ...brandingConfig.email_templates, quote_page_rejected_title: e.target.value }
+                              })}
+                              className="bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-red-700">Mensagem</Label>
+                            <Textarea
+                              value={brandingConfig.email_templates?.quote_page_rejected_message || 'Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.'}
+                              onChange={(e) => setBrandingConfig({ 
+                                ...brandingConfig, 
+                                email_templates: { ...brandingConfig.email_templates, quote_page_rejected_message: e.target.value }
+                              })}
+                              className="bg-white min-h-[80px]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-4 border-t">
+                      <Button 
+                        onClick={saveBrandingConfig} 
+                        disabled={savingBranding}
+                        className="bg-orange-600 hover:bg-orange-700"
+                        data-testid="save-branding-btn"
+                      >
+                        {savingBranding ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        Guardar Branding e Templates
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* Type Dialog */}
