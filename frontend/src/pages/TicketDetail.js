@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Checkbox } from '../components/ui/checkbox';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, 
@@ -37,7 +38,8 @@ import {
   Link2,
   Copy,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Pencil
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
