@@ -317,6 +317,46 @@ const AdminSettings = () => {
     }
   };
 
+  // ============== BRANDING CONFIG ==============
+  const fetchBrandingConfig = async () => {
+    setLoadingBranding(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/branding`, { headers: getAuthHeaders() });
+      setBrandingConfig(response.data);
+    } catch (error) {
+      console.error('Error fetching branding config:', error);
+    } finally {
+      setLoadingBranding(false);
+    }
+  };
+
+  const saveBrandingConfig = async () => {
+    setSavingBranding(true);
+    try {
+      await axios.put(`${API_URL}/api/admin/branding`, {
+        company_name: brandingConfig.company_name,
+        company_subtitle: brandingConfig.company_subtitle,
+        company_logo_url: brandingConfig.company_logo_url,
+        primary_color: brandingConfig.primary_color,
+        secondary_color: brandingConfig.secondary_color,
+        company_phone: brandingConfig.company_phone,
+        company_email: brandingConfig.company_email,
+        company_address: brandingConfig.company_address,
+        company_website: brandingConfig.company_website
+      }, { headers: getAuthHeaders() });
+      
+      // Save email templates separately
+      await axios.put(`${API_URL}/api/admin/email-templates`, brandingConfig.email_templates, { headers: getAuthHeaders() });
+      
+      toast.success('Configuração de branding guardada');
+      fetchBrandingConfig();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar configuração');
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
   // ============== EMAIL CONFIG ==============
   const fetchEmailConfig = async () => {
     setLoadingEmail(true);
