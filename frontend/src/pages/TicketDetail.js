@@ -284,6 +284,9 @@ const TicketDetail = () => {
   const [messageAttachments, setMessageAttachments] = useState([]);
   const [uploadingMessageFile, setUploadingMessageFile] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchData = async () => {
     try {
