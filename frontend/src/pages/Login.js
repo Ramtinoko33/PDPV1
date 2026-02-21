@@ -131,9 +131,9 @@ const Login = () => {
                 Credenciais de demonstração
               </p>
               <div className="space-y-1 text-sm text-zinc-600">
-                <p><span className="font-medium">Admin:</span> admin@pdpv.pt / admin123</p>
-                <p><span className="font-medium">Supervisor:</span> supervisor@pdpv.pt / super123</p>
-                <p><span className="font-medium">Agente:</span> agente@pdpv.pt / agente123</p>
+                <p><span className="font-medium">Admin:</span> admin@pdpv.pt / HCNMEnKMLq</p>
+                <p><span className="font-medium">Supervisor:</span> supervisor@pdpv.pt / f9pSIn6zRP</p>
+                <p><span className="font-medium">Agente:</span> agente@pdpv.pt / yHprFGvPUJ</p>
               </div>
             </div>
           </CardContent>
