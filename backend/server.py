@@ -2571,7 +2571,7 @@ async def get_email_settings(current_user: dict = Depends(get_current_user)):
         smtp_use_tls=config.get("smtp_use_tls", True),
         email_from=config.get("email_from") or EMAIL_FROM,
         email_from_name=config.get("email_from_name", "PDPV Tickets"),
-        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com"),
+        frontend_url=config.get("frontend_url", FRONTEND_URL),
         resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key"))
     )
 
@@ -2628,7 +2628,7 @@ async def update_email_settings(config_data: EmailConfigUpdate, current_user: di
         smtp_use_tls=config.get("smtp_use_tls", True),
         email_from=config.get("email_from") or EMAIL_FROM,
         email_from_name=config.get("email_from_name", "PDPV Tickets"),
-        frontend_url=config.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com"),
+        frontend_url=config.get("frontend_url", FRONTEND_URL),
         resend_configured=bool(RESEND_API_KEY or config.get("resend_api_key"))
     )
 
@@ -3142,7 +3142,7 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
             branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
             templates = await db.settings.find_one({"type": "email_templates"}, {"_id": 0}) or {}
             
-            frontend_url = email_settings.get("frontend_url", "https://ticket-flow-15.preview.emergentagent.com") if email_settings else "https://ticket-flow-15.preview.emergentagent.com"
+            frontend_url = email_settings.get("frontend_url", FRONTEND_URL) if email_settings else FRONTEND_URL
             quote_link_url = f"{frontend_url}/quote/{token}"
             
             # Get branding values
