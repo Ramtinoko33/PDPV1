@@ -1100,12 +1100,12 @@ const TicketDetail = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                {/* Compact Quote Section - Integrated in Conversation */}
+                {/* Quote Options Section */}
                 <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <FileText className="h-5 w-5 text-amber-600" />
-                      <span className="font-semibold text-amber-800">Orçamento</span>
+                      <span className="font-semibold text-amber-800">Opções de Orçamento</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Checkbox
@@ -1120,42 +1120,116 @@ const TicketDetail = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 flex-1">
-                      <Label className="font-medium text-amber-700 whitespace-nowrap">Valor (€)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={quoteValue}
-                        onChange={(e) => setQuoteValue(e.target.value)}
-                        onBlur={() => updateTicket({ quote_value: parseFloat(quoteValue) || null })}
-                        className="w-32 border-amber-300 focus:border-amber-500"
-                        data-testid="quote-value-input-conv"
-                      />
-                    </div>
-                    
-                    {quoteValue && parseFloat(quoteValue) > 0 && (
-                      <QuoteLinkSection ticketId={id} getAuthHeaders={getAuthHeaders} compact={true} />
-                    )}
+                  {/* Quote Options List */}
+                  <div className="space-y-2">
+                    {quoteOptions.map((option, index) => (
+                      <div key={option.id || index} className="flex items-center gap-2">
+                        <span className="text-amber-700 font-medium text-sm w-6">{index + 1}.</span>
+                        <Input
+                          placeholder="Descrição (ex: Revisão completa)"
+                          value={option.description}
+                          onChange={(e) => updateQuoteOption(index, 'description', e.target.value)}
+                          className="flex-1 border-amber-300 focus:border-amber-500 text-sm"
+                          data-testid={`quote-option-desc-${index}`}
+                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={option.amount}
+                            onChange={(e) => updateQuoteOption(index, 'amount', e.target.value)}
+                            className="w-24 border-amber-300 focus:border-amber-500 text-sm"
+                            data-testid={`quote-option-amount-${index}`}
+                          />
+                          <span className="text-amber-700 text-sm">€</span>
+                        </div>
+                        {option.is_accepted && (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" title="Aceite pelo cliente" />
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeQuoteOption(index)}
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          disabled={quoteOptions.length <= 1}
+                          data-testid={`quote-option-remove-${index}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                   
-                  {/* Quote Response Status - Compact */}
+                  {/* Add Option & Total */}
+                  <div className="flex items-center justify-between pt-2 border-t border-amber-200">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addQuoteOption}
+                      className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                      disabled={quoteOptions.length >= 10}
+                      data-testid="add-quote-option-btn"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Adicionar Opção
+                    </Button>
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-800 font-semibold">
+                        Total: {getQuoteOptionsTotal().toFixed(2)}€
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={saveQuoteOptions}
+                        disabled={savingOptions}
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                        data-testid="save-quote-options-btn"
+                      >
+                        {savingOptions ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          'Guardar'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Generate Link Button */}
+                  {getQuoteOptionsTotal() > 0 && (
+                    <div className="pt-2 border-t border-amber-200">
+                      <QuoteLinkSection ticketId={id} getAuthHeaders={getAuthHeaders} compact={false} />
+                    </div>
+                  )}
+                  
+                  {/* Quote Response Status */}
                   {ticket.quote_response_status && (
-                    <div className={`flex items-center gap-2 p-2 rounded ${
+                    <div className={`flex items-center gap-2 p-3 rounded ${
                       ticket.quote_response_status === 'ACCEPTED' 
                         ? 'bg-emerald-100 text-emerald-700' 
                         : 'bg-red-100 text-red-700'
                     }`}>
                       {ticket.quote_response_status === 'ACCEPTED' ? (
-                        <CheckCircle className="h-4 w-4" />
+                        <CheckCircle className="h-5 w-5" />
                       ) : (
-                        <XCircle className="h-4 w-4" />
+                        <XCircle className="h-5 w-5" />
                       )}
-                      <span className="text-sm font-medium">
-                        {ticket.quote_response_status === 'ACCEPTED' ? 'Aceite' : 'Recusado'} pelo Cliente
-                        {ticket.quote_response_at && ` • ${formatDate(ticket.quote_response_at)}`}
-                      </span>
+                      <div className="flex-1">
+                        <span className="font-medium">
+                          {ticket.quote_response_status === 'ACCEPTED' ? 'Aceite' : 'Recusado'} pelo Cliente
+                        </span>
+                        {ticket.quote_response_at && (
+                          <span className="text-sm ml-2">• {formatDate(ticket.quote_response_at)}</span>
+                        )}
+                        {ticket.accepted_total && (
+                          <div className="text-sm mt-1">
+                            Total aceite: <strong>{ticket.accepted_total.toFixed(2)}€</strong>
+                            {ticket.accepted_count && ` (${ticket.accepted_count} de ${quoteOptions.length} opções)`}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
