@@ -3206,6 +3206,69 @@ class QuoteResponseData(BaseModel):
     accepted_total: Optional[float] = None
     accepted_count: Optional[int] = None
 
+# ============== QUOTE OPTIONS ENDPOINTS ==============
+@api_router.get("/tickets/{ticket_id}/quote-options", response_model=List[QuoteOptionResponse])
+async def get_quote_options(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all quote options for a ticket"""
+    options = await db.quote_options.find({"ticket_id": ticket_id}, {"_id": 0}).to_list(100)
+    return options
+
+@api_router.post("/tickets/{ticket_id}/quote-options", response_model=List[QuoteOptionResponse])
+async def save_quote_options(ticket_id: str, data: QuoteOptionsUpdate, current_user: dict = Depends(get_current_user)):
+    """Save/update quote options for a ticket (replaces all existing options)"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if current_user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    # Delete existing options
+    await db.quote_options.delete_many({"ticket_id": ticket_id})
+    
+    # Create new options
+    new_options = []
+    total_amount = 0
+    for opt in data.options:
+        option_doc = {
+            "id": str(uuid.uuid4()),
+            "ticket_id": ticket_id,
+            "description": opt.description,
+            "amount": opt.amount,
+            "is_accepted": False,
+            "accepted_at": None
+        }
+        new_options.append(option_doc)
+        total_amount += opt.amount
+    
+    if new_options:
+        await db.quote_options.insert_many(new_options)
+    
+    # Update ticket quote_value to total of all options
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {
+            "quote_value": total_amount,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Log note
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by_user_id": current_user["id"],
+        "body": f"Orçamento atualizado: {len(new_options)} opções, total {total_amount:.2f}€",
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    return new_options
+
 @api_router.post("/tickets/{ticket_id}/generate-quote-link")
 async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_current_user)):
     """Generate a unique link for client to respond to a quote"""
