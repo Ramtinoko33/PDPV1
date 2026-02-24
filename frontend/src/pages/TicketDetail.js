@@ -1603,6 +1603,14 @@ const TicketDetail = () => {
 
         {/* Documentos Tab */}
         <TabsContent value="documentos" className="space-y-4">
+          {/* Reminders */}
+          <RemindersSection 
+            ticketId={id} 
+            getAuthHeaders={getAuthHeaders} 
+            users={users} 
+            currentUser={user} 
+          />
+
           {/* Quote History */}
           <QuoteHistorySection ticketId={id} getAuthHeaders={getAuthHeaders} formatDate={formatDate} />
 
