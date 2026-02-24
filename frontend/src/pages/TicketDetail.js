@@ -39,7 +39,9 @@ import {
   Copy,
   ExternalLink,
   ChevronRight,
-  Pencil
+  Pencil,
+  Plus,
+  Trash2
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
