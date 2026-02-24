@@ -1441,6 +1441,23 @@ const AdminSettings = () => {
                 Estado final (fecha o ticket)
               </Label>
             </div>
+            <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+              <input
+                type="checkbox"
+                id="status-auto"
+                checked={statusForm.is_auto || false}
+                onChange={(e) => setStatusForm({ ...statusForm, is_auto: e.target.checked })}
+                className="w-4 h-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
+              />
+              <div>
+                <Label htmlFor="status-auto" className="text-sm font-medium">
+                  Estado automático
+                </Label>
+                <p className="text-xs text-amber-700">
+                  Não aparece no dropdown manual (ex: resposta do cliente)
+                </p>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
