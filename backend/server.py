@@ -238,6 +238,8 @@ class TicketResponse(BaseModel):
     quote_value: Optional[float] = None
     quote_response_status: Optional[str] = None
     quote_response_at: Optional[str] = None
+    accepted_total: Optional[float] = None
+    accepted_count: Optional[int] = None
     is_overdue: bool = False
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
