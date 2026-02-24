@@ -2122,7 +2122,7 @@ async def get_push_stats(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Apenas administradores podem ver estatísticas de push")
     
     count = await db.push_subscriptions.count_documents({})
-    return {"subscriptions_count": count, "vapid_configured": bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)}
+    return {"subscriptions_count": count, "vapid_configured": VAPID_KEYS_VALID}
 
 @api_router.post("/push/subscribe")
 async def subscribe_to_push(subscription: PushSubscription, current_user: dict = Depends(get_current_user)):
