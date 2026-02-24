@@ -566,12 +566,34 @@ const TicketDetail = () => {
 
   const getStatusLabel = (status) => {
     const statusObj = allStatuses.find(s => s.code === status);
-    return statusObj?.label || status;
+    if (statusObj) return statusObj.label;
+    // Fallback labels for known statuses
+    const fallbackLabels = {
+      ABERTO: 'Aberto',
+      EM_TRATAMENTO: 'Em Tratamento',
+      AGUARDA_CLIENTE: 'Aguarda Cliente',
+      ACEITE_LINK: 'Aceite (Link)',
+      REJEITADO_LINK: 'Rejeitado (Link)',
+      AGENDADO: 'Agendado',
+      FECHADO: 'Fechado'
+    };
+    return fallbackLabels[status] || status;
   };
 
   const getStatusColor = (status) => {
     const statusObj = allStatuses.find(s => s.code === status);
-    return statusObj?.color || '#6b7280';
+    if (statusObj) return statusObj.color;
+    // Fallback colors for known statuses
+    const fallbackColors = {
+      ABERTO: '#22c55e',
+      EM_TRATAMENTO: '#3b82f6',
+      AGUARDA_CLIENTE: '#f59e0b',
+      ACEITE_LINK: '#10b981',
+      REJEITADO_LINK: '#ef4444',
+      AGENDADO: '#8b5cf6',
+      FECHADO: '#6b7280'
+    };
+    return fallbackColors[status] || '#6b7280';
   };
 
   const typeLabels = {
