@@ -1726,6 +1726,165 @@ async def resolve_alert(alert_id: str, current_user: dict = Depends(get_current_
         raise HTTPException(status_code=404, detail="Alerta não encontrado")
     return {"message": "Alerta resolvido"}
 
+# ============== REMINDERS ==============
+@api_router.get("/tickets/{ticket_id}/reminders", response_model=List[ReminderResponse])
+async def list_reminders(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """List all reminders for a ticket"""
+    reminders = await db.reminders.find({"ticket_id": ticket_id}, {"_id": 0}).sort("due_at", 1).to_list(100)
+    
+    now = datetime.now(timezone.utc)
+    result = []
+    for r in reminders:
+        # Get assigned user name
+        if r.get("assigned_to_user_id"):
+            user = await db.users.find_one({"id": r["assigned_to_user_id"]}, {"_id": 0, "name": 1})
+            r["assigned_to_name"] = user["name"] if user else None
+        # Get creator name
+        if r.get("created_by_user_id"):
+            creator = await db.users.find_one({"id": r["created_by_user_id"]}, {"_id": 0, "name": 1})
+            r["created_by_name"] = creator["name"] if creator else None
+        # Check if overdue
+        try:
+            due_at = datetime.fromisoformat(r["due_at"].replace("Z", "+00:00"))
+            r["is_overdue"] = not r.get("is_done", False) and due_at < now
+        except:
+            r["is_overdue"] = False
+        result.append(ReminderResponse(**r))
+    return result
+
+@api_router.post("/tickets/{ticket_id}/reminders", response_model=ReminderResponse)
+async def create_reminder(ticket_id: str, data: ReminderCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new reminder for a ticket"""
+    user = current_user
+    
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    now = datetime.now(timezone.utc)
+    assigned_to = data.assigned_to_user_id or user["id"]
+    
+    reminder_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "description": data.description,
+        "due_at": data.due_at,
+        "assigned_to_user_id": assigned_to,
+        "is_done": False,
+        "created_by_user_id": user["id"],
+        "created_at": now.isoformat(),
+        "completed_at": None
+    }
+    await db.reminders.insert_one(reminder_doc)
+    
+    # Get names for response
+    assigned_user = await db.users.find_one({"id": assigned_to}, {"_id": 0, "name": 1})
+    reminder_doc["assigned_to_name"] = assigned_user["name"] if assigned_user else None
+    reminder_doc["created_by_name"] = user["name"]
+    reminder_doc["is_overdue"] = False
+    
+    return ReminderResponse(**reminder_doc)
+
+@api_router.put("/reminders/{reminder_id}/complete")
+async def complete_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark a reminder as done"""
+    user = current_user
+    
+    reminder = await db.reminders.find_one({"id": reminder_id}, {"_id": 0})
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Lembrete não encontrado")
+    
+    # Only assigned user or supervisor/admin can complete
+    is_assigned = reminder.get("assigned_to_user_id") == user["id"]
+    is_supervisor = user["role"] in [UserRole.SUPERVISOR.value, UserRole.ADMIN.value]
+    
+    if not is_assigned and not is_supervisor:
+        raise HTTPException(status_code=403, detail="Sem permissão para concluir este lembrete")
+    
+    now = datetime.now(timezone.utc)
+    await db.reminders.update_one(
+        {"id": reminder_id},
+        {"$set": {"is_done": True, "completed_at": now.isoformat()}}
+    )
+    return {"message": "Lembrete concluído"}
+
+@api_router.put("/reminders/{reminder_id}/reopen")
+async def reopen_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
+    """Reopen a completed reminder"""
+    user = current_user
+    
+    reminder = await db.reminders.find_one({"id": reminder_id}, {"_id": 0})
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Lembrete não encontrado")
+    
+    # Only assigned user or supervisor/admin can reopen
+    is_assigned = reminder.get("assigned_to_user_id") == user["id"]
+    is_supervisor = user["role"] in [UserRole.SUPERVISOR.value, UserRole.ADMIN.value]
+    
+    if not is_assigned and not is_supervisor:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    await db.reminders.update_one(
+        {"id": reminder_id},
+        {"$set": {"is_done": False, "completed_at": None}}
+    )
+    return {"message": "Lembrete reaberto"}
+
+@api_router.delete("/reminders/{reminder_id}")
+async def delete_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a reminder"""
+    user = current_user
+    
+    reminder = await db.reminders.find_one({"id": reminder_id}, {"_id": 0})
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Lembrete não encontrado")
+    
+    # Only creator or supervisor/admin can delete
+    is_creator = reminder.get("created_by_user_id") == user["id"]
+    is_supervisor = user["role"] in [UserRole.SUPERVISOR.value, UserRole.ADMIN.value]
+    
+    if not is_creator and not is_supervisor:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    await db.reminders.delete_one({"id": reminder_id})
+    return {"message": "Lembrete eliminado"}
+
+@api_router.get("/reminders/my-today", response_model=List[ReminderResponse])
+async def get_my_reminders_today(current_user: dict = Depends(get_current_user)):
+    """Get current user's reminders for today (not done)"""
+    user = current_user
+    
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
+    # Get reminders assigned to current user, due today or overdue, not done
+    reminders = await db.reminders.find({
+        "assigned_to_user_id": user["id"],
+        "is_done": False,
+        "due_at": {"$lt": today_end.isoformat()}
+    }, {"_id": 0}).sort("due_at", 1).to_list(50)
+    
+    result = []
+    for r in reminders:
+        # Get ticket info
+        ticket = await db.tickets.find_one({"id": r["ticket_id"]}, {"_id": 0, "ticket_number": 1})
+        r["ticket_number"] = ticket["ticket_number"] if ticket else None
+        # Check if overdue
+        try:
+            due_at = datetime.fromisoformat(r["due_at"].replace("Z", "+00:00"))
+            r["is_overdue"] = due_at < now
+        except:
+            r["is_overdue"] = False
+        r["assigned_to_name"] = user["name"]
+        result.append(ReminderResponse(**r))
+    
+    return result
+
 # ============== ATTACHMENTS ==============
 @api_router.post("/tickets/{ticket_id}/attachments", response_model=AttachmentResponse)
 async def upload_attachment(ticket_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
