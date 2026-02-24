@@ -270,6 +270,229 @@ const QuoteHistorySection = ({ ticketId, getAuthHeaders, formatDate }) => {
   );
 };
 
+// Component for Ticket Reminders
+const RemindersSection = ({ ticketId, getAuthHeaders, users, currentUser }) => {
+  const [reminders, setReminders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newReminder, setNewReminder] = useState({ description: '', due_at: '', assigned_to_user_id: '' });
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    fetchReminders();
+  }, [ticketId]);
+
+  const fetchReminders = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/tickets/${ticketId}/reminders`,
+        { headers: getAuthHeaders() }
+      );
+      setReminders(response.data);
+    } catch (error) {
+      console.error('Error fetching reminders:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createReminder = async (e) => {
+    e.preventDefault();
+    if (!newReminder.description || !newReminder.due_at) {
+      toast.error('Preencha descrição e data/hora');
+      return;
+    }
+    setCreating(true);
+    try {
+      await axios.post(
+        `${API_URL}/api/tickets/${ticketId}/reminders`,
+        {
+          description: newReminder.description,
+          due_at: new Date(newReminder.due_at).toISOString(),
+          assigned_to_user_id: newReminder.assigned_to_user_id || null
+        },
+        { headers: getAuthHeaders() }
+      );
+      toast.success('Lembrete criado');
+      setNewReminder({ description: '', due_at: '', assigned_to_user_id: '' });
+      setShowCreate(false);
+      fetchReminders();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao criar lembrete');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleComplete = async (reminder) => {
+    try {
+      if (reminder.is_done) {
+        await axios.put(`${API_URL}/api/reminders/${reminder.id}/reopen`, {}, { headers: getAuthHeaders() });
+        toast.success('Lembrete reaberto');
+      } else {
+        await axios.put(`${API_URL}/api/reminders/${reminder.id}/complete`, {}, { headers: getAuthHeaders() });
+        toast.success('Lembrete concluído');
+      }
+      fetchReminders();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro');
+    }
+  };
+
+  const deleteReminder = async (reminderId) => {
+    if (!window.confirm('Eliminar este lembrete?')) return;
+    try {
+      await axios.delete(`${API_URL}/api/reminders/${reminderId}`, { headers: getAuthHeaders() });
+      toast.success('Lembrete eliminado');
+      fetchReminders();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro');
+    }
+  };
+
+  const formatDateTime = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString('pt-PT', { 
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const canManage = ['ADMIN', 'SUPERVISOR'].includes(currentUser?.role);
+
+  return (
+    <Card>
+      <CardHeader className="border-b pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Bell className="h-5 w-5 text-purple-600" />
+            Lembretes
+            {reminders.length > 0 && (
+              <Badge variant="outline" className="ml-1">{reminders.filter(r => !r.is_done).length}</Badge>
+            )}
+          </CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCreate(!showCreate)}
+            className="border-purple-400 text-purple-700 hover:bg-purple-50"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Criar
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4">
+        {/* Create Form */}
+        {showCreate && (
+          <form onSubmit={createReminder} className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-3">
+            <div>
+              <Label className="text-purple-700">Descrição *</Label>
+              <Input
+                value={newReminder.description}
+                onChange={(e) => setNewReminder({ ...newReminder, description: e.target.value })}
+                placeholder="Ex: Ligar ao cliente para confirmar"
+                className="border-purple-300"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-purple-700">Data/Hora *</Label>
+                <Input
+                  type="datetime-local"
+                  value={newReminder.due_at}
+                  onChange={(e) => setNewReminder({ ...newReminder, due_at: e.target.value })}
+                  className="border-purple-300"
+                />
+              </div>
+              <div>
+                <Label className="text-purple-700">Atribuir a</Label>
+                <Select
+                  value={newReminder.assigned_to_user_id}
+                  onValueChange={(v) => setNewReminder({ ...newReminder, assigned_to_user_id: v })}
+                >
+                  <SelectTrigger className="border-purple-300">
+                    <SelectValue placeholder="Eu próprio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Eu próprio</SelectItem>
+                    {users.map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" size="sm" disabled={creating} className="bg-purple-600 hover:bg-purple-700">
+                {creating ? 'A criar...' : 'Criar Lembrete'}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* Reminders List */}
+        {loading ? (
+          <p className="text-zinc-500 text-center py-4">A carregar...</p>
+        ) : reminders.length === 0 ? (
+          <p className="text-zinc-500 text-center py-4">Sem lembretes</p>
+        ) : (
+          <div className="space-y-2">
+            {reminders.map((reminder) => (
+              <div
+                key={reminder.id}
+                className={`flex items-center gap-3 p-3 rounded-lg border ${
+                  reminder.is_done 
+                    ? 'bg-zinc-50 border-zinc-200' 
+                    : reminder.is_overdue 
+                      ? 'bg-red-50 border-red-300' 
+                      : 'bg-white border-zinc-200'
+                }`}
+              >
+                <Checkbox
+                  checked={reminder.is_done}
+                  onCheckedChange={() => toggleComplete(reminder)}
+                  className={reminder.is_overdue && !reminder.is_done ? 'border-red-500' : ''}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium ${reminder.is_done ? 'line-through text-zinc-500' : ''}`}>
+                    {reminder.description}
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <Calendar className="h-3 w-3" />
+                    <span className={reminder.is_overdue && !reminder.is_done ? 'text-red-600 font-semibold' : ''}>
+                      {formatDateTime(reminder.due_at)}
+                    </span>
+                    {reminder.is_overdue && !reminder.is_done && (
+                      <Badge className="bg-red-100 text-red-700 text-xs">ATRASADO</Badge>
+                    )}
+                    {reminder.assigned_to_name && (
+                      <span>• {reminder.assigned_to_name}</span>
+                    )}
+                  </div>
+                </div>
+                {(canManage || reminder.created_by_user_id === currentUser?.id) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteReminder(reminder.id)}
+                    className="h-8 w-8 p-0 text-zinc-400 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const TicketDetail = () => {
   const { id } = useParams();
   const { user, getAuthHeaders } = useAuth();
