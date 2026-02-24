@@ -2154,8 +2154,11 @@ async def unsubscribe_from_push(subscription: PushSubscription, current_user: di
 
 async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = None):
     """Send web push notification to all devices of a user"""
+    # Check if VAPID keys are valid before attempting to send
+    if not VAPID_KEYS_VALID:
+        return  # Silently skip if keys not valid
+    
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
-        logger.warning("VAPID keys not configured, skipping web push")
         return
     
     subscriptions = await db.push_subscriptions.find(
