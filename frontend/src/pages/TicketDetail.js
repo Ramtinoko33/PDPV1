@@ -691,18 +691,33 @@ const TicketDetail = () => {
           {canEdit ? (
             // Check if current status is automatic (set by system, like ACEITE_LINK)
             allStatuses.find(s => s.code === ticket.status)?.is_auto ? (
-              // Show badge for automatic statuses (not editable via dropdown)
-              <Badge 
-                className="text-sm py-2 px-4 font-semibold"
-                style={{ 
-                  backgroundColor: `${getStatusColor(ticket.status)}20`, 
-                  color: getStatusColor(ticket.status),
-                  borderColor: getStatusColor(ticket.status)
-                }}
-                data-testid="status-badge-auto"
-              >
-                {getStatusLabel(ticket.status)}
-              </Badge>
+              // Show badge for automatic statuses + dropdown to change to next logical status
+              <div className="flex items-center gap-2">
+                <Badge 
+                  className="text-sm py-2 px-4 font-semibold"
+                  style={{ 
+                    backgroundColor: `${getStatusColor(ticket.status)}20`, 
+                    color: getStatusColor(ticket.status),
+                    borderColor: getStatusColor(ticket.status)
+                  }}
+                  data-testid="status-badge-auto"
+                >
+                  {getStatusLabel(ticket.status)}
+                </Badge>
+                <Select
+                  value=""
+                  onValueChange={(value) => updateTicket({ status: value })}
+                >
+                  <SelectTrigger className="h-10 w-40 font-semibold border-dashed" data-testid="status-change-select">
+                    <span className="text-zinc-500 text-sm">Alterar para...</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             ) : (
               <Select
                 value={ticket.status}
