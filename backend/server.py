@@ -3518,14 +3518,25 @@ logger = logging.getLogger(__name__)
 # Validate VAPID keys now that logger is available
 def validate_vapid_keys():
     global VAPID_KEYS_VALID
+    
+    # Check if web push is explicitly disabled
+    if os.environ.get('DISABLE_WEB_PUSH', 'false').lower() == 'true':
+        logger.info("[VAPID] Web Push explicitly disabled via DISABLE_WEB_PUSH env var")
+        VAPID_KEYS_VALID = False
+        return
+    
     if VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY:
         try:
             from py_vapid import Vapid
+            # Try to validate the key format
             test_vapid = Vapid.from_string(private_key=VAPID_PRIVATE_KEY)
             VAPID_KEYS_VALID = True
             logger.info("[VAPID] Keys validated successfully - Web Push enabled")
+        except ValueError as e:
+            logger.warning(f"[VAPID] Invalid key format (ValueError), Web Push disabled: {e}")
+            VAPID_KEYS_VALID = False
         except Exception as e:
-            logger.warning(f"[VAPID] Invalid key format, Web Push disabled: {e}")
+            logger.warning(f"[VAPID] Key validation failed, Web Push disabled: {e}")
             VAPID_KEYS_VALID = False
     else:
         logger.info("[VAPID] Keys not configured - Web Push disabled")
