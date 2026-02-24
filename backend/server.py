@@ -53,20 +53,8 @@ VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
 VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@pdpv.pt')
 
-# Validate VAPID keys at startup
+# VAPID key validation will be done after logger is initialized
 VAPID_KEYS_VALID = False
-if VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY:
-    try:
-        # Test if keys can be used by py_vapid
-        from py_vapid import Vapid
-        test_vapid = Vapid.from_string(private_key=VAPID_PRIVATE_KEY)
-        VAPID_KEYS_VALID = True
-        logger.info("[VAPID] Keys validated successfully - Web Push enabled")
-    except Exception as e:
-        logger.warning(f"[VAPID] Invalid key format, Web Push disabled: {e}")
-        VAPID_KEYS_VALID = False
-else:
-    logger.info("[VAPID] Keys not configured - Web Push disabled")
 
 # WebSocket connections manager
 class ConnectionManager:
