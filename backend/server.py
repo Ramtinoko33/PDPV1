@@ -306,6 +306,7 @@ class ReminderResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     ticket_id: str
+    ticket_number: Optional[str] = None  # For dashboard view
     description: str
     due_at: str
     assigned_to_user_id: str
