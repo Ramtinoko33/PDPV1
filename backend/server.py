@@ -201,7 +201,7 @@ class TicketCreate(BaseModel):
     assigned_to_user_id: Optional[str] = None
 
 class TicketUpdate(BaseModel):
-    status: Optional[TicketStatus] = None
+    status: Optional[str] = None  # Changed from TicketStatus to str for dynamic states
     assigned_to_user_id: Optional[str] = None
     priority: Optional[TicketPriority] = None
     quote_sent: Optional[bool] = None
