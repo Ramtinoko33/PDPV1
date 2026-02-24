@@ -3025,52 +3025,114 @@ class TestEmailRequest(BaseModel):
 
 @api_router.post("/admin/test-email")
 async def test_email(request: TestEmailRequest, current_user: dict = Depends(get_current_user)):
-    """Send a test email to verify Resend configuration - ADMIN only"""
+    """Send a test email to verify SMTP or Resend configuration - ADMIN only"""
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas administradores podem testar email")
     
-    if not RESEND_API_KEY:
-        raise HTTPException(status_code=400, detail="RESEND_API_KEY não configurada. Configure no ficheiro .env")
+    # Get email settings from DB
+    email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+    
+    # Check if SMTP is configured
+    smtp_configured = email_settings and email_settings.get("smtp_host") and email_settings.get("smtp_port") and email_settings.get("smtp_username")
+    
+    if not smtp_configured and not RESEND_API_KEY:
+        raise HTTPException(status_code=400, detail="Email não configurado. Configure SMTP nas definições ou RESEND_API_KEY no ficheiro .env")
+    
+    company_name = branding.get("company_name", "PDPV")
+    company_subtitle = branding.get("company_subtitle", "Pneus de Pedro V.")
+    primary_color = branding.get("primary_color", "#f97316")
+    secondary_color = branding.get("secondary_color", "#1f2937")
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: {primary_color}; padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">{company_name}</h1>
+            <p style="color: rgba(255,255,255,0.8); margin: 5px 0 0 0;">{company_subtitle}</p>
+        </div>
+        <div style="padding: 20px; background-color: #f9fafb;">
+            <h2 style="color: #1f2937;">Teste de Email Bem Sucedido!</h2>
+            <p>Este é um email de teste do sistema {company_name}.</p>
+            <p>Se está a receber este email, a configuração está correta.</p>
+            <div style="background-color: #d1fae5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p style="color: #065f46; margin: 0;">✅ Configuração verificada com sucesso!</p>
+            </div>
+            <p style="color: #6b7280; font-size: 12px;">Método utilizado: {"SMTP" if smtp_configured else "Resend API"}</p>
+        </div>
+        <div style="background-color: {secondary_color}; padding: 15px; text-align: center;">
+            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                {company_name} - {company_subtitle}
+            </p>
+        </div>
+    </div>
+    """
     
     try:
-        html_content = """
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background-color: #f97316; padding: 20px; text-align: center;">
-                <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
-            </div>
-            <div style="padding: 20px; background-color: #f9fafb;">
-                <h2 style="color: #1f2937;">Teste de Email Bem Sucedido!</h2>
-                <p>Este é um email de teste do sistema PDPV Tickets.</p>
-                <p>Se está a receber este email, a configuração do Resend está correta.</p>
-                <div style="background-color: #d1fae5; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <p style="color: #065f46; margin: 0;">✅ Configuração verificada com sucesso!</p>
-                </div>
-            </div>
-            <div style="background-color: #1f2937; padding: 15px; text-align: center;">
-                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                    PDPV - Pneus de Pedro V.
-                </p>
-            </div>
-        </div>
-        """
-        
-        params = {
-            "from": EMAIL_FROM,
-            "to": [request.recipient_email],
-            "subject": "[PDPV Tickets] Teste de Email",
-            "html": html_content
-        }
-        
-        email_result = await asyncio.to_thread(resend.Emails.send, params)
-        logger.info(f"[RESEND TEST] Test email sent to {request.recipient_email}, ID: {email_result.get('id')}")
-        
-        return {
-            "status": "success",
-            "message": f"Email de teste enviado para {request.recipient_email}",
-            "email_id": email_result.get("id")
-        }
+        if smtp_configured:
+            # Use SMTP
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            smtp_host = email_settings.get("smtp_host")
+            smtp_port = email_settings.get("smtp_port", 587)
+            smtp_username = email_settings.get("smtp_username")
+            smtp_password = email_settings.get("smtp_password", "")
+            smtp_use_ssl = email_settings.get("smtp_use_ssl", False)
+            smtp_use_tls = email_settings.get("smtp_use_tls", True)
+            email_from = email_settings.get("email_from") or smtp_username
+            email_from_name = email_settings.get("email_from_name", company_name)
+            
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[{company_name}] Teste de Email"
+            msg['From'] = f"{email_from_name} <{email_from}>"
+            msg['To'] = request.recipient_email
+            
+            msg.attach(MIMEText(html_content, 'html'))
+            
+            def send_smtp():
+                if smtp_use_ssl:
+                    server = smtplib.SMTP_SSL(smtp_host, smtp_port)
+                else:
+                    server = smtplib.SMTP(smtp_host, smtp_port)
+                    if smtp_use_tls:
+                        server.starttls()
+                
+                if smtp_password:
+                    server.login(smtp_username, smtp_password)
+                
+                server.sendmail(email_from, [request.recipient_email], msg.as_string())
+                server.quit()
+                return True
+            
+            await asyncio.to_thread(send_smtp)
+            logger.info(f"[SMTP TEST] Test email sent to {request.recipient_email}")
+            
+            return {
+                "status": "success",
+                "message": f"Email de teste enviado via SMTP para {request.recipient_email}",
+                "method": "SMTP"
+            }
+        else:
+            # Use Resend
+            params = {
+                "from": EMAIL_FROM,
+                "to": [request.recipient_email],
+                "subject": f"[{company_name}] Teste de Email",
+                "html": html_content
+            }
+            
+            email_result = await asyncio.to_thread(resend.Emails.send, params)
+            logger.info(f"[RESEND TEST] Test email sent to {request.recipient_email}, ID: {email_result.get('id')}")
+            
+            return {
+                "status": "success",
+                "message": f"Email de teste enviado via Resend para {request.recipient_email}",
+                "email_id": email_result.get("id"),
+                "method": "Resend"
+            }
     except Exception as e:
-        logger.error(f"[RESEND TEST] Failed to send test email: {str(e)}")
+        logger.error(f"[EMAIL TEST] Failed to send test email: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
 
 @api_router.get("/admin/email-config")
