@@ -1287,7 +1287,11 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
     old_assigned = ticket.get("assigned_to_user_id")
     
     if ticket_data.status is not None:
-        update_doc["status"] = ticket_data.status.value
+        # Validate status exists in database
+        valid_status = await db.ticket_statuses.find_one({"code": ticket_data.status})
+        if not valid_status:
+            raise HTTPException(status_code=400, detail=f"Estado '{ticket_data.status}' não existe")
+        update_doc["status"] = ticket_data.status
     if ticket_data.assigned_to_user_id is not None:
         update_doc["assigned_to_user_id"] = ticket_data.assigned_to_user_id if ticket_data.assigned_to_user_id != "" else None
     if ticket_data.priority is not None:
@@ -1326,14 +1330,14 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         await db.notes.insert_one(note_doc)
     
     # Log status change to history
-    if ticket_data.status and ticket_data.status.value != old_status:
-        await log_status_change(ticket_id, old_status, ticket_data.status.value, user["id"])
+    if ticket_data.status and ticket_data.status != old_status:
+        await log_status_change(ticket_id, old_status, ticket_data.status, user["id"])
         note_doc = {
             "id": str(uuid.uuid4()),
             "ticket_id": ticket_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by_user_id": user["id"],
-            "body": f"Estado alterado de {old_status} para {ticket_data.status.value}",
+            "body": f"Estado alterado de {old_status} para {ticket_data.status}",
             "is_system": True
         }
         await db.notes.insert_one(note_doc)
