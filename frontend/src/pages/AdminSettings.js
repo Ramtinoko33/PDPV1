@@ -50,7 +50,7 @@ const AdminSettings = () => {
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [editingStatus, setEditingStatus] = useState(null);
-  const [statusForm, setStatusForm] = useState({ code: '', label: '', color: '#3b82f6', is_final: false });
+  const [statusForm, setStatusForm] = useState({ code: '', label: '', color: '#3b82f6', is_final: false, is_auto: false });
   const [savingStatus, setSavingStatus] = useState(false);
   
   // SLA Config State
