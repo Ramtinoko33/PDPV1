@@ -221,7 +221,7 @@ class TicketResponse(BaseModel):
     updated_at: str
     channel: TicketChannel
     type: TicketType
-    status: TicketStatus
+    status: str  # Changed from TicketStatus to str for dynamic states
     priority: TicketPriority
     description: str
     customer_name: str
