@@ -218,7 +218,8 @@ const AdminSettings = () => {
         code: status.code, 
         label: status.label, 
         color: status.color || '#3b82f6',
-        is_final: status.is_final || false
+        is_final: status.is_final || false,
+        is_auto: status.is_auto || false
       });
     } else {
       setEditingStatus(null);
