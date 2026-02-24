@@ -901,7 +901,7 @@ const AdminSettings = () => {
                   </div>
                   <Button 
                     onClick={sendTestEmail} 
-                    disabled={sendingTest || !emailConfig.smtp_configured}
+                    disabled={sendingTest || (!emailConfig.smtp_configured && !emailConfig.resend_configured)}
                     className="bg-emerald-600 hover:bg-emerald-700"
                     data-testid="send-test-email-btn"
                   >
@@ -912,6 +912,11 @@ const AdminSettings = () => {
                     )}
                     Enviar Teste
                   </Button>
+                  {!emailConfig.smtp_configured && !emailConfig.resend_configured && (
+                    <p className="text-xs text-amber-600 mt-2">
+                      Configure SMTP acima ou RESEND_API_KEY no servidor para enviar emails
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
