@@ -32,8 +32,9 @@ test.describe('Bug Fix: Auto Status Change on Assignment', () => {
     await page.locator('button[type="submit"]').first().click();
     await expect(page).toHaveURL(/\/(dashboard|tickets)/, { timeout: 15000 });
     
-    // Navigate to create ticket page - look for "Novo Ticket" link in sidebar
-    const createButton = page.locator('a[href="/tickets/novo"], [data-testid="novo-ticket-link"]').first();
+    // Navigate to create ticket page - there's a "Novo Ticket" button in sidebar and top-right
+    // Use the visible one with text "Novo Ticket"
+    const createButton = page.locator('button:has-text("Novo Ticket"), a:has-text("Novo Ticket")').first();
     await expect(createButton).toBeVisible({ timeout: 10000 });
     await createButton.click();
     
