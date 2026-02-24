@@ -86,6 +86,26 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 2. **Mudança automática de status ao atribuir** - Quando ticket é atribuído, status muda automaticamente de ABERTO para EM_TRATAMENTO
 3. **Falso toast de erro no link de orçamento** - Separado tratamento de erro do clipboard para não mostrar erro quando link é gerado com sucesso
 4. **Dropdown para mudar status automático** - Quando ticket tem status automático (ACEITE_LINK/REJEITADO_LINK), mostra Badge + dropdown "Alterar para..." para permitir mudança para Agendado/Fechado
+5. **Status em branco na lista de tickets** - Adicionado ACEITE_LINK, REJEITADO_LINK e AGENDADO aos statusLabels em TicketList.js, Dashboard.js e ArchivedTickets.js
+
+### Nova Funcionalidade - Múltiplas Opções de Orçamento (24/02/2026)
+- **Backend:**
+  - Nova collection `quote_options` com: id, ticket_id, description, amount, is_accepted, accepted_at
+  - Endpoints: GET/POST `/api/tickets/{ticket_id}/quote-options`
+  - Campos no ticket: accepted_total, accepted_count
+- **Frontend (TicketDetail.js):**
+  - Formulário para adicionar múltiplas opções (descrição + valor)
+  - Botão "+ Adicionar Opção" (máx 10)
+  - Total automático
+  - Botão "Guardar" para persistir opções
+- **Página Pública (QuoteResponse.js):**
+  - Checkboxes para selecionar opções (múltipla escolha)
+  - Total selecionado atualiza em tempo real
+  - Botões "Recusar Tudo" e "Aceitar (n)"
+  - Após aceite: mostra opções aceites vs recusadas
+- **Fluxo:**
+  - Funcionário cria opções → Gera link → Cliente seleciona opções → Aceita → Status ACEITE_LINK
+  - Ticket mostra: total orçamento, total aceite, número de opções aceites
 
 ### Funcionalidades (21/02/2026)
 1. **Configuração SMTP Completa** - Servidor, porta, username, senha, SSL/TLS na UI
