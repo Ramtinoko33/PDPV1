@@ -296,6 +296,27 @@ class AlertResponse(BaseModel):
     body: str
     is_resolved: bool = False
 
+# ============== REMINDER MODELS ==============
+class ReminderCreate(BaseModel):
+    description: str
+    due_at: str  # ISO datetime string
+    assigned_to_user_id: Optional[str] = None  # If None, assign to current user
+
+class ReminderResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    ticket_id: str
+    description: str
+    due_at: str
+    assigned_to_user_id: str
+    assigned_to_name: Optional[str] = None
+    is_done: bool = False
+    is_overdue: bool = False
+    created_by_user_id: str
+    created_by_name: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
 class AttachmentResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
