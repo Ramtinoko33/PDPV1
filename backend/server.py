@@ -2153,53 +2153,57 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
         return
     
-    subscriptions = await db.push_subscriptions.find(
-        {"user_id": user_id},
-        {"_id": 0}
-    ).to_list(100)
-    
-    if not subscriptions:
-        return
-    
-    payload = json.dumps({
-        "title": title,
-        "body": body,
-        "icon": "/logo192.png",
-        "badge": "/logo192.png",
-        "url": url or "/"
-    })
-    
-    for sub in subscriptions:
-        try:
-            # Validate subscription has required fields
-            if not sub.get("endpoint") or not sub.get("keys"):
-                logger.warning(f"Invalid subscription format for user {user_id}, skipping")
+    try:
+        subscriptions = await db.push_subscriptions.find(
+            {"user_id": user_id},
+            {"_id": 0}
+        ).to_list(100)
+        
+        if not subscriptions:
+            return
+        
+        payload = json.dumps({
+            "title": title,
+            "body": body,
+            "icon": "/logo192.png",
+            "badge": "/logo192.png",
+            "url": url or "/"
+        })
+        
+        for sub in subscriptions:
+            try:
+                # Validate subscription has required fields
+                if not sub.get("endpoint") or not sub.get("keys"):
+                    logger.warning(f"Invalid subscription format for user {user_id}, skipping")
+                    continue
+                    
+                webpush(
+                    subscription_info={
+                        "endpoint": sub["endpoint"],
+                        "keys": sub["keys"]
+                    },
+                    data=payload,
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"}
+                )
+                logger.info(f"Web push sent to user {user_id}")
+            except WebPushException as e:
+                logger.error(f"Web push failed for user {user_id}: {e}")
+                # If subscription is expired/invalid, remove it
+                if e.response and e.response.status_code in [404, 410]:
+                    await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+                    logger.info(f"Removed invalid subscription for user {user_id}")
+            except ValueError as e:
+                # VAPID key format error - log and skip silently
+                logger.warning(f"VAPID key format error, web push disabled: {e}")
+                return  # Exit early, no point trying other subscriptions with invalid keys
+            except Exception as e:
+                # Catch any other unexpected errors
+                logger.error(f"Unexpected error sending web push to user {user_id}: {e}")
                 continue
-                
-            webpush(
-                subscription_info={
-                    "endpoint": sub["endpoint"],
-                    "keys": sub["keys"]
-                },
-                data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"}
-            )
-            logger.info(f"Web push sent to user {user_id}")
-        except WebPushException as e:
-            logger.error(f"Web push failed for user {user_id}: {e}")
-            # If subscription is expired/invalid, remove it
-            if e.response and e.response.status_code in [404, 410]:
-                await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
-                logger.info(f"Removed invalid subscription for user {user_id}")
-        except ValueError as e:
-            # VAPID key format error - log and skip silently
-            logger.warning(f"VAPID key format error, web push disabled: {e}")
-            return  # Exit early, no point trying other subscriptions with invalid keys
-        except Exception as e:
-            # Catch any other unexpected errors
-            logger.error(f"Unexpected error sending web push to user {user_id}: {e}")
-            continue
+    except Exception as e:
+        # Catch any top-level errors to prevent task crash
+        logger.error(f"Web push task error for user {user_id}: {e}")
 
 # Helper function to create and send notification
 async def create_notification(user_id: str, title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
