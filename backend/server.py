@@ -3449,6 +3449,14 @@ async def get_public_quote(token: str):
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
+    # Get quote options
+    quote_options = await db.quote_options.find({"ticket_id": quote_link["ticket_id"]}, {"_id": 0}).to_list(100)
+    
+    # Calculate accepted total if any
+    accepted_options = [o for o in quote_options if o.get("is_accepted")]
+    accepted_total = sum(o["amount"] for o in accepted_options) if accepted_options else None
+    accepted_count = len(accepted_options) if accepted_options else None
+    
     return QuoteResponseData(
         ticket_number=ticket["ticket_number"],
         customer_name=ticket["customer_name"],
@@ -3457,7 +3465,10 @@ async def get_public_quote(token: str):
         description=ticket.get("description"),
         quote_sent_at=quote_link["created_at"],
         response_status=quote_link.get("response_status"),
-        response_at=quote_link.get("response_at")
+        response_at=quote_link.get("response_at"),
+        quote_options=[QuoteOptionResponse(**o) for o in quote_options],
+        accepted_total=accepted_total,
+        accepted_count=accepted_count
     )
 
 @api_router.post("/public/quote/{token}/respond")
