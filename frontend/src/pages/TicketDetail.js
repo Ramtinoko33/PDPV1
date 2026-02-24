@@ -660,19 +660,35 @@ const TicketDetail = () => {
         <div className="flex flex-wrap items-center gap-3">
           {/* Status */}
           {canEdit ? (
-            <Select
-              value={ticket.status}
-              onValueChange={(value) => updateTicket({ status: value })}
-            >
-              <SelectTrigger className={`h-10 w-44 font-semibold ${getStatusClass(ticket.status)}`} data-testid="status-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            // Check if current status is automatic (set by system, like ACEITE_LINK)
+            allStatuses.find(s => s.code === ticket.status)?.is_auto ? (
+              // Show badge for automatic statuses (not editable via dropdown)
+              <Badge 
+                className="text-sm py-2 px-4 font-semibold"
+                style={{ 
+                  backgroundColor: `${getStatusColor(ticket.status)}20`, 
+                  color: getStatusColor(ticket.status),
+                  borderColor: getStatusColor(ticket.status)
+                }}
+                data-testid="status-badge-auto"
+              >
+                {getStatusLabel(ticket.status)}
+              </Badge>
+            ) : (
+              <Select
+                value={ticket.status}
+                onValueChange={(value) => updateTicket({ status: value })}
+              >
+                <SelectTrigger className={`h-10 w-44 font-semibold ${getStatusClass(ticket.status)}`} data-testid="status-select">
+                  <SelectValue placeholder={getStatusLabel(ticket.status)} />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
           ) : (
             <Badge 
               className="text-sm py-2 px-4"
