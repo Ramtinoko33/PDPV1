@@ -64,6 +64,9 @@ const Dashboard = () => {
     ABERTO: 'Aberto',
     EM_TRATAMENTO: 'Em Tratamento',
     AGUARDA_CLIENTE: 'Aguarda Cliente',
+    ACEITE_LINK: 'Aceite (Link)',
+    REJEITADO_LINK: 'Rejeitado (Link)',
+    AGENDADO: 'Agendado',
     FECHADO: 'Fechado'
   };
 
@@ -72,6 +75,9 @@ const Dashboard = () => {
       ABERTO: 'status-aberto',
       EM_TRATAMENTO: 'status-em-tratamento',
       AGUARDA_CLIENTE: 'status-aguarda-cliente',
+      ACEITE_LINK: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      REJEITADO_LINK: 'bg-red-100 text-red-800 border-red-300',
+      AGENDADO: 'bg-purple-100 text-purple-800 border-purple-300',
       FECHADO: 'status-fechado'
     };
     return classes[status] || 'bg-zinc-100 text-zinc-700';
