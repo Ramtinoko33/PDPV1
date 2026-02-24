@@ -1,0 +1,64 @@
+{
+  "summary": "Bug fix verification tests for PDPV ticket system: 1) ACEITE_LINK status display, 2) False error toast on quote link generation, 3) Auto status change on ticket assignment. All 3 bug fixes verified working correctly.",
+  "mode": "generate",
+  "baseline_commit": "09213590362d628535f7aed0e5d1bd62f79d5c37",
+  "head_commit": "f3b329111ed75600332c1fce57ed1e67d0488e07",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "regression_results": {
+    "total_specs": 2,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "specs_created": [
+    "/app/tests/e2e/status-display.spec.ts",
+    "/app/tests/e2e/auto-status-quote.spec.ts"
+  ],
+  "specs_updated": [],
+  "quarantined_tests": [],
+  "test_report_links": [
+    "/app/backend/tests/test_status_bug_fixes.py",
+    "/app/test_reports/pytest/pytest_status_fixes_final.xml"
+  ],
+  "action_items": [],
+  "updated_files": [
+    "/app/tests/playwright.config.ts",
+    "/app/tests/fixtures/helpers.ts",
+    "/app/tests/e2e/status-display.spec.ts",
+    "/app/tests/e2e/auto-status-quote.spec.ts",
+    "/app/backend/tests/test_status_bug_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "Used provided test tickets: 45f94275-0164-40db-b3cc-6c658bf0cd70 (ACEITE_LINK) and 222daadb-f066-4098-b759-cd78d5a81073 (EM_TRATAMENTO). Created additional test tickets during test execution for status change verification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 3 bug fixes verified working: 1) ACEITE_LINK status now displays as a Badge (data-testid='status-badge-auto') instead of broken Select dropdown, 2) Quote link generation no longer shows false error toast (clipboard errors handled separately), 3) Status auto-changes from ABERTO to EM_TRATAMENTO when assigned_to_user_id is set via PUT /api/tickets/{id}. Test infrastructure set up with Playwright for frontend E2E and pytest for backend integration tests.",
+  "bugs_verified_fixed": [
+    {
+      "bug": "ACEITE_LINK status appears blank in ticket detail",
+      "status": "FIXED",
+      "verification": "Ticket 45f94275-0164-40db-b3cc-6c658bf0cd70 displays 'Aceite (Link)' badge correctly via data-testid='status-badge-auto'"
+    },
+    {
+      "bug": "False error toast when generating quote link",
+      "status": "FIXED",
+      "verification": "Quote link generation endpoint /api/tickets/{id}/generate-quote-link works correctly without clipboard errors triggering error toasts"
+    },
+    {
+      "bug": "Status doesn't auto-change to EM_TRATAMENTO when ticket is assigned",
+      "status": "FIXED",
+      "verification": "Backend PUT /api/tickets/{id} with assigned_to_user_id now auto-changes status from ABERTO to EM_TRATAMENTO"
+    }
+  ]
+}
