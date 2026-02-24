@@ -32,53 +32,52 @@ test.describe('Bug Fix: Auto Status Change on Assignment', () => {
     await page.locator('button[type="submit"]').first().click();
     await expect(page).toHaveURL(/\/(dashboard|tickets)/, { timeout: 15000 });
     
-    // Navigate to create ticket page - look for "Novo Ticket" button
-    const createButton = page.locator('a[href="/tickets/novo"], button:has-text("Novo Ticket"), a:has-text("Novo Ticket")').first();
+    // Navigate to create ticket page - look for "Novo Ticket" link in sidebar
+    const createButton = page.locator('a[href="/tickets/novo"], [data-testid="novo-ticket-link"]').first();
     await expect(createButton).toBeVisible({ timeout: 10000 });
     await createButton.click();
     
-    // Wait for create ticket form
-    await expect(page.locator('form, [data-testid="create-ticket-form"]').first()).toBeVisible({ timeout: 10000 });
+    // Wait for create ticket form - look for the phone input by data-testid
+    await expect(page.getByTestId('ticket-phone-input')).toBeVisible({ timeout: 10000 });
     
-    // Fill in required fields
+    // Fill in required fields using data-testids
     const uniqueName = `TEST_AutoStatus_${Date.now()}`;
-    await page.locator('input[name="customer_name"], input[placeholder*="Nome"]').first().fill(uniqueName);
-    await page.locator('input[name="customer_phone"], input[placeholder*="Telefone"], input[placeholder*="telefone"]').first().fill('919999888');
+    await page.getByTestId('ticket-phone-input').fill('919999888');
+    await page.getByTestId('ticket-name-input').fill(uniqueName);
     
-    // Leave assigned_to empty to create as ABERTO
+    // Make sure no assignment is made (leave ticket-assign-select as default "Não Atribuído")
     // Submit the form
-    await page.locator('button[type="submit"]:has-text("Criar"), button:has-text("Criar Ticket")').first().click();
+    await page.getByTestId('submit-ticket-btn').click();
     
-    // Wait for success and redirect
+    // Wait for success and redirect to ticket detail
     await expect(page).toHaveURL(/\/tickets\/[a-f0-9-]+/, { timeout: 15000 });
     
-    // Verify ticket was created with status ABERTO (or check via status indicator)
+    // Verify ticket was created - should see back button
     await expect(page.getByTestId('back-to-tickets-btn')).toBeVisible({ timeout: 10000 });
     
     // Now assign the ticket using the assign dropdown
     const assignSelect = page.getByTestId('assign-select');
     
-    // If we can see the assign dropdown, use it
-    if (await assignSelect.isVisible()) {
-      await assignSelect.click();
-      
-      // Select an agent (not "Ninguém")
-      const agentOption = page.locator('[role="option"]').filter({ hasNotText: 'Ninguém' }).first();
-      await expect(agentOption).toBeVisible({ timeout: 5000 });
-      await agentOption.click();
-      
-      // Wait for the update to complete (toast or page refresh)
-      await page.waitForLoadState('networkidle');
-      
-      // Verify status changed to EM_TRATAMENTO
-      // The status should now show "Em Tratamento" either as badge text or select value
-      const statusElement = page.getByTestId('status-select').or(page.getByTestId('status-badge-auto'));
-      await expect(statusElement).toBeVisible({ timeout: 10000 });
-      
-      // Check if it contains "Em Tratamento" text
-      const pageContent = await page.content();
-      expect(pageContent).toContain('Em Tratamento');
-    }
+    // Admin should see the assign dropdown
+    await expect(assignSelect).toBeVisible({ timeout: 10000 });
+    await assignSelect.click();
+    
+    // Select an agent (not "Ninguém")
+    const agentOption = page.locator('[role="option"]').filter({ hasNotText: 'Ninguém' }).first();
+    await expect(agentOption).toBeVisible({ timeout: 5000 });
+    await agentOption.click();
+    
+    // Wait for the update to complete
+    await page.waitForLoadState('networkidle');
+    
+    // Verify status changed to EM_TRATAMENTO
+    // The status should now show "Em Tratamento" either as badge text or select value
+    const statusElement = page.getByTestId('status-select').or(page.getByTestId('status-badge-auto'));
+    await expect(statusElement).toBeVisible({ timeout: 10000 });
+    
+    // Check if it contains "Em Tratamento" text
+    const pageContent = await page.content();
+    expect(pageContent).toContain('Em Tratamento');
     
     await page.screenshot({ path: 'auto-status-change.jpeg', quality: 20, fullPage: false });
   });
