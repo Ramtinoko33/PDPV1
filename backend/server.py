@@ -3169,10 +3169,28 @@ async def get_email_config(current_user: dict = Depends(get_current_user)):
         "email_from": EMAIL_FROM if RESEND_API_KEY else None
     }
 
+# ============== QUOTE OPTIONS ==============
+class QuoteOptionCreate(BaseModel):
+    description: str
+    amount: float
+
+class QuoteOptionResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    ticket_id: str
+    description: str
+    amount: float
+    is_accepted: bool = False
+    accepted_at: Optional[str] = None
+
+class QuoteOptionsUpdate(BaseModel):
+    options: List[QuoteOptionCreate]
+
 # ============== PUBLIC QUOTE RESPONSE ==============
 class QuoteResponseRequest(BaseModel):
     status: str  # ACCEPTED or REJECTED
     comments: Optional[str] = None
+    accepted_option_ids: List[str] = []  # IDs of accepted options
 
 class QuoteResponseData(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -3184,6 +3202,9 @@ class QuoteResponseData(BaseModel):
     quote_sent_at: str
     response_status: Optional[str] = None
     response_at: Optional[str] = None
+    quote_options: List[QuoteOptionResponse] = []  # Multiple options
+    accepted_total: Optional[float] = None
+    accepted_count: Optional[int] = None
 
 @api_router.post("/tickets/{ticket_id}/generate-quote-link")
 async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_current_user)):
