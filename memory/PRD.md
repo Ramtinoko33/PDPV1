@@ -79,14 +79,19 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - **Frontend**: React, Tailwind CSS, shadcn/ui
 - **Notifications**: Web Push (VAPID), WebSocket
 
-## Key Changes (21/02/2026)
+## Key Changes (24/02/2026)
 
-### Funcionalidades Adicionadas
+### Bug Fixes Críticos (P0/P1)
+1. **Status ACEITE_LINK em branco** - Corrigido display de statuses automáticos (is_auto=true) no TicketDetail.js. Agora mostra Badge em vez de Select vazio para statuses como ACEITE_LINK e REJEITADO_LINK
+2. **Mudança automática de status ao atribuir** - Quando ticket é atribuído, status muda automaticamente de ABERTO para EM_TRATAMENTO
+3. **Falso toast de erro no link de orçamento** - Separado tratamento de erro do clipboard para não mostrar erro quando link é gerado com sucesso
+
+### Funcionalidades (21/02/2026)
 1. **Configuração SMTP Completa** - Servidor, porta, username, senha, SSL/TLS na UI
 2. **Edição de Ticket** - Modal completo para editar todos os campos
 3. **Dashboard Urgentes** - Tickets urgentes com destaque visual (sublinhado vermelho)
 
-### Bug Fixes
+### Bug Fixes Anteriores
 - Navegação na lista de tickets
 - Auto-atribuição de agentes na criação
 - assigned_to_name preenchido na criação
