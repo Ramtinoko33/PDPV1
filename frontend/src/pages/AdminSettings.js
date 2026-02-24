@@ -222,7 +222,7 @@ const AdminSettings = () => {
       });
     } else {
       setEditingStatus(null);
-      setStatusForm({ code: '', label: '', color: '#3b82f6', is_final: false });
+      setStatusForm({ code: '', label: '', color: '#3b82f6', is_final: false, is_auto: false });
     }
     setStatusDialogOpen(true);
   };
