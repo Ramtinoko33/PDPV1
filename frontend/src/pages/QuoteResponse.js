@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
+import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
 import { 
   CheckCircle, 
@@ -34,6 +35,7 @@ const QuoteResponse = () => {
   const [response, setResponse] = useState(null);
   const [comments, setComments] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState([]);
 
   useEffect(() => {
     fetchData();
@@ -52,6 +54,13 @@ const QuoteResponse = () => {
       if (quoteRes.data.response_status) {
         setSubmitted(true);
         setResponse(quoteRes.data.response_status);
+        // Mark accepted options as selected
+        if (quoteRes.data.quote_options) {
+          const acceptedIds = quoteRes.data.quote_options
+            .filter(o => o.is_accepted)
+            .map(o => o.id);
+          setSelectedOptions(acceptedIds);
+        }
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Link inválido ou expirado');
@@ -60,13 +69,34 @@ const QuoteResponse = () => {
     }
   };
 
+  const toggleOption = (optionId) => {
+    setSelectedOptions(prev => 
+      prev.includes(optionId)
+        ? prev.filter(id => id !== optionId)
+        : [...prev, optionId]
+    );
+  };
+
+  const getSelectedTotal = () => {
+    if (!quote?.quote_options) return 0;
+    return quote.quote_options
+      .filter(o => selectedOptions.includes(o.id))
+      .reduce((sum, o) => sum + o.amount, 0);
+  };
+
   const submitResponse = async (status) => {
+    if (status === 'ACCEPTED' && selectedOptions.length === 0 && quote.quote_options?.length > 0) {
+      toast.error('Selecione pelo menos uma opção');
+      return;
+    }
+    
     setSubmitting(true);
     setResponse(status);
     try {
       await axios.post(`${API_URL}/api/public/quote/${token}/respond`, {
         status,
-        comments
+        comments,
+        accepted_option_ids: status === 'ACCEPTED' ? selectedOptions : []
       });
       setSubmitted(true);
       toast.success(status === 'ACCEPTED' ? 'Orçamento aceite!' : 'Orçamento recusado');
@@ -120,6 +150,11 @@ const QuoteResponse = () => {
     );
   }
 
+  const hasOptions = quote.quote_options && quote.quote_options.length > 0;
+  const totalQuoteValue = hasOptions 
+    ? quote.quote_options.reduce((sum, o) => sum + o.amount, 0) 
+    : quote.quote_value;
+
   return (
     <div className="min-h-screen bg-zinc-100">
       {/* Header */}
@@ -156,7 +191,12 @@ const QuoteResponse = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-2xl">Orçamento #{quote.ticket_number}</CardTitle>
-                <CardDescription>Responda ao orçamento abaixo</CardDescription>
+                <CardDescription>
+                  {hasOptions 
+                    ? 'Selecione as opções que pretende aceitar'
+                    : 'Responda ao orçamento abaixo'
+                  }
+                </CardDescription>
               </div>
               <Badge className={`text-lg px-4 py-2 ${
                 submitted 
@@ -197,7 +237,7 @@ const QuoteResponse = () => {
               )}
             </div>
 
-            {/* Quote Details */}
+            {/* Quote Options or Single Value */}
             <div 
               className="rounded-lg p-6"
               style={{ 
@@ -215,7 +255,7 @@ const QuoteResponse = () => {
                     className="font-semibold"
                     style={{ color: branding?.primary_color || '#f97316' }}
                   >
-                    Valor do Orçamento
+                    {hasOptions ? 'Opções de Orçamento' : 'Valor do Orçamento'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm" style={{ color: branding?.primary_color || '#f97316' }}>
@@ -223,14 +263,87 @@ const QuoteResponse = () => {
                   {formatDate(quote.quote_sent_at)}
                 </div>
               </div>
-              <div 
-                className="text-4xl font-black"
-                style={{ color: branding?.primary_color || '#f97316' }}
-              >
-                {formatCurrency(quote.quote_value)}
-              </div>
-              {quote.description && (
-                <p className="mt-4 text-slate-700 whitespace-pre-wrap">{quote.description}</p>
+
+              {hasOptions ? (
+                <div className="space-y-3">
+                  {quote.quote_options.map((option) => {
+                    const isSelected = selectedOptions.includes(option.id);
+                    const isAccepted = option.is_accepted;
+                    
+                    return (
+                      <div 
+                        key={option.id}
+                        className={`flex items-center p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                          submitted
+                            ? isAccepted 
+                              ? 'bg-emerald-50 border-emerald-300' 
+                              : 'bg-zinc-50 border-zinc-200 opacity-60'
+                            : isSelected
+                              ? 'bg-white border-emerald-400 shadow-md'
+                              : 'bg-white border-zinc-200 hover:border-zinc-300'
+                        }`}
+                        onClick={() => !submitted && toggleOption(option.id)}
+                        data-testid={`quote-option-${option.id}`}
+                      >
+                        {!submitted ? (
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleOption(option.id)}
+                            className="mr-4 h-5 w-5"
+                            data-testid={`quote-option-checkbox-${option.id}`}
+                          />
+                        ) : (
+                          <div className="mr-4">
+                            {isAccepted ? (
+                              <CheckCircle className="h-5 w-5 text-emerald-600" />
+                            ) : (
+                              <XCircle className="h-5 w-5 text-zinc-400" />
+                            )}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800">{option.description}</p>
+                        </div>
+                        <div 
+                          className="text-xl font-bold"
+                          style={{ color: branding?.primary_color || '#f97316' }}
+                        >
+                          {formatCurrency(option.amount)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Total */}
+                  <div className="pt-4 mt-4 border-t-2 border-dashed flex justify-between items-center">
+                    <span className="text-lg font-semibold text-slate-700">
+                      {submitted ? 'Total Aceite:' : 'Total Selecionado:'}
+                    </span>
+                    <span 
+                      className="text-3xl font-black"
+                      style={{ color: branding?.primary_color || '#f97316' }}
+                    >
+                      {formatCurrency(submitted && quote.accepted_total ? quote.accepted_total : getSelectedTotal())}
+                    </span>
+                  </div>
+                  {submitted && quote.accepted_count && (
+                    <p className="text-sm text-zinc-500 text-right">
+                      {quote.accepted_count} de {quote.quote_options.length} opções aceites
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div 
+                    className="text-4xl font-black"
+                    style={{ color: branding?.primary_color || '#f97316' }}
+                  >
+                    {formatCurrency(quote.quote_value)}
+                  </div>
+                  {quote.description && (
+                    <p className="mt-4 text-slate-700 whitespace-pre-wrap">{quote.description}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -263,13 +376,13 @@ const QuoteResponse = () => {
                     ) : (
                       <XCircle className="h-5 w-5 mr-2" />
                     )}
-                    Recusar
+                    Recusar Tudo
                   </Button>
                   <Button
                     className="h-14 text-lg"
                     style={{ backgroundColor: branding?.primary_color || '#16a34a' }}
                     onClick={() => submitResponse('ACCEPTED')}
-                    disabled={submitting}
+                    disabled={submitting || (hasOptions && selectedOptions.length === 0)}
                     data-testid="accept-quote-btn"
                   >
                     {submitting && response === 'ACCEPTED' ? (
@@ -277,9 +390,17 @@ const QuoteResponse = () => {
                     ) : (
                       <CheckCircle className="h-5 w-5 mr-2" />
                     )}
-                    Aceitar
+                    {hasOptions 
+                      ? `Aceitar${selectedOptions.length > 0 ? ` (${selectedOptions.length})` : ''}`
+                      : 'Aceitar'
+                    }
                   </Button>
                 </div>
+                {hasOptions && selectedOptions.length === 0 && (
+                  <p className="text-sm text-amber-600 text-center">
+                    Selecione pelo menos uma opção para aceitar
+                  </p>
+                )}
               </div>
             ) : (
               <div className={`p-6 rounded-lg text-center ${
@@ -299,12 +420,12 @@ const QuoteResponse = () => {
                   </>
                 ) : (
                   <>
-                    <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
                     <h3 className="text-xl font-bold text-red-800 mb-2">
                       {branding?.quote_page_rejected_title || 'Orçamento Recusado'}
                     </h3>
                     <p className="text-red-700">
-                      {branding?.quote_page_rejected_message || 'Obrigado pela sua resposta. Se precisar de ajuda, não hesite em contactar-nos.'}
+                      {branding?.quote_page_rejected_message || 'Obrigado pela sua resposta. Se mudar de ideias, não hesite em contactar-nos.'}
                     </p>
                   </>
                 )}
@@ -313,27 +434,32 @@ const QuoteResponse = () => {
           </CardContent>
         </Card>
 
-        {/* Footer */}
-        <div className="text-center mt-6 text-sm text-zinc-500 space-y-2">
-          <p className="font-semibold">{branding?.company_name || 'PDPV'} - {branding?.company_subtitle || 'Pneus de Pedro V.'}</p>
-          {(branding?.company_phone || branding?.company_email) && (
+        {/* Contact Footer */}
+        {branding && (branding.company_phone || branding.company_email) && (
+          <div className="mt-6 text-center text-sm text-zinc-600">
+            <p className="mb-2">Dúvidas? Contacte-nos:</p>
             <div className="flex items-center justify-center gap-4">
-              {branding?.company_phone && (
-                <span className="flex items-center gap-1">
-                  <Phone className="h-3.5 w-3.5" />
+              {branding.company_phone && (
+                <a 
+                  href={`tel:${branding.company_phone}`} 
+                  className="flex items-center gap-1 hover:text-orange-600"
+                >
+                  <Phone className="h-4 w-4" />
                   {branding.company_phone}
-                </span>
+                </a>
               )}
-              {branding?.company_email && (
-                <span className="flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" />
+              {branding.company_email && (
+                <a 
+                  href={`mailto:${branding.company_email}`} 
+                  className="flex items-center gap-1 hover:text-orange-600"
+                >
+                  <Mail className="h-4 w-4" />
                   {branding.company_email}
-                </span>
+                </a>
               )}
             </div>
-          )}
-          <p className="text-xs">Este é um link único e pessoal. Não o partilhe.</p>
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );
