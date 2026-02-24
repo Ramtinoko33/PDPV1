@@ -68,17 +68,16 @@ test.describe('Bug Fix: Auto Status Change on Assignment', () => {
     await expect(agentOption).toBeVisible({ timeout: 5000 });
     await agentOption.click();
     
-    // Wait for the update to complete
-    await page.waitForLoadState('networkidle');
+    // Wait for the update response - the API will return the updated ticket with new status
+    await page.waitForResponse(resp => resp.url().includes('/api/tickets/') && resp.request().method() === 'PUT', { timeout: 10000 });
     
-    // Verify status changed to EM_TRATAMENTO
-    // The status should now show "Em Tratamento" either as badge text or select value
-    const statusElement = page.getByTestId('status-select').or(page.getByTestId('status-badge-auto'));
-    await expect(statusElement).toBeVisible({ timeout: 10000 });
+    // After assignment, wait for status select to update 
+    // The status should show "Em Tratamento" now
+    const statusSelect = page.getByTestId('status-select');
+    await expect(statusSelect).toBeVisible({ timeout: 10000 });
     
-    // Check if it contains "Em Tratamento" text
-    const pageContent = await page.content();
-    expect(pageContent).toContain('Em Tratamento');
+    // Verify the status dropdown now shows "Em Tratamento" 
+    await expect(statusSelect).toContainText(/Em Tratamento/i, { timeout: 10000 });
     
     await page.screenshot({ path: 'auto-status-change.jpeg', quality: 20, fullPage: false });
   });
