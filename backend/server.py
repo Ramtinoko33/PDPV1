@@ -1348,6 +1348,21 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
             assigned_user = await db.users.find_one({"id": ticket_data.assigned_to_user_id}, {"_id": 0, "name": 1})
             assigned_name = assigned_user["name"] if assigned_user else ticket_data.assigned_to_user_id
             
+            # Auto-change status from ABERTO to EM_TRATAMENTO when assigning
+            current_ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "status": 1})
+            if current_ticket and current_ticket.get("status") == "ABERTO" and not ticket_data.status:
+                await db.tickets.update_one({"id": ticket_id}, {"$set": {"status": "EM_TRATAMENTO"}})
+                await log_status_change(ticket_id, "ABERTO", "EM_TRATAMENTO", user["id"])
+                auto_status_note = {
+                    "id": str(uuid.uuid4()),
+                    "ticket_id": ticket_id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_by_user_id": user["id"],
+                    "body": "Estado alterado automaticamente para Em Tratamento (ticket atribuído)",
+                    "is_system": True
+                }
+                await db.notes.insert_one(auto_status_note)
+            
             # Notify assigned user
             asyncio.create_task(create_notification(
                 user_id=ticket_data.assigned_to_user_id,
