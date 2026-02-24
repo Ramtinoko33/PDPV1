@@ -3491,6 +3491,38 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         raise HTTPException(status_code=400, detail="Estado inválido")
     
     now = datetime.now(timezone.utc)
+    ticket_id = quote_link["ticket_id"]
+    
+    # Get quote options
+    quote_options = await db.quote_options.find({"ticket_id": ticket_id}, {"_id": 0}).to_list(100)
+    
+    # Calculate accepted total from selected options
+    accepted_total = 0
+    accepted_count = 0
+    accepted_descriptions = []
+    
+    if response_data.status == "ACCEPTED" and quote_options:
+        # Mark selected options as accepted
+        for opt in quote_options:
+            if opt["id"] in response_data.accepted_option_ids:
+                await db.quote_options.update_one(
+                    {"id": opt["id"]},
+                    {"$set": {"is_accepted": True, "accepted_at": now.isoformat()}}
+                )
+                accepted_total += opt["amount"]
+                accepted_count += 1
+                accepted_descriptions.append(f"{opt['description']} ({opt['amount']:.2f}€)")
+        
+        # If no options were selected but status is ACCEPTED, accept all (backwards compat)
+        if accepted_count == 0 and not response_data.accepted_option_ids:
+            for opt in quote_options:
+                await db.quote_options.update_one(
+                    {"id": opt["id"]},
+                    {"$set": {"is_accepted": True, "accepted_at": now.isoformat()}}
+                )
+                accepted_total += opt["amount"]
+                accepted_count += 1
+                accepted_descriptions.append(f"{opt['description']} ({opt['amount']:.2f}€)")
     
     # Update quote link
     await db.quote_links.update_one(
@@ -3498,11 +3530,12 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         {"$set": {
             "response_status": response_data.status,
             "response_at": now.isoformat(),
-            "response_comments": response_data.comments
+            "response_comments": response_data.comments,
+            "accepted_option_ids": response_data.accepted_option_ids
         }}
     )
     
-    ticket = await db.tickets.find_one({"id": quote_link["ticket_id"]}, {"_id": 0})
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
@@ -3516,21 +3549,32 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     if response_data.status == "ACCEPTED":
         # Change status to ACEITE_LINK if accepted
         ticket_update["status"] = TicketStatus.ACEITE_LINK.value
+        if accepted_total > 0:
+            ticket_update["accepted_total"] = accepted_total
+            ticket_update["accepted_count"] = accepted_count
     else:
         # Change status to REJEITADO_LINK if rejected
         ticket_update["status"] = TicketStatus.REJEITADO_LINK.value
     
-    await db.tickets.update_one({"id": quote_link["ticket_id"]}, {"$set": ticket_update})
+    await db.tickets.update_one({"id": ticket_id}, {"$set": ticket_update})
     
-    # Log note
+    # Log note with details of accepted options
     status_text = "ACEITE" if response_data.status == "ACCEPTED" else "RECUSADO"
-    note_body = f"Cliente respondeu ao orçamento: {status_text}"
+    if response_data.status == "ACCEPTED" and accepted_descriptions:
+        note_body = f"Cliente respondeu ao orçamento: {status_text}\n"
+        note_body += f"Opções aceites ({accepted_count} de {len(quote_options)}):\n"
+        for desc in accepted_descriptions:
+            note_body += f"  ✓ {desc}\n"
+        note_body += f"Total aceite: {accepted_total:.2f}€"
+    else:
+        note_body = f"Cliente respondeu ao orçamento: {status_text}"
+    
     if response_data.comments:
         note_body += f"\nComentários: {response_data.comments}"
     
     note_doc = {
         "id": str(uuid.uuid4()),
-        "ticket_id": quote_link["ticket_id"],
+        "ticket_id": ticket_id,
         "created_at": now.isoformat(),
         "created_by_user_id": "CLIENTE",
         "body": note_body,
@@ -3539,11 +3583,15 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     await db.notes.insert_one(note_doc)
     
     # Notify assigned user and supervisors
+    notification_body = f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}"
+    if accepted_total > 0:
+        notification_body += f" (Total: {accepted_total:.2f}€)"
+    
     if ticket.get("assigned_to_user_id"):
         asyncio.create_task(create_notification(
             user_id=ticket["assigned_to_user_id"],
             title=f"Orçamento {status_text}",
-            body=f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}",
+            body=notification_body,
             notification_type="success" if response_data.status == "ACCEPTED" else "warning",
             ticket_id=ticket["id"],
             ticket_number=ticket["ticket_number"]
@@ -3551,7 +3599,7 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     
     asyncio.create_task(notify_supervisors(
         title=f"Orçamento {status_text}",
-        body=f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}",
+        body=notification_body,
         notification_type="success" if response_data.status == "ACCEPTED" else "warning",
         ticket_id=ticket["id"],
         ticket_number=ticket["ticket_number"]
