@@ -393,6 +393,59 @@ const TicketDetail = () => {
     }
   };
 
+  // Quote Options Management
+  const addQuoteOption = () => {
+    if (quoteOptions.length >= 10) {
+      toast.error('Máximo de 10 opções');
+      return;
+    }
+    setQuoteOptions([...quoteOptions, { id: `temp-${Date.now()}`, description: '', amount: '' }]);
+  };
+
+  const removeQuoteOption = (index) => {
+    if (quoteOptions.length <= 1) {
+      toast.error('Mínimo de 1 opção');
+      return;
+    }
+    setQuoteOptions(quoteOptions.filter((_, i) => i !== index));
+  };
+
+  const updateQuoteOption = (index, field, value) => {
+    const updated = [...quoteOptions];
+    updated[index] = { ...updated[index], [field]: value };
+    setQuoteOptions(updated);
+  };
+
+  const saveQuoteOptions = async () => {
+    const validOptions = quoteOptions.filter(o => o.description && o.amount);
+    if (validOptions.length === 0) {
+      toast.error('Adicione pelo menos uma opção com descrição e valor');
+      return;
+    }
+    
+    setSavingOptions(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/tickets/${id}/quote-options`,
+        { options: validOptions.map(o => ({ description: o.description, amount: parseFloat(o.amount) })) },
+        { headers: getAuthHeaders() }
+      );
+      setQuoteOptions(response.data);
+      const total = validOptions.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0);
+      setQuoteValue(total.toString());
+      toast.success('Opções de orçamento guardadas');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar opções');
+    } finally {
+      setSavingOptions(false);
+    }
+  };
+
+  const getQuoteOptionsTotal = () => {
+    return quoteOptions.reduce((sum, o) => sum + (parseFloat(o.amount) || 0), 0);
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
