@@ -64,11 +64,18 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders, compact = false }) => {
         fullLink
       });
       
-      // Copy to clipboard
-      await navigator.clipboard.writeText(fullLink);
-      toast.success(response.data.email_sent 
-        ? 'Link gerado, copiado e enviado por email!' 
-        : 'Link gerado e copiado!');
+      // Copy to clipboard (may fail in some contexts, but we still want to show success)
+      try {
+        await navigator.clipboard.writeText(fullLink);
+        toast.success(response.data.email_sent 
+          ? 'Link gerado, copiado e enviado por email!' 
+          : 'Link gerado e copiado!');
+      } catch (clipboardError) {
+        // Clipboard failed but link was still generated successfully
+        toast.success(response.data.email_sent 
+          ? 'Link gerado e enviado por email! (copie manualmente)' 
+          : 'Link gerado com sucesso! (copie manualmente)');
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao gerar link');
     } finally {
