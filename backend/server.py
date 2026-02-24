@@ -3282,8 +3282,10 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
     if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     
-    if not ticket.get("quote_value"):
-        raise HTTPException(status_code=400, detail="O ticket não tem valor de orçamento definido")
+    # Check if ticket has quote options or quote_value
+    quote_options = await db.quote_options.find({"ticket_id": ticket_id}, {"_id": 0}).to_list(100)
+    if not quote_options and not ticket.get("quote_value"):
+        raise HTTPException(status_code=400, detail="O ticket não tem opções de orçamento definidas")
     
     # Generate unique token
     token = str(uuid.uuid4())
