@@ -271,6 +271,62 @@ const Dashboard = () => {
         </Link>
       </div>
 
+      {/* My Reminders Today */}
+      {myReminders.length > 0 && (
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="border-b bg-purple-50/50 pb-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-bold flex items-center gap-2">
+                <Bell className="h-5 w-5 text-purple-600" />
+                Os Meus Lembretes Hoje
+                <Badge className="bg-purple-100 text-purple-700">{myReminders.length}</Badge>
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {myReminders.slice(0, 5).map((reminder) => (
+                <div 
+                  key={reminder.id} 
+                  className={`p-4 flex items-center gap-3 hover:bg-zinc-50 ${
+                    reminder.is_overdue ? 'bg-red-50' : ''
+                  }`}
+                >
+                  <button 
+                    onClick={() => completeReminder(reminder.id)}
+                    className="w-6 h-6 rounded-full border-2 border-purple-400 flex items-center justify-center hover:bg-purple-100 transition-colors"
+                    title="Marcar como concluído"
+                  >
+                    <CheckCircle className="h-4 w-4 text-purple-400" />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <Link 
+                      to={`/tickets/${reminder.ticket_id}`}
+                      className="font-medium text-slate-900 hover:text-purple-700"
+                    >
+                      {reminder.ticket_number && (
+                        <span className="text-purple-600 font-mono text-sm mr-2">{reminder.ticket_number}</span>
+                      )}
+                      {reminder.description}
+                    </Link>
+                    <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
+                      <Calendar className="h-3 w-3" />
+                      <span className={reminder.is_overdue ? 'text-red-600 font-semibold' : ''}>
+                        {new Date(reminder.due_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {reminder.is_overdue && (
+                        <Badge className="bg-red-100 text-red-700 text-xs">ATRASADO</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-zinc-400" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Two columns: Recent and Overdue */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Tickets */}
