@@ -3445,6 +3445,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Validate VAPID keys now that logger is available
+def validate_vapid_keys():
+    global VAPID_KEYS_VALID
+    if VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY:
+        try:
+            from py_vapid import Vapid
+            test_vapid = Vapid.from_string(private_key=VAPID_PRIVATE_KEY)
+            VAPID_KEYS_VALID = True
+            logger.info("[VAPID] Keys validated successfully - Web Push enabled")
+        except Exception as e:
+            logger.warning(f"[VAPID] Invalid key format, Web Push disabled: {e}")
+            VAPID_KEYS_VALID = False
+    else:
+        logger.info("[VAPID] Keys not configured - Web Push disabled")
+        VAPID_KEYS_VALID = False
+
+validate_vapid_keys()
+
 # ============== WEBSOCKET ==============
 @app.websocket("/ws/{token}")
 async def websocket_endpoint(websocket: WebSocket, token: str):
