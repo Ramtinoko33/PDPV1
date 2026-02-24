@@ -295,15 +295,18 @@ const TicketDetail = () => {
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [allStatuses, setAllStatuses] = useState([]);
+  const [quoteOptions, setQuoteOptions] = useState([]);
+  const [savingOptions, setSavingOptions] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [ticketRes, messagesRes, notesRes, alertsRes, attachmentsRes] = await Promise.all([
+      const [ticketRes, messagesRes, notesRes, alertsRes, attachmentsRes, optionsRes] = await Promise.all([
         axios.get(`${API_URL}/api/tickets/${id}`, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/tickets/${id}/messages`, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/tickets/${id}/notes`, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/tickets/${id}/alerts`, { headers: getAuthHeaders() }),
-        axios.get(`${API_URL}/api/tickets/${id}/attachments`, { headers: getAuthHeaders() })
+        axios.get(`${API_URL}/api/tickets/${id}/attachments`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/tickets/${id}/quote-options`, { headers: getAuthHeaders() }).catch(() => ({ data: [] }))
       ]);
       
       setTicket(ticketRes.data);
@@ -312,6 +315,13 @@ const TicketDetail = () => {
       setAlerts(alertsRes.data);
       setAttachments(attachmentsRes.data);
       setQuoteValue(ticketRes.data.quote_value || '');
+      
+      // Set quote options or create default empty one
+      if (optionsRes.data && optionsRes.data.length > 0) {
+        setQuoteOptions(optionsRes.data);
+      } else {
+        setQuoteOptions([{ id: 'temp-1', description: '', amount: '' }]);
+      }
     } catch (error) {
       toast.error('Erro ao carregar ticket');
       navigate('/tickets');
