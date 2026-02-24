@@ -2148,6 +2148,9 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
         {"_id": 0}
     ).to_list(100)
     
+    if not subscriptions:
+        return
+    
     payload = json.dumps({
         "title": title,
         "body": body,
@@ -2158,6 +2161,11 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
     
     for sub in subscriptions:
         try:
+            # Validate subscription has required fields
+            if not sub.get("endpoint") or not sub.get("keys"):
+                logger.warning(f"Invalid subscription format for user {user_id}, skipping")
+                continue
+                
             webpush(
                 subscription_info={
                     "endpoint": sub["endpoint"],
@@ -2174,6 +2182,14 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
             if e.response and e.response.status_code in [404, 410]:
                 await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
                 logger.info(f"Removed invalid subscription for user {user_id}")
+        except ValueError as e:
+            # VAPID key format error - log and skip silently
+            logger.warning(f"VAPID key format error, web push disabled: {e}")
+            return  # Exit early, no point trying other subscriptions with invalid keys
+        except Exception as e:
+            # Catch any other unexpected errors
+            logger.error(f"Unexpected error sending web push to user {user_id}: {e}")
+            continue
 
 # Helper function to create and send notification
 async def create_notification(user_id: str, title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
