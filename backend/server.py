@@ -1031,6 +1031,20 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
         raise HTTPException(status_code=404, detail="Utilizador não encontrado")
     return UserResponse(**user)
 
+@api_router.put("/users/me/dashboard", response_model=UserResponse)
+async def update_my_dashboard_config(data: DashboardConfigUpdate, current_user: dict = Depends(get_current_user)):
+    """Update current user's dashboard configuration"""
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {
+            "dashboard_default_types": data.dashboard_default_types,
+            "dashboard_default_states": data.dashboard_default_states,
+            "dashboard_only_mine": data.dashboard_only_mine
+        }}
+    )
+    updated_user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    return UserResponse(**updated_user)
+
 @api_router.delete("/users/{user_id}")
 async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
     current_user = current_user
