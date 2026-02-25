@@ -1009,12 +1009,24 @@ const AdminSettings = () => {
                   {/* VAPID Public Key */}
                   {pushConfig.vapid_configured && (
                     <div className="space-y-2">
-                      <Label>Chave Pública VAPID</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Chave Pública VAPID</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={generateVapidKeys}
+                          disabled={generatingKeys}
+                          className="text-xs border-zinc-300"
+                          data-testid="regenerate-vapid-keys-btn"
+                        >
+                          {generatingKeys ? 'A gerar...' : 'Regenerar Chaves'}
+                        </Button>
+                      </div>
                       <div className="p-3 bg-zinc-100 rounded-lg font-mono text-xs break-all">
                         {pushConfig.vapid_public_key}
                       </div>
                       <p className="text-xs text-zinc-500">
-                        Esta chave é usada pelo browser para subscrever notificações push
+                        Esta chave é usada pelo browser para subscrever notificações push. Ao regenerar, os utilizadores terão de reativar as notificações.
                       </p>
                     </div>
                   )}
