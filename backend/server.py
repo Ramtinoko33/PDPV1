@@ -4090,6 +4090,29 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         "message": f"Resposta registada: {status_text}"
     }
 
+@api_router.get("/public/quote/{token}/attachments/{attachment_id}/download")
+async def download_attachment_public(token: str, attachment_id: str):
+    """Download attachment via public quote token - NO AUTH REQUIRED"""
+    quote_link = await db.quote_links.find_one({"token": token}, {"_id": 0})
+    if not quote_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    
+    # Validate attachment belongs to this ticket
+    ticket_id = quote_link["ticket_id"]
+    attachment = await db.attachments.find_one({"id": attachment_id, "ticket_id": ticket_id}, {"_id": 0})
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Ficheiro não encontrado")
+    
+    file_path = UPLOAD_DIR / attachment["filename"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor")
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=attachment["original_filename"],
+        media_type=attachment["file_type"]
+    )
+
 # ============== SLA BACKGROUND JOB ==============
 async def run_sla_check():
     """Background task to check and mark overdue tickets"""
