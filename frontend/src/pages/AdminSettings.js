@@ -320,6 +320,19 @@ const AdminSettings = () => {
     }
   };
 
+  const generateVapidKeys = async () => {
+    setGeneratingKeys(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/admin/webpush/generate-keys`, {}, { headers: getAuthHeaders() });
+      toast.success('Chaves VAPID geradas com sucesso! Web Push ativado.');
+      await fetchPushConfig();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erro ao gerar chaves VAPID');
+    } finally {
+      setGeneratingKeys(false);
+    }
+  };
+
   // ============== BRANDING CONFIG ==============
   const fetchBrandingConfig = async () => {
     setLoadingBranding(true);
