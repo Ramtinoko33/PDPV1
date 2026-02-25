@@ -1552,6 +1552,26 @@ async def get_ticket_status_history(ticket_id: str, current_user: dict = Depends
     
     return [TicketStatusHistoryResponse(**h) for h in history]
 
+# ============== REPLY LINK HELPER ==============
+async def get_or_create_reply_token(ticket_id: str) -> str:
+    """Get existing reply token or create a new one for the ticket."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "reply_link_token": 1})
+    if ticket and ticket.get("reply_link_token"):
+        return ticket["reply_link_token"]
+    token = str(uuid.uuid4())
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+    reply_link_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "token": token,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
+        "created_by_user_id": None
+    }
+    await db.reply_links.insert_one(reply_link_doc)
+    await db.tickets.update_one({"id": ticket_id}, {"$set": {"reply_link_token": token}})
+    return token
+
 # ============== MESSAGES ==============
 @api_router.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
 async def create_message(ticket_id: str, message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
