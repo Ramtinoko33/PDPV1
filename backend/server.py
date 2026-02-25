@@ -4234,7 +4234,7 @@ async def get_public_reply(token: str):
 async def submit_public_reply(
     token: str,
     body: str = Form(...),
-    files: Optional[List[UploadFile]] = File(default=None)
+    files: List[UploadFile] = File(default=[])
 ):
     """Customer submits a reply with optional file uploads - NO AUTH REQUIRED"""
     reply_link = await db.reply_links.find_one({"token": token}, {"_id": 0})
