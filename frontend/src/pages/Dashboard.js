@@ -622,7 +622,6 @@ const Dashboard = () => {
             )}
           </CardContent>
         </Card>
-      </div>
     </div>
 
     {/* Dashboard Config Modal */}
