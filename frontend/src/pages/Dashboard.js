@@ -623,6 +623,81 @@ const Dashboard = () => {
         </Card>
       </div>
     </div>
+
+    {/* Dashboard Config Modal */}
+    <Dialog open={showConfig} onOpenChange={setShowConfig}>
+      <DialogContent className="max-w-md" data-testid="dashboard-config-modal">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-orange-600" />
+            Configurar Dashboard
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6 py-2">
+          {/* Types */}
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-3">Tipos de Ticket</p>
+            <p className="text-xs text-zinc-500 mb-3">Sem seleção = mostrar todos</p>
+            <div className="grid grid-cols-2 gap-2">
+              {ticketTypes.map(t => (
+                <label key={t.value} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 hover:text-slate-900">
+                  <Checkbox
+                    checked={editPrefs.dashboard_default_types.includes(t.value)}
+                    onCheckedChange={() => toggleEditType(t.value)}
+                    data-testid={`config-type-${t.value}`}
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* States */}
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-3">Estados</p>
+            <p className="text-xs text-zinc-500 mb-3">Sem seleção = mostrar todos</p>
+            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+              {allStatuses.map(s => (
+                <label key={s.id} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 hover:text-slate-900">
+                  <Checkbox
+                    checked={editPrefs.dashboard_default_states.includes(s.id)}
+                    onCheckedChange={() => toggleEditState(s.id)}
+                    data-testid={`config-state-${s.id}`}
+                  />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Only mine */}
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <Checkbox
+                checked={editPrefs.dashboard_only_mine}
+                onCheckedChange={(v) => setEditPrefs(p => ({ ...p, dashboard_only_mine: !!v }))}
+                data-testid="config-only-mine"
+              />
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Mostrar apenas meus tickets</p>
+                <p className="text-xs text-zinc-500">Filtra para tickets atribuídos a si</p>
+              </div>
+            </label>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowConfig(false)} disabled={saving}>Cancelar</Button>
+          <Button
+            onClick={saveDashboardConfig}
+            disabled={saving}
+            className="bg-orange-600 hover:bg-orange-700 text-white"
+            data-testid="save-dashboard-config-btn"
+          >
+            {saving ? 'A guardar...' : 'Guardar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 
