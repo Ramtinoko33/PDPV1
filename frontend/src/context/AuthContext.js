@@ -33,11 +33,15 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const response = await axios.post(`${API_URL}/api/auth/login`, { email, password });
-    const { token: newToken, user: userData } = response.data;
+    const { token: newToken } = response.data;
     localStorage.setItem('pdpv_token', newToken);
     setToken(newToken);
-    setUser(userData);
-    return userData;
+    // Fetch full user data (includes dashboard preferences)
+    const meResponse = await axios.get(`${API_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${newToken}` }
+    });
+    setUser(meResponse.data);
+    return meResponse.data;
   };
 
   const logout = () => {
