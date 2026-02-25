@@ -2496,6 +2496,48 @@ async def admin_generate_vapid_keys(current_user: dict = Depends(get_current_use
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar chaves: {str(e)}")
 
+
+@api_router.delete("/admin/clear-all-tickets")
+async def admin_clear_all_tickets(current_user: dict = Depends(get_current_user)):
+    """Admin: Clear all tickets and related data for fresh start"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    collections_to_clear = [
+        'tickets',
+        'messages', 
+        'notes',
+        'attachments',
+        'alerts',
+        'quote_options',
+        'quote_links',
+        'quote_history',
+        'reminders',
+        'reply_links',
+        'notifications',
+        'ticket_status_history'
+    ]
+    
+    total_deleted = 0
+    results = {}
+    
+    for collection in collections_to_clear:
+        try:
+            result = await db[collection].delete_many({})
+            results[collection] = result.deleted_count
+            total_deleted += result.deleted_count
+        except Exception as e:
+            results[collection] = f"error: {str(e)}"
+    
+    logger.info(f"[ADMIN] {current_user['email']} cleared all tickets. Total: {total_deleted} records deleted")
+    
+    return {
+        "status": "success",
+        "total_deleted": total_deleted,
+        "details": results
+    }
+
+
 @api_router.get("/admin/push-stats")
 async def get_push_stats(current_user: dict = Depends(get_current_user)):
     """Get push notification statistics - ADMIN only"""
