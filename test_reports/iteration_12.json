@@ -1,0 +1,59 @@
+{
+  "summary": "Dashboard configuration feature tested (backend + frontend). 22/22 backend tests pass. Key bug found and fixed: quick status filter and config modal state checkboxes used s.id (UUID) instead of s.code ('ABERTO') - causing 0 filter matches. Fixed in Dashboard.js. All core feature flows verified working after fix.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Login response does NOT include dashboard_default_types, dashboard_default_states, dashboard_only_mine fields. After a fresh login (no saved token), user's saved preferences are not applied until page refresh or next pref save (which calls refreshUser()). GET /api/auth/me is not called after login().",
+        "priority": "MEDIUM"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Dashboard stats cards after type/state preference save",
+        "issue": "Stats cards (ABERTOS, ATRASADOS SLA etc.) do not re-fetch after saving dashboard preferences - they only update on manual 'Atualizar' click or page reload. saveDashboardConfig calls refreshUser() but not fetchData(). Minor UX issue.",
+        "affected_selectors": ["[data-testid='stat-novos']", "[data-testid='stat-atrasados']"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Dashboard Config Modal",
+        "issues": ["Console warning: Missing Description or aria-describedby for DialogContent - minor accessibility issue"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dashboard_config.py",
+    "/app/test_reports/pytest/pytest_dashboard_config.xml"
+  ],
+  "action_items": [
+    "Fix login endpoint or AuthContext.login() to include/fetch dashboard fields on login - so saved prefs are applied immediately after fresh login without needing a page reload. Quick fix: in AuthContext.js login() function, after setToken(), call GET /api/auth/me and setUser() with that response instead of the login response.",
+    "Optional UX: Call fetchData() after saveDashboardConfig() so stats cards update immediately when user saves preferences (currently requires manual Atualizar click)"
+  ],
+  "critical_code_review_comments": [
+    "FIXED: Dashboard.js - quick status filter SelectItem used value={s.id} (UUID) instead of value={s.code} ('ABERTO'). Since t.status uses codes like 'ABERTO', the filter never matched any tickets. Also fixed config modal state checkboxes to use s.code for checked/onChange/data-testid attributes.",
+    "BUG: AuthContext.js login() sets user from login response which only has {id, email, name, role, created_at} - missing dashboard_default_types, dashboard_default_states, dashboard_only_mine. After fresh login, prefs show empty even if previously saved. Fix: update login to call GET /api/auth/me after token received.",
+    "DESIGN: saveDashboardConfig does not call fetchData() after saving - stats cards become stale until manual refresh. Recommend calling fetchData() after successful save."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/Dashboard.js"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22 tests passed)",
+    "frontend": "95% (all core features working after fix; stats stale after save is minor UX)"
+  },
+  "seed_data_creation": "None - test data cleanup was performed via backend tests (reset admin/supervisor/agent prefs to empty after tests)",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Dashboard config feature fully tested and working. Bug fixed: Dashboard.js now uses s.code instead of s.id for status values in both quick filter and config modal. All 3 user roles (admin/supervisor/agent) can save and use dashboard preferences. Preferences persist after page reload via GET /api/auth/me (checkAuth). Known minor issue: fresh login (no saved token) doesn't load saved prefs until refreshUser() is called (after saving prefs or page reload). Backend test: /app/backend/tests/test_dashboard_config.py. Credentials: admin@pdpv.pt/HCNMEnKMLq, supervisor@pdpv.pt/f9pSIn6zRP, agent@pdpv.pt/yHprFGvPUJ.",
+  "rca_of_the_issue": {
+    "bug": "Quick status filter and config modal state checkboxes used s.id (UUID from DB) instead of s.code (status code like 'ABERTO') as values",
+    "root_cause": "TicketStatusResponse model has two identifier fields: id (UUID primary key) and code (status code string). Dashboard.js allStatuses SelectItem and Checkbox components used s.id for values, but ticket.status field stores the code ('ABERTO'). The filter effectiveStatuses.includes(t.status) compared UUIDs against status codes → 0 matches.",
+    "fix": "Changed value={s.id} to value={s.code} in SelectItem, and changed includes(s.id)/toggleEditState(s.id) to includes(s.code)/toggleEditState(s.code) in config modal state checkboxes. Also updated data-testid from config-state-{s.id} to config-state-{s.code} for better testability.",
+    "reproduction": "1. Login to dashboard. 2. Open quick status filter, select any status. 3. Observe 0 tickets shown even though matching tickets exist. OR: 4. Open Configurar Dashboard, select a state, save. 5. Observe no filtering applied to ticket lists."
+  }
+}
