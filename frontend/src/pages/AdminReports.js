@@ -506,6 +506,169 @@ const AdminReports = () => {
           Clique em "Atualizar" para gerar o relatório
         </div>
       )}
+
+      {/* Tire Size Analysis Section */}
+      <Card className="border-t-4 border-t-orange-500">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CircleDot className="h-5 w-5 text-orange-600" />
+                Análise de Medidas de Pneus
+              </CardTitle>
+              <CardDescription>
+                Extração automática de medidas, marcas e serviços das descrições
+              </CardDescription>
+            </div>
+            <Button 
+              onClick={fetchTireAnalysis}
+              disabled={loadingTires}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {loadingTires ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <BarChart3 className="h-4 w-4 mr-2" />
+              )}
+              Analisar Descrições
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {tireAnalysis ? (
+            <div className="space-y-6">
+              {/* Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <p className="text-sm text-orange-600 font-medium">Tickets Analisados</p>
+                  <p className="text-2xl font-bold text-orange-700">{tireAnalysis.total_tickets_analyzed}</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-600 font-medium">Com Medidas Identificadas</p>
+                  <p className="text-2xl font-bold text-blue-700">{tireAnalysis.tickets_with_sizes}</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <p className="text-sm text-purple-600 font-medium">Medidas Diferentes</p>
+                  <p className="text-2xl font-bold text-purple-700">{tireAnalysis.tire_sizes.length}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Tire Sizes */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CircleDot className="h-4 w-4 text-orange-600" />
+                      Medidas Mais Pedidas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {tireAnalysis.tire_sizes.length > 0 ? (
+                      <div className="space-y-2">
+                        {tireAnalysis.tire_sizes.slice(0, 10).map((size, index) => (
+                          <div key={size.size} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                index === 0 ? 'bg-amber-400 text-amber-900' :
+                                index === 1 ? 'bg-zinc-300 text-zinc-700' :
+                                index === 2 ? 'bg-orange-300 text-orange-800' :
+                                'bg-zinc-100 text-zinc-600'
+                              }`}>
+                                {index + 1}
+                              </span>
+                              <span className="font-mono font-semibold">{size.size}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-zinc-500">{size.count}x</span>
+                              <Badge className="bg-orange-100 text-orange-700">{size.percentage}%</Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500 text-center py-4">Nenhuma medida encontrada</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Brands */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-blue-600" />
+                      Marcas Mencionadas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {tireAnalysis.brands.length > 0 ? (
+                      <div className="space-y-2">
+                        {tireAnalysis.brands.slice(0, 10).map((brand, index) => (
+                          <div key={brand.brand} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                index === 0 ? 'bg-amber-400 text-amber-900' :
+                                index === 1 ? 'bg-zinc-300 text-zinc-700' :
+                                index === 2 ? 'bg-blue-300 text-blue-800' :
+                                'bg-zinc-100 text-zinc-600'
+                              }`}>
+                                {index + 1}
+                              </span>
+                              <span className="font-semibold">{brand.brand}</span>
+                            </div>
+                            <Badge className="bg-blue-100 text-blue-700">{brand.count}x</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500 text-center py-4">Nenhuma marca encontrada</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Service Keywords */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Wrench className="h-4 w-4 text-emerald-600" />
+                      Serviços Mais Pedidos
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {tireAnalysis.keywords.length > 0 ? (
+                      <div className="space-y-2">
+                        {tireAnalysis.keywords.slice(0, 10).map((kw, index) => (
+                          <div key={kw.keyword} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                index === 0 ? 'bg-amber-400 text-amber-900' :
+                                index === 1 ? 'bg-zinc-300 text-zinc-700' :
+                                index === 2 ? 'bg-emerald-300 text-emerald-800' :
+                                'bg-zinc-100 text-zinc-600'
+                              }`}>
+                                {index + 1}
+                              </span>
+                              <span className="font-semibold">{kw.keyword}</span>
+                            </div>
+                            <Badge className="bg-emerald-100 text-emerald-700">{kw.count}x</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500 text-center py-4">Nenhum serviço encontrado</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-zinc-500">
+              <CircleDot className="h-12 w-12 mx-auto mb-4 text-zinc-300" />
+              <p>Clique em "Analisar Descrições" para extrair medidas de pneus, marcas e serviços</p>
+              <p className="text-sm mt-2">A análise é feita com base nas descrições dos tickets do período selecionado</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
