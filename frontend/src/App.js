@@ -14,6 +14,7 @@ import CustomerManagement from "./pages/CustomerManagement";
 import AdminSettings from "./pages/AdminSettings";
 import AdminReports from "./pages/AdminReports";
 import QuoteResponse from "./pages/QuoteResponse";
+import TicketReplyPage from "./pages/TicketReplyPage";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -50,6 +51,9 @@ function AppRoutes() {
       
       {/* Public route for quote response - NO AUTH */}
       <Route path="/quote/:token" element={<QuoteResponse />} />
+      
+      {/* Public route for ticket reply - NO AUTH */}
+      <Route path="/ticket/reply/:token" element={<TicketReplyPage />} />
       
       <Route path="/dashboard" element={
         <ProtectedRoute>
