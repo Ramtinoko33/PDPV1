@@ -4295,13 +4295,32 @@ async def submit_public_reply(
         update_doc["status"] = TicketStatus.EM_TRATAMENTO.value
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
 
-    # Notify assigned user
-    if ticket.get("assigned_to_user_id"):
-        notification_body = f"O cliente {ticket['customer_name']} respondeu ao ticket {ticket['ticket_number']}"
-        try:
-            await notify_supervisors(f"Resposta do cliente - {ticket['ticket_number']}", notification_body)
-        except Exception:
-            pass
+    # Notify assigned agent + supervisors/admins
+    notification_title = f"Resposta do cliente - {ticket['ticket_number']}"
+    notification_body = f"O cliente {ticket['customer_name']} respondeu ao ticket {ticket['ticket_number']}"
+    if files:
+        notification_body += f" ({len(attachment_ids)} ficheiro(s) enviado(s))"
+    try:
+        # Notify the assigned agent directly
+        if ticket.get("assigned_to_user_id"):
+            await create_notification(
+                ticket["assigned_to_user_id"],
+                notification_title,
+                notification_body,
+                "info",
+                ticket_id=ticket_id,
+                ticket_number=ticket["ticket_number"]
+            )
+        # Notify supervisors/admins
+        await notify_supervisors(
+            notification_title,
+            notification_body,
+            "info",
+            ticket_id=ticket_id,
+            ticket_number=ticket["ticket_number"]
+        )
+    except Exception as e:
+        logger.warning(f"Notification error on public reply: {e}")
 
     return {"status": "success", "message": "Resposta enviada com sucesso", "attachment_count": len(attachment_ids)}
 
