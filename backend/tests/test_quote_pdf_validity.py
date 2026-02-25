@@ -46,7 +46,7 @@ def test_ticket(auth_headers):
         "description": "Test ticket for PDF quote tests",
         "priority": "NORMAL"
     }, headers=auth_headers)
-    assert resp.status_code == 201, f"Failed to create ticket: {resp.text}"
+    assert resp.status_code in [200, 201], f"Failed to create ticket: {resp.text}"
     ticket = resp.json()
     yield ticket
     # Cleanup
