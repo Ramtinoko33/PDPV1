@@ -372,8 +372,6 @@ class TestQuoteExpiry:
             print(f"PASS: Non-expired quote responds successfully")
         finally:
             requests.delete(f"{BASE_URL}/api/tickets/{new_ticket_id}", headers=auth_headers)
-
-
 # ============ INVALID TOKEN ============
 
 class TestPublicQuoteInvalidToken:
