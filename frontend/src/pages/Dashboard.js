@@ -623,6 +623,7 @@ const Dashboard = () => {
           </CardContent>
         </Card>
     </div>
+    </div>
 
     {/* Dashboard Config Modal */}
     <Dialog open={showConfig} onOpenChange={setShowConfig}>
