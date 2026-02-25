@@ -3963,6 +3963,13 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     if response_data.status not in ["ACCEPTED", "REJECTED"]:
         raise HTTPException(status_code=400, detail="Estado inválido")
     
+    # Check quote validity
+    early_ticket = await db.tickets.find_one({"id": quote_link["ticket_id"]}, {"_id": 0, "quote_valid_until": 1})
+    if early_ticket and early_ticket.get("quote_valid_until"):
+        valid_until_dt = datetime.fromisoformat(early_ticket["quote_valid_until"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > valid_until_dt:
+            raise HTTPException(status_code=400, detail="Orçamento expirado. Contacte a oficina.")
+    
     now = datetime.now(timezone.utc)
     ticket_id = quote_link["ticket_id"]
     
