@@ -1154,7 +1154,8 @@ async def list_tickets(
             {"customer_phone": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
             {"vehicle_plate": {"$regex": search, "$options": "i"}},
-            {"ticket_number": {"$regex": search, "$options": "i"}}
+            {"ticket_number": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}}
         ]
     
     tickets = await db.tickets.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
