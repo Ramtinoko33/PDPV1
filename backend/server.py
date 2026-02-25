@@ -3898,10 +3898,35 @@ async def get_public_quote(token: str):
     # Get quote options
     quote_options = await db.quote_options.find({"ticket_id": quote_link["ticket_id"]}, {"_id": 0}).to_list(100)
     
+    # Get ticket attachments for public viewing
+    ticket_attachments_raw = await db.attachments.find(
+        {"ticket_id": quote_link["ticket_id"]},
+        {"_id": 0, "id": 1, "original_filename": 1}
+    ).to_list(100)
+    attachment_map = {a["id"]: a["original_filename"] for a in ticket_attachments_raw}
+    
     # Calculate accepted total if any
     accepted_options = [o for o in quote_options if o.get("is_accepted")]
     accepted_total = sum(o["amount"] for o in accepted_options) if accepted_options else None
     accepted_count = len(accepted_options) if accepted_options else None
+    
+    # Build enriched options with attachment details
+    enriched_options = []
+    for opt in quote_options:
+        opt_attachments = [
+            AttachmentPublicInfo(id=att_id, original_filename=attachment_map[att_id])
+            for att_id in opt.get("attachment_ids", [])
+            if att_id in attachment_map
+        ]
+        enriched_options.append(QuoteOptionPublicResponse(
+            id=opt["id"],
+            ticket_id=opt["ticket_id"],
+            description=opt["description"],
+            amount=opt["amount"],
+            is_accepted=opt.get("is_accepted", False),
+            accepted_at=opt.get("accepted_at"),
+            attachments=opt_attachments
+        ))
     
     return QuoteResponseData(
         ticket_number=ticket["ticket_number"],
@@ -3912,9 +3937,11 @@ async def get_public_quote(token: str):
         quote_sent_at=quote_link["created_at"],
         response_status=quote_link.get("response_status"),
         response_at=quote_link.get("response_at"),
-        quote_options=[QuoteOptionResponse(**o) for o in quote_options],
+        quote_options=enriched_options,
         accepted_total=accepted_total,
-        accepted_count=accepted_count
+        accepted_count=accepted_count,
+        quote_valid_until=ticket.get("quote_valid_until"),
+        ticket_attachments=[AttachmentPublicInfo(id=a["id"], original_filename=a["original_filename"]) for a in ticket_attachments_raw]
     )
 
 @api_router.post("/public/quote/{token}/respond")
