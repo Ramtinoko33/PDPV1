@@ -273,6 +273,18 @@ const QuoteResponse = () => {
                   {formatDate(quote.quote_sent_at)}
                 </div>
               </div>
+              {quote.quote_valid_until && (
+                <div className={`flex items-center gap-2 text-xs mb-4 px-3 py-1.5 rounded-md ${
+                  isExpired ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'
+                }`}>
+                  <Clock className="h-3 w-3" />
+                  {isExpired
+                    ? `Expirado em ${formatDate(quote.quote_valid_until)}`
+                    : `Válido até ${formatDate(quote.quote_valid_until)}`}
+                </div>
+              )}
+
+              {hasOptions ? (
                 <div className="space-y-3">
                   {quote.quote_options.map((option) => {
                     const isSelected = selectedOptions.includes(option.id);
@@ -281,7 +293,7 @@ const QuoteResponse = () => {
                     return (
                       <div 
                         key={option.id}
-                        className={`flex items-center p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                        className={`p-4 rounded-lg border-2 transition-all ${
                           submitted
                             ? isAccepted 
                               ? 'bg-emerald-50 border-emerald-300' 
@@ -289,35 +301,53 @@ const QuoteResponse = () => {
                             : isSelected
                               ? 'bg-white border-emerald-400 shadow-md'
                               : 'bg-white border-zinc-200 hover:border-zinc-300'
-                        }`}
-                        onClick={() => !submitted && toggleOption(option.id)}
+                        } ${!submitted && !isExpired ? 'cursor-pointer' : ''}`}
+                        onClick={() => !submitted && !isExpired && toggleOption(option.id)}
                         data-testid={`quote-option-${option.id}`}
                       >
-                        {!submitted ? (
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleOption(option.id)}
-                            className="mr-4 h-5 w-5"
-                            data-testid={`quote-option-checkbox-${option.id}`}
-                          />
-                        ) : (
-                          <div className="mr-4">
-                            {isAccepted ? (
-                              <CheckCircle className="h-5 w-5 text-emerald-600" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-zinc-400" />
-                            )}
+                        <div className="flex items-center">
+                          {!submitted ? (
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => !isExpired && toggleOption(option.id)}
+                              className="mr-4 h-5 w-5"
+                              disabled={isExpired}
+                              data-testid={`quote-option-checkbox-${option.id}`}
+                            />
+                          ) : (
+                            <div className="mr-4">
+                              {isAccepted ? (
+                                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                              ) : (
+                                <XCircle className="h-5 w-5 text-zinc-400" />
+                              )}
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-800">{option.description}</p>
+                          </div>
+                          <div 
+                            className="text-xl font-bold"
+                            style={{ color: branding?.primary_color || '#f97316' }}
+                          >
+                            {formatCurrency(option.amount)}
+                          </div>
+                        </div>
+                        {option.attachments?.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-zinc-200 flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                            {option.attachments.map((att) => (
+                              <button
+                                key={att.id}
+                                onClick={() => openPDF(att.id)}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 transition-colors"
+                                data-testid={`pdf-option-${att.id}`}
+                              >
+                                <FileDown className="h-3.5 w-3.5 text-red-500" />
+                                Ver detalhes (PDF)
+                              </button>
+                            ))}
                           </div>
                         )}
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-800">{option.description}</p>
-                        </div>
-                        <div 
-                          className="text-xl font-bold"
-                          style={{ color: branding?.primary_color || '#f97316' }}
-                        >
-                          {formatCurrency(option.amount)}
-                        </div>
                       </div>
                     );
                   })}
@@ -355,6 +385,37 @@ const QuoteResponse = () => {
               )}
             </div>
 
+            {/* General PDF Section (only if no option-specific PDFs) */}
+            {showGeneralPDFs && (
+              <div className="rounded-lg border border-zinc-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-4 w-4 text-zinc-600" />
+                  <span className="text-sm font-semibold text-zinc-700">Orçamento detalhado (PDF)</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quote.ticket_attachments.map((att) => (
+                    <button
+                      key={att.id}
+                      onClick={() => openPDF(att.id)}
+                      className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 transition-colors"
+                      data-testid={`pdf-general-${att.id}`}
+                    >
+                      <FileDown className="h-4 w-4 text-red-500" />
+                      {att.original_filename}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Expired Banner */}
+            {isExpired && !submitted && (
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-red-50 border border-red-200" data-testid="quote-expired-banner">
+                <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+                <p className="text-red-700 font-medium">Orçamento expirado. Contacte a oficina.</p>
+              </div>
+            )}
+
             {/* Response Section */}
             {!submitted ? (
               <div className="space-y-4">
@@ -367,6 +428,7 @@ const QuoteResponse = () => {
                     value={comments}
                     onChange={(e) => setComments(e.target.value)}
                     className="min-h-[100px]"
+                    disabled={isExpired}
                     data-testid="quote-comments-input"
                   />
                 </div>
@@ -376,7 +438,7 @@ const QuoteResponse = () => {
                     variant="outline"
                     className="h-14 text-lg border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
                     onClick={() => submitResponse('REJECTED')}
-                    disabled={submitting}
+                    disabled={submitting || isExpired}
                     data-testid="reject-quote-btn"
                   >
                     {submitting && response === 'REJECTED' ? (
@@ -390,7 +452,7 @@ const QuoteResponse = () => {
                     className="h-14 text-lg"
                     style={{ backgroundColor: branding?.primary_color || '#16a34a' }}
                     onClick={() => submitResponse('ACCEPTED')}
-                    disabled={submitting || (hasOptions && selectedOptions.length === 0)}
+                    disabled={submitting || isExpired || (hasOptions && selectedOptions.length === 0)}
                     data-testid="accept-quote-btn"
                   >
                     {submitting && response === 'ACCEPTED' ? (
@@ -404,7 +466,7 @@ const QuoteResponse = () => {
                     }
                   </Button>
                 </div>
-                {hasOptions && selectedOptions.length === 0 && (
+                {hasOptions && selectedOptions.length === 0 && !isExpired && (
                   <p className="text-sm text-amber-600 text-center">
                     Selecione pelo menos uma opção para aceitar
                   </p>
