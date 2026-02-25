@@ -1354,6 +1354,55 @@ const AdminSettings = () => {
             </Card>
           </div>
         </TabsContent>
+
+        {/* Data Management Tab */}
+        <TabsContent value="data">
+          <Card className="border-red-200">
+            <CardHeader>
+              <CardTitle className="text-red-700 flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Gestão de Dados
+              </CardTitle>
+              <CardDescription>
+                Ações de manutenção da base de dados. Use com cuidado!
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-4">
+                <div>
+                  <h4 className="font-semibold text-red-800">Limpar Todos os Tickets</h4>
+                  <p className="text-sm text-red-600 mt-1">
+                    Esta ação irá apagar permanentemente todos os tickets, mensagens, notas, anexos, lembretes e notificações.
+                    Os utilizadores, configurações, clientes e veículos serão mantidos.
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!window.confirm('⚠️ TEM A CERTEZA?\n\nEsta ação irá apagar TODOS os tickets e dados relacionados.\n\nEsta ação é IRREVERSÍVEL!')) return;
+                    if (!window.confirm('🔴 ÚLTIMA CONFIRMAÇÃO\n\nDigite "CONFIRMO" na próxima janela para continuar.')) return;
+                    const confirmation = window.prompt('Digite CONFIRMO para apagar todos os tickets:');
+                    if (confirmation !== 'CONFIRMO') {
+                      toast.error('Operação cancelada');
+                      return;
+                    }
+                    try {
+                      const response = await axios.delete(`${API_URL}/api/admin/clear-all-tickets`, { headers: getAuthHeaders() });
+                      toast.success(`✅ ${response.data.total_deleted} registos apagados com sucesso!`);
+                    } catch (error) {
+                      toast.error(error.response?.data?.detail || 'Erro ao limpar dados');
+                    }
+                  }}
+                  className="bg-red-600 hover:bg-red-700"
+                  data-testid="clear-all-tickets-btn"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Limpar Todos os Tickets
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Type Dialog */}
