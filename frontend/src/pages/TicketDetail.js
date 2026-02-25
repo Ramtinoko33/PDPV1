@@ -197,6 +197,102 @@ const QuoteLinkSection = ({ ticketId, getAuthHeaders, compact = false }) => {
   );
 };
 
+// Component for generating and managing customer reply links
+const ReplyLinkSection = ({ ticketId, getAuthHeaders, existingToken = null }) => {
+  const [generating, setGenerating] = useState(false);
+  const [replyLink, setReplyLink] = useState(
+    existingToken ? `${window.location.origin}/ticket/reply/${existingToken}` : null
+  );
+
+  const generateLink = async () => {
+    setGenerating(true);
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/tickets/${ticketId}/generate-reply-link`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      const fullLink = `${window.location.origin}/ticket/reply/${res.data.token}`;
+      setReplyLink(fullLink);
+      try {
+        await navigator.clipboard.writeText(fullLink);
+        toast.success('Link de resposta copiado!');
+      } catch {
+        toast.success('Link de resposta gerado! (copie manualmente)');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erro ao gerar link');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (replyLink) {
+      await navigator.clipboard.writeText(replyLink);
+      toast.success('Link copiado!');
+    }
+  };
+
+  return (
+    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+      <div className="flex items-center gap-2">
+        <Reply className="h-5 w-5 text-blue-600" />
+        <span className="font-semibold text-blue-800">Link de Resposta do Cliente</span>
+      </div>
+      <p className="text-xs text-blue-600">
+        Este link é incluído automaticamente nos emails enviados ao cliente. Gere-o para partilhar manualmente.
+      </p>
+      {!replyLink ? (
+        <Button
+          variant="outline"
+          className="border-blue-300 text-blue-700 hover:bg-blue-100"
+          onClick={generateLink}
+          disabled={generating}
+          data-testid="generate-reply-link-btn"
+        >
+          {generating ? (
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2" />
+          ) : (
+            <Reply className="h-4 w-4 mr-2" />
+          )}
+          Gerar Link de Resposta
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={replyLink}
+              readOnly
+              className="flex-1 text-xs bg-white border-blue-200 text-blue-800 font-mono"
+              data-testid="reply-link-url"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyLink}
+              className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+              data-testid="copy-reply-link-btn"
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copiar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(replyLink, '_blank')}
+              className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+              data-testid="open-reply-link-btn"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Component for displaying quote value change history
 const QuoteHistorySection = ({ ticketId, getAuthHeaders, formatDate }) => {
   const [history, setHistory] = useState([]);
