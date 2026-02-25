@@ -31,14 +31,30 @@ import {
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = () => {
-  const { user, getAuthHeaders } = useAuth();
+  const { user, getAuthHeaders, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
+  const [allFetchedTickets, setAllFetchedTickets] = useState([]);
   const [recentTickets, setRecentTickets] = useState([]);
   const [overdueTickets, setOverdueTickets] = useState([]);
   const [myReminders, setMyReminders] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Dashboard config
+  const [showConfig, setShowConfig] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dashboardPrefs, setDashboardPrefs] = useState({
+    dashboard_default_types: [],
+    dashboard_default_states: [],
+    dashboard_only_mine: false
+  });
+  const [editPrefs, setEditPrefs] = useState(dashboardPrefs);
+  const [allStatuses, setAllStatuses] = useState([]);
+
+  // Quick filters (session-level)
+  const [quickType, setQuickType] = useState('');
+  const [quickStatus, setQuickStatus] = useState('');
 
   const fetchData = async () => {
     try {
