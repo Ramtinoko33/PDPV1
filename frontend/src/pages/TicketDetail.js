@@ -1728,29 +1728,32 @@ const TicketDetail = () => {
               </CardContent>
             </Card>
           )}
+
+          {/* Quick Actions Section - Reminders & Reply Link */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Reminders */}
+            <RemindersSection 
+              ticketId={id} 
+              getAuthHeaders={getAuthHeaders} 
+              users={users} 
+              currentUser={user} 
+            />
+
+            {/* Reply Link */}
+            {canEdit && (
+              <ReplyLinkSection
+                ticketId={id}
+                getAuthHeaders={getAuthHeaders}
+                existingToken={ticket?.reply_link_token || null}
+              />
+            )}
+          </div>
         </TabsContent>
 
         {/* Documentos Tab */}
         <TabsContent value="documentos" className="space-y-4">
-          {/* Reminders */}
-          <RemindersSection 
-            ticketId={id} 
-            getAuthHeaders={getAuthHeaders} 
-            users={users} 
-            currentUser={user} 
-          />
-
           {/* Quote History */}
           <QuoteHistorySection ticketId={id} getAuthHeaders={getAuthHeaders} formatDate={formatDate} />
-
-          {/* Reply Link */}
-          {canEdit && (
-            <ReplyLinkSection
-              ticketId={id}
-              getAuthHeaders={getAuthHeaders}
-              existingToken={ticket?.reply_link_token || null}
-            />
-          )}
 
           {/* Attachments */}
           <Card>
