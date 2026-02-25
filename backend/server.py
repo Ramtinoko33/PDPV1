@@ -4519,3 +4519,6 @@ async def startup_event():
     # Start SLA check background task
     asyncio.create_task(run_sla_check())
     logger.info("[STARTUP] SLA background check started (runs every 15 minutes)")
+    # Load/validate VAPID keys (DB fallback + auto-generate if missing)
+    await load_and_validate_vapid_keys()
+    logger.info(f"[STARTUP] Web Push status: {'enabled' if VAPID_KEYS_VALID else 'disabled'}")
