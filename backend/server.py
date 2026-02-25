@@ -2478,6 +2478,24 @@ async def get_vapid_public_key():
     """Return the VAPID public key for the frontend to use"""
     return {"publicKey": VAPID_PUBLIC_KEY}
 
+@api_router.post("/admin/webpush/generate-keys")
+async def admin_generate_vapid_keys(current_user: dict = Depends(get_current_user)):
+    """Admin: generate new VAPID keys and store in DB"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin only")
+    global VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_KEYS_VALID
+    try:
+        keys = await generate_and_store_vapid_keys()
+        from py_vapid import Vapid
+        Vapid.from_string(private_key=keys["vapid_private_key"])
+        VAPID_PUBLIC_KEY = keys["vapid_public_key"]
+        VAPID_PRIVATE_KEY = keys["vapid_private_key"]
+        VAPID_KEYS_VALID = True
+        logger.info(f"[VAPID] Admin {current_user['email']} regenerated VAPID keys")
+        return {"status": "success", "public_key": VAPID_PUBLIC_KEY}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar chaves: {str(e)}")
+
 @api_router.get("/admin/push-stats")
 async def get_push_stats(current_user: dict = Depends(get_current_user)):
     """Get push notification statistics - ADMIN only"""
