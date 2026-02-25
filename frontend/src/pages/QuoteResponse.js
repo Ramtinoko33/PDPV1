@@ -273,8 +273,6 @@ const QuoteResponse = () => {
                   {formatDate(quote.quote_sent_at)}
                 </div>
               </div>
-
-              {hasOptions ? (
                 <div className="space-y-3">
                   {quote.quote_options.map((option) => {
                     const isSelected = selectedOptions.includes(option.id);
