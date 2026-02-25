@@ -317,14 +317,6 @@ class TestStatusTransition:
 
     def test_submit_with_aguarda_cliente_changes_to_em_tratamento(self, auth_headers):
         """If ticket is in AGUARDA_CLIENTE status, submitting reply changes to EM_TRATAMENTO"""
-        # First, set ticket to AGUARDA_CLIENTE status via API
-        statuses_response = requests.get(
-            f"{BASE_URL}/api/statuses",
-            headers=auth_headers
-        )
-        if statuses_response.status_code != 200:
-            pytest.skip("Could not fetch statuses")
-
         # Try to change ticket to AGUARDA_CLIENTE
         update_response = requests.put(
             f"{BASE_URL}/api/tickets/{TEST_TICKET_ID}",
