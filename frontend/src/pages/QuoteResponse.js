@@ -156,6 +156,14 @@ const QuoteResponse = () => {
   const totalQuoteValue = hasOptions 
     ? quote.quote_options.reduce((sum, o) => sum + o.amount, 0) 
     : quote.quote_value;
+  
+  const isExpired = quote.quote_valid_until && new Date() > new Date(quote.quote_valid_until);
+  const anyOptionHasAttachments = hasOptions && quote.quote_options.some(o => o.attachments?.length > 0);
+  const showGeneralPDFs = !anyOptionHasAttachments && quote.ticket_attachments?.length > 0;
+
+  const openPDF = (attachmentId) => {
+    window.open(`${API_URL}/api/public/quote/${token}/attachments/${attachmentId}/download`, '_blank');
+  };
 
   return (
     <div className="min-h-screen bg-zinc-100">
