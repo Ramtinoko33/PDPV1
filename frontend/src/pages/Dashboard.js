@@ -332,23 +332,23 @@ const Dashboard = () => {
             <Filter className="h-4 w-4" />
             <span className="font-medium">Filtrar:</span>
           </div>
-          <Select value={quickType} onValueChange={setQuickType} data-testid="quick-type-select">
+          <Select value={quickType || "_all"} onValueChange={(v) => setQuickType(v === "_all" ? "" : v)} data-testid="quick-type-select">
             <SelectTrigger className="w-44 h-9 border-2 text-sm" data-testid="quick-type-trigger">
               <SelectValue placeholder="Tipo: Todos" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tipo: Todos</SelectItem>
+              <SelectItem value="_all">Tipo: Todos</SelectItem>
               {ticketTypes.map(t => (
                 <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={quickStatus} onValueChange={setQuickStatus} data-testid="quick-status-select">
+          <Select value={quickStatus || "_all"} onValueChange={(v) => setQuickStatus(v === "_all" ? "" : v)} data-testid="quick-status-select">
             <SelectTrigger className="w-48 h-9 border-2 text-sm" data-testid="quick-status-trigger">
               <SelectValue placeholder="Estado: Todos" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Estado: Todos</SelectItem>
+              <SelectItem value="_all">Estado: Todos</SelectItem>
               {allStatuses.map(s => (
                 <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
               ))}
