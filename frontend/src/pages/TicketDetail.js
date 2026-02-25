@@ -408,14 +408,14 @@ const RemindersSection = ({ ticketId, getAuthHeaders, users, currentUser }) => {
               <div>
                 <Label className="text-purple-700">Atribuir a</Label>
                 <Select
-                  value={newReminder.assigned_to_user_id}
-                  onValueChange={(v) => setNewReminder({ ...newReminder, assigned_to_user_id: v })}
+                  value={newReminder.assigned_to_user_id || "self"}
+                  onValueChange={(v) => setNewReminder({ ...newReminder, assigned_to_user_id: v === "self" ? "" : v })}
                 >
                   <SelectTrigger className="border-purple-300">
                     <SelectValue placeholder="Eu próprio" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Eu próprio</SelectItem>
+                    <SelectItem value="self">Eu próprio</SelectItem>
                     {users.map(u => (
                       <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                     ))}
