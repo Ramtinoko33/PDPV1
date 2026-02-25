@@ -3665,8 +3665,6 @@ class QuoteResponseRequest(BaseModel):
     accepted_option_ids: List[str] = []  # IDs of accepted options
 
 class QuoteResponseData(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    ticket_number: str
     customer_name: str
     vehicle_plate: Optional[str] = None
     quote_value: float
