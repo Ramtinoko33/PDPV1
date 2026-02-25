@@ -463,6 +463,10 @@ const AdminSettings = () => {
             <Palette className="h-4 w-4 mr-2" />
             Branding
           </TabsTrigger>
+          <TabsTrigger value="data" className="data-[state=active]:bg-white data-[state=active]:text-red-700" data-testid="tab-data">
+            <Database className="h-4 w-4 mr-2" />
+            Dados
+          </TabsTrigger>
         </TabsList>
 
         {/* Ticket Types Tab */}
