@@ -4207,6 +4207,104 @@ async def download_attachment_public(token: str, attachment_id: str):
         media_type=attachment["file_type"]
     )
 
+# ============== PUBLIC REPLY ENDPOINTS ==============
+@api_router.get("/public/reply/{token}", response_model=PublicReplyTicketData)
+async def get_public_reply(token: str):
+    """Get ticket info for public reply page - NO AUTH REQUIRED"""
+    reply_link = await db.reply_links.find_one({"token": token}, {"_id": 0})
+    if not reply_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    ticket = await db.tickets.find_one({"id": reply_link["ticket_id"]}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+    return PublicReplyTicketData(
+        ticket_number=ticket["ticket_number"],
+        customer_name=ticket["customer_name"],
+        vehicle_plate=ticket.get("vehicle_plate"),
+        ticket_type=ticket.get("type", ""),
+        status=ticket.get("status", ""),
+        description=ticket.get("description"),
+        company_name=branding.get("company_name", "PDPV Tickets"),
+        primary_color=branding.get("primary_color", "#f97316"),
+        logo_url=branding.get("logo_url")
+    )
+
+@api_router.post("/public/reply/{token}/submit")
+async def submit_public_reply(
+    token: str,
+    body: str = Form(...),
+    files: Optional[List[UploadFile]] = File(default=None)
+):
+    """Customer submits a reply with optional file uploads - NO AUTH REQUIRED"""
+    reply_link = await db.reply_links.find_one({"token": token}, {"_id": 0})
+    if not reply_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+
+    ticket_id = reply_link["ticket_id"]
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    now = datetime.now(timezone.utc)
+
+    # Save uploaded files as attachments
+    attachment_ids = []
+    for file in (files or []):
+        if file and file.filename:
+            attachment_id = str(uuid.uuid4())
+            file_ext = Path(file.filename).suffix
+            stored_filename = f"{attachment_id}{file_ext}"
+            file_path = UPLOAD_DIR / stored_filename
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            attachment_doc = {
+                "id": attachment_id,
+                "ticket_id": ticket_id,
+                "filename": stored_filename,
+                "original_filename": file.filename,
+                "file_type": file.content_type or "application/octet-stream",
+                "file_size": len(content),
+                "uploaded_at": now.isoformat(),
+                "uploaded_by_user_id": None,
+                "from_customer": True
+            }
+            await db.attachments.insert_one(attachment_doc)
+            attachment_ids.append(attachment_id)
+
+    # Create inbound message from customer
+    message_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": now.isoformat(),
+        "direction": MessageDirection.INBOUND.value,
+        "channel": MessageChannel.EMAIL.value,
+        "body": body,
+        "from_text": ticket.get("customer_name"),
+        "to_text": None,
+        "created_by_user_id": None,
+        "from_customer": True,
+        "attachment_ids": attachment_ids
+    }
+    await db.messages.insert_one(message_doc)
+
+    # Update ticket: if AGUARDA_CLIENTE → EM_TRATAMENTO
+    update_doc = {"updated_at": now.isoformat(), "last_public_message_at": now.isoformat()}
+    if ticket.get("status") == TicketStatus.AGUARDA_CLIENTE.value:
+        update_doc["status"] = TicketStatus.EM_TRATAMENTO.value
+    await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
+
+    # Notify assigned user
+    if ticket.get("assigned_to_user_id"):
+        notification_body = f"O cliente {ticket['customer_name']} respondeu ao ticket {ticket['ticket_number']}"
+        try:
+            await notify_supervisors(f"Resposta do cliente - {ticket['ticket_number']}", notification_body)
+        except Exception:
+            pass
+
+    return {"status": "success", "message": "Resposta enviada com sucesso", "attachment_count": len(attachment_ids)}
+
 # ============== SLA BACKGROUND JOB ==============
 async def run_sla_check():
     """Background task to check and mark overdue tickets"""
