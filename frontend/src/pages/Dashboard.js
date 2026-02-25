@@ -661,9 +661,9 @@ const Dashboard = () => {
               {allStatuses.map(s => (
                 <label key={s.id} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 hover:text-slate-900">
                   <Checkbox
-                    checked={editPrefs.dashboard_default_states.includes(s.id)}
-                    onCheckedChange={() => toggleEditState(s.id)}
-                    data-testid={`config-state-${s.id}`}
+                    checked={editPrefs.dashboard_default_states.includes(s.code)}
+                    onCheckedChange={() => toggleEditState(s.code)}
+                    data-testid={`config-state-${s.code}`}
                   />
                   {s.label}
                 </label>
