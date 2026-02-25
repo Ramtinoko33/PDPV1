@@ -67,6 +67,12 @@ const Layout = ({ children }) => {
       roles: ['ADMIN', 'SUPERVISOR']
     },
     { 
+      path: '/reminders', 
+      label: 'Lembretes', 
+      icon: Bell,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
+    },
+    { 
       path: '/customers', 
       label: 'Clientes', 
       icon: UsersRound,
