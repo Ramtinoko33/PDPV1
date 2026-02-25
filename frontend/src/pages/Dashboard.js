@@ -139,6 +139,52 @@ const Dashboard = () => {
     }
   };
 
+  const ticketTypes = [
+    { value: 'ORCAMENTO_PNEUS', label: 'Orçamento Pneus' },
+    { value: 'ORCAMENTO_MECANICA', label: 'Orçamento Mecânica' },
+    { value: 'MARCACAO', label: 'Marcação' },
+    { value: 'INFORMACAO', label: 'Informação' },
+    { value: 'INTERNO', label: 'Interno' },
+    { value: 'RECLAMACAO', label: 'Reclamação' },
+  ];
+
+  const typeLabels = Object.fromEntries(ticketTypes.map(t => [t.value, t.label]));
+
+  const saveDashboardConfig = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API_URL}/api/users/me/dashboard`, editPrefs, { headers: getAuthHeaders() });
+      setDashboardPrefs(editPrefs);
+      setShowConfig(false);
+      toast.success('Configuração do dashboard guardada');
+      await refreshUser();
+    } catch {
+      toast.error('Erro ao guardar configuração');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEditType = (val) => {
+    setEditPrefs(p => ({
+      ...p,
+      dashboard_default_types: p.dashboard_default_types.includes(val)
+        ? p.dashboard_default_types.filter(v => v !== val)
+        : [...p.dashboard_default_types, val]
+    }));
+  };
+
+  const toggleEditState = (val) => {
+    setEditPrefs(p => ({
+      ...p,
+      dashboard_default_states: p.dashboard_default_states.includes(val)
+        ? p.dashboard_default_states.filter(v => v !== val)
+        : [...p.dashboard_default_states, val]
+    }));
+  };
+
+  const hasActiveFilters = quickType || quickStatus || dashboardPrefs.dashboard_default_types.length > 0 || dashboardPrefs.dashboard_default_states.length > 0 || dashboardPrefs.dashboard_only_mine;
+
   const statusLabels = {
     ABERTO: 'Aberto',
     EM_TRATAMENTO: 'Em Tratamento',
