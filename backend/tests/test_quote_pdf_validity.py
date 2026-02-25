@@ -6,9 +6,13 @@ Feature: QuoteOption attachment_ids, quote_valid_until, public download endpoint
 import pytest
 import requests
 import os
+import motor.motor_asyncio
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+MONGO_URL = os.environ.get('MONGO_URL', '')
+DB_NAME = os.environ.get('DB_NAME', 'pdpv')
 
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
