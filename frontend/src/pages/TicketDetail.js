@@ -547,7 +547,7 @@ const TicketDetail = () => {
       if (optionsRes.data && optionsRes.data.length > 0) {
         setQuoteOptions(optionsRes.data);
       } else {
-        setQuoteOptions([{ id: 'temp-1', description: '', amount: '' }]);
+        setQuoteOptions([{ id: 'temp-1', description: '', amount: '', attachment_ids: [] }]);
       }
     } catch (error) {
       toast.error('Erro ao carregar ticket');
@@ -626,7 +626,7 @@ const TicketDetail = () => {
       toast.error('Máximo de 10 opções');
       return;
     }
-    setQuoteOptions([...quoteOptions, { id: `temp-${Date.now()}`, description: '', amount: '' }]);
+    setQuoteOptions([...quoteOptions, { id: `temp-${Date.now()}`, description: '', amount: '', attachment_ids: [] }]);
   };
 
   const removeQuoteOption = (index) => {
@@ -654,7 +654,7 @@ const TicketDetail = () => {
     try {
       const response = await axios.post(
         `${API_URL}/api/tickets/${id}/quote-options`,
-        { options: validOptions.map(o => ({ description: o.description, amount: parseFloat(o.amount) })) },
+        { options: validOptions.map(o => ({ description: o.description, amount: parseFloat(o.amount), attachment_ids: o.attachment_ids || [] })) },
         { headers: getAuthHeaders() }
       );
       setQuoteOptions(response.data);
