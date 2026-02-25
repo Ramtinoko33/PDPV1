@@ -19,7 +19,10 @@ import {
   Euro,
   Filter,
   Download,
-  RefreshCw
+  RefreshCw,
+  CircleDot,
+  Tag,
+  Wrench
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -29,6 +32,8 @@ const AdminReports = () => {
   
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
+  const [tireAnalysis, setTireAnalysis] = useState(null);
+  const [loadingTires, setLoadingTires] = useState(false);
   const [filters, setFilters] = useState({
     start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
