@@ -81,6 +81,26 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 
 ## Key Changes (24/02/2026)
 
+### Nova Funcionalidade - PDF na Página Pública de Orçamento + Validade (25/02/2026)
+- **Backend:**
+  - `QuoteOptionCreate/Response`: adicionado `attachment_ids: List[str] = []`
+  - Novo modelo `AttachmentPublicInfo` (id, original_filename)
+  - Novo modelo `QuoteOptionPublicResponse` com `attachments: List[AttachmentPublicInfo]`
+  - `QuoteResponseData` agora inclui `quote_valid_until` e `ticket_attachments`
+  - `TicketResponse` inclui `quote_valid_until`
+  - `generate_quote_link`: define `quote_valid_until = now + 15 dias` no ticket
+  - `get_public_quote`: retorna opções enriquecidas com detalhes dos anexos
+  - `respond_to_quote`: bloqueia aceitação se `quote_valid_until` ultrapassado (HTTP 400)
+  - Novo endpoint: `GET /api/public/quote/{token}/attachments/{id}/download` (sem auth, valida token)
+- **Frontend (QuoteResponse.js):**
+  - Mostra "Válido até {data}" ou "Expirado em {data}" na secção de orçamento
+  - Botão "Ver detalhes (PDF)" dentro de cada opção quando tem anexos
+  - Secção geral "Orçamento detalhado (PDF)" quando ticket tem anexos mas as opções não
+  - Banner "Orçamento expirado. Contacte a oficina." quando expirado
+  - Botões aceitar/recusar desactivados quando expirado
+- **Frontend (TicketDetail.js):**
+  - Checkboxes para associar PDFs do ticket a cada opção de orçamento
+
 ### Bug Fixes Críticos (P0/P1) - 24/02/2026
 1. **Status ACEITE_LINK em branco** - Corrigido display de statuses automáticos (is_auto=true) no TicketDetail.js. Agora mostra Badge em vez de Select vazio para statuses como ACEITE_LINK e REJEITADO_LINK
 2. **Mudança automática de status ao atribuir** - Quando ticket é atribuído, status muda automaticamente de ABERTO para EM_TRATAMENTO
