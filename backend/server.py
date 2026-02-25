@@ -1754,6 +1754,107 @@ async def list_reminders(ticket_id: str, current_user: dict = Depends(get_curren
         result.append(ReminderResponse(**r))
     return result
 
+# General reminders (not tied to a ticket)
+@api_router.get("/reminders", response_model=List[ReminderResponse])
+async def list_all_reminders(
+    filter: str = "all",  # all, today, week, overdue
+    current_user: dict = Depends(get_current_user)
+):
+    """List all reminders for current user or all (for supervisors)"""
+    user = current_user
+    now = datetime.now(timezone.utc)
+    
+    # Build query
+    query = {}
+    
+    # Agents only see their own reminders
+    if user["role"] == UserRole.AGENT.value:
+        query["assigned_to_user_id"] = user["id"]
+    
+    # Apply filters
+    if filter == "today":
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        query["due_at"] = {"$gte": today_start.isoformat(), "$lt": today_end.isoformat()}
+        query["is_done"] = False
+    elif filter == "week":
+        week_end = now + timedelta(days=7)
+        query["due_at"] = {"$lt": week_end.isoformat()}
+        query["is_done"] = False
+    elif filter == "overdue":
+        query["due_at"] = {"$lt": now.isoformat()}
+        query["is_done"] = False
+    elif filter == "pending":
+        query["is_done"] = False
+    
+    reminders = await db.reminders.find(query, {"_id": 0}).sort("due_at", 1).to_list(200)
+    
+    result = []
+    for r in reminders:
+        # Get ticket info if associated
+        if r.get("ticket_id"):
+            ticket = await db.tickets.find_one({"id": r["ticket_id"]}, {"_id": 0, "ticket_number": 1})
+            r["ticket_number"] = ticket["ticket_number"] if ticket else None
+        # Get assigned user name
+        if r.get("assigned_to_user_id"):
+            assigned = await db.users.find_one({"id": r["assigned_to_user_id"]}, {"_id": 0, "name": 1})
+            r["assigned_to_name"] = assigned["name"] if assigned else None
+        # Get creator name
+        if r.get("created_by_user_id"):
+            creator = await db.users.find_one({"id": r["created_by_user_id"]}, {"_id": 0, "name": 1})
+            r["created_by_name"] = creator["name"] if creator else None
+        # Check if overdue
+        try:
+            due_at = datetime.fromisoformat(r["due_at"].replace("Z", "+00:00"))
+            r["is_overdue"] = not r.get("is_done", False) and due_at < now
+        except:
+            r["is_overdue"] = False
+        result.append(ReminderResponse(**r))
+    
+    return result
+
+@api_router.post("/reminders", response_model=ReminderResponse)
+async def create_general_reminder(data: ReminderCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new reminder (optionally linked to a ticket)"""
+    user = current_user
+    
+    # Check permissions
+    if user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    # If ticket_id provided, validate it exists
+    ticket_number = None
+    if data.ticket_id:
+        ticket = await db.tickets.find_one({"id": data.ticket_id}, {"_id": 0, "ticket_number": 1})
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket não encontrado")
+        ticket_number = ticket["ticket_number"]
+    
+    now = datetime.now(timezone.utc)
+    assigned_to = data.assigned_to_user_id or user["id"]
+    
+    reminder_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": data.ticket_id,  # Can be None
+        "description": data.description,
+        "due_at": data.due_at,
+        "assigned_to_user_id": assigned_to,
+        "is_done": False,
+        "created_by_user_id": user["id"],
+        "created_at": now.isoformat(),
+        "completed_at": None
+    }
+    await db.reminders.insert_one(reminder_doc)
+    
+    # Get names for response
+    assigned_user = await db.users.find_one({"id": assigned_to}, {"_id": 0, "name": 1})
+    reminder_doc["assigned_to_name"] = assigned_user["name"] if assigned_user else None
+    reminder_doc["created_by_name"] = user["name"]
+    reminder_doc["ticket_number"] = ticket_number
+    reminder_doc["is_overdue"] = False
+    
+    return ReminderResponse(**reminder_doc)
+
 @api_router.post("/tickets/{ticket_id}/reminders", response_model=ReminderResponse)
 async def create_reminder(ticket_id: str, data: ReminderCreate, current_user: dict = Depends(get_current_user)):
     """Create a new reminder for a ticket"""
