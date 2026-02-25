@@ -158,6 +158,7 @@ const Dashboard = () => {
       setShowConfig(false);
       toast.success('Configuração do dashboard guardada');
       await refreshUser();
+      fetchData();
     } catch {
       toast.error('Erro ao guardar configuração');
     } finally {
