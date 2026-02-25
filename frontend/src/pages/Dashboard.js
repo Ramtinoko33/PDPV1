@@ -698,6 +698,7 @@ const Dashboard = () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 };
 
