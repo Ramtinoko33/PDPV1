@@ -81,7 +81,23 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 
 ## Key Changes (24/02/2026)
 
-### Nova Funcionalidade - PDF na Página Pública de Orçamento + Validade (25/02/2026)
+### Nova Funcionalidade - Configuração do Dashboard por Utilizador (25/02/2026)
+- **Backend:**
+  - `UserResponse` agora inclui `dashboard_default_types`, `dashboard_default_states`, `dashboard_only_mine`
+  - Novo modelo `DashboardConfigUpdate`
+  - Novo endpoint: `PUT /api/users/me/dashboard` - guarda preferências do dashboard
+  - `GET /api/dashboard/stats`: aplica `dashboard_default_types` ($in) e `dashboard_only_mine` ao base_query
+- **Frontend (AuthContext.js):**
+  - `login()` agora chama `GET /api/auth/me` após login para incluir campos de preferências
+  - Adicionada função `refreshUser()` exportada
+- **Frontend (Dashboard.js):**
+  - Botão "Configurar Dashboard" (ícone de engrenagem) no cabeçalho
+  - Modal de configuração: checkboxes de tipos de ticket, checkboxes de estados, checkbox "Mostrar apenas meus tickets"
+  - Barra de filtros rápidos: selects "Tipo" e "Estado" (nível de sessão)
+  - `useEffect` que aplica filtros de preferências + filtros rápidos ao `allFetchedTickets` para derivar listas
+  - `fetchData` chamado após guardar preferências para atualizar contadores imediatamente
+
+
 - **Backend:**
   - `QuoteOptionCreate/Response`: adicionado `attachment_ids: List[str] = []`
   - Novo modelo `AttachmentPublicInfo` (id, original_filename)
