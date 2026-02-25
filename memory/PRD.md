@@ -81,7 +81,24 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 
 ## Key Changes (24/02/2026)
 
-### Nova Funcionalidade - Configuração do Dashboard por Utilizador (25/02/2026)
+### Nova Funcionalidade - Portal Público de Resposta do Cliente (25/02/2026)
+- **Backend:**
+  - `MessageResponse` agora inclui `from_customer: bool = False`
+  - `TicketResponse` inclui `reply_link_token: Optional[str] = None`
+  - Novo modelo `PublicReplyTicketData`
+  - Helper `get_or_create_reply_token(ticket_id)` - gera/reutiliza token por ticket (validade 1 ano)
+  - Novo endpoint: `POST /api/tickets/{id}/generate-reply-link` (autenticado)
+  - Novo endpoint: `GET /api/public/reply/{token}` - dados do ticket para página pública (sem auth)
+  - Novo endpoint: `POST /api/public/reply/{token}/submit` - aceita mensagem + ficheiros (multipart, sem auth); atualiza status AGUARDA_CLIENTE→EM_TRATAMENTO
+  - Email de resposta ao cliente agora inclui botão "Responder / Enviar documentos" com link para o portal
+- **Frontend:**
+  - Nova página `TicketReplyPage.js` em `/ticket/reply/:token` (rota pública, sem auth)
+  - `App.js` atualizado com nova rota
+  - `TicketDetail.js`: novo componente `ReplyLinkSection` (azul) no tab Documentos
+  - `TicketDetail.js`: badge "Via Portal" nas mensagens INBOUND com `from_customer=true`
+  - Bug corrigido: `Optional[List[UploadFile]]` → `List[UploadFile] = File(default=[])` para upload de ficheiros
+
+
 - **Backend:**
   - `UserResponse` agora inclui `dashboard_default_types`, `dashboard_default_states`, `dashboard_only_mine`
   - Novo modelo `DashboardConfigUpdate`
