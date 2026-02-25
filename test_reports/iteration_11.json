@@ -1,0 +1,54 @@
+{
+  "summary": "Comprehensive testing of PDF viewing and quote validity features for PDPV. All backend and frontend features verified working. One critical bug found and fixed in QuoteResponse.js (missing useSearchParams import). All 13 backend tests pass. All 6 frontend feature flows verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Public Quote Page - Expired",
+        "issues": ["Comments textarea is not visually greyed out when quote is expired (disabled attr set but CSS contrast could be improved)"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quote_pdf_validity.py",
+    "/app/test_reports/pytest/pytest_quote_pdf_validity.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIXED: QuoteResponse.js line 30 used `useSearchParams` but was not imported from 'react-router-dom' - would cause runtime crash on public quote page. Fixed by adding useSearchParams to import on line 2.",
+    "Download endpoint (/api/public/quote/{token}/attachments/{id}/download) does NOT check quote link expiry (expires_at) - it only validates the token exists. Minor security note: files can still be downloaded after the 7-day link expires. Not blocking."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/QuoteResponse.js",
+    "/app/backend/tests/test_quote_pdf_validity.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 tests passed)",
+    "frontend": "100% (all feature flows verified)"
+  },
+  "seed_data_creation": "Created test ticket 7f3f3dc6-d302-42c9-898e-d1924156bcea (TEST_QuotePDF Client) with PDF attachment 926282ba-621b-4569-9126-ac383b1f1889 (test_quote.pdf). Multiple quote links generated for testing.",
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature: PDF viewing and quote validity. All features verified working: 1) QuoteResponse.js now correctly imports useSearchParams. 2) TicketDetail shows PDF checkboxes below each option when ticket has PDF attachments. 3) Public quote page shows Válido até/Expirado em validity date, Ver detalhes (PDF) button inside option cards with attachments, general Orçamento detalhado (PDF) section when ticket has attachments but options don't. 4) Expired quotes show banner and disable accept/reject buttons. Test ticket: 7f3f3dc6-d302-42c9-898e-d1924156bcea (note: quote_valid_until is set to past for testing - may need to be reset). Backend test file: /app/backend/tests/test_quote_pdf_validity.py. MONGO_URL=mongodb://localhost:27017, DB_NAME=test_database.",
+  "features_verified": {
+    "Backend: GET /api/public/quote/{token} returns quote_valid_until": "PASS",
+    "Backend: GET /api/public/quote/{token} returns ticket_attachments": "PASS",
+    "Backend: POST /api/tickets/{id}/quote-options accepts attachment_ids": "PASS",
+    "Backend: GET /api/tickets/{id}/quote-options returns attachment_ids": "PASS",
+    "Backend: generate-quote-link sets quote_valid_until (now+15days)": "PASS",
+    "Backend: Download endpoint validates token": "PASS",
+    "Backend: respond to expired quote returns 400 Orcamento expirado": "PASS",
+    "Frontend: Public quote page shows Valido ate validity date": "PASS",
+    "Frontend: Public quote page shows Ver detalhes (PDF) button inside option with attachments": "PASS",
+    "Frontend: Public quote page shows general Orcamento detalhado (PDF) section": "PASS",
+    "Frontend: Public quote page shows expiry banner for expired quotes": "PASS",
+    "Frontend: TicketDetail shows PDF checkboxes when ticket has PDF attachments": "PASS",
+    "Frontend: TicketDetail saves attachment_ids with quote options": "PASS"
+  }
+}
