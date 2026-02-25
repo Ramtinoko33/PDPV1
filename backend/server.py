@@ -249,6 +249,7 @@ class TicketResponse(BaseModel):
     accepted_total: Optional[float] = None
     accepted_count: Optional[int] = None
     quote_valid_until: Optional[str] = None
+    reply_link_token: Optional[str] = None
     is_overdue: bool = False
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
@@ -283,6 +284,7 @@ class MessageResponse(BaseModel):
     created_by_user_id: Optional[str] = None
     created_by_name: Optional[str] = None
     attachment_ids: List[str] = []
+    from_customer: bool = False
 
 class NoteCreate(BaseModel):
     body: str
