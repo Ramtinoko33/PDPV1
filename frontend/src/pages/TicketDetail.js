@@ -1348,41 +1348,68 @@ const TicketDetail = () => {
                   {/* Quote Options List */}
                   <div className="space-y-2">
                     {quoteOptions.map((option, index) => (
-                      <div key={option.id || index} className="flex items-center gap-2">
-                        <span className="text-amber-700 font-medium text-sm w-6">{index + 1}.</span>
-                        <Input
-                          placeholder="Descrição (ex: Revisão completa)"
-                          value={option.description}
-                          onChange={(e) => updateQuoteOption(index, 'description', e.target.value)}
-                          className="flex-1 border-amber-300 focus:border-amber-500 text-sm"
-                          data-testid={`quote-option-desc-${index}`}
-                        />
-                        <div className="flex items-center gap-1">
+                      <div key={option.id || index} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-700 font-medium text-sm w-6">{index + 1}.</span>
                           <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={option.amount}
-                            onChange={(e) => updateQuoteOption(index, 'amount', e.target.value)}
-                            className="w-24 border-amber-300 focus:border-amber-500 text-sm"
-                            data-testid={`quote-option-amount-${index}`}
+                            placeholder="Descrição (ex: Revisão completa)"
+                            value={option.description}
+                            onChange={(e) => updateQuoteOption(index, 'description', e.target.value)}
+                            className="flex-1 border-amber-300 focus:border-amber-500 text-sm"
+                            data-testid={`quote-option-desc-${index}`}
                           />
-                          <span className="text-amber-700 text-sm">€</span>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={option.amount}
+                              onChange={(e) => updateQuoteOption(index, 'amount', e.target.value)}
+                              className="w-24 border-amber-300 focus:border-amber-500 text-sm"
+                              data-testid={`quote-option-amount-${index}`}
+                            />
+                            <span className="text-amber-700 text-sm">€</span>
+                          </div>
+                          {option.is_accepted && (
+                            <CheckCircle className="h-4 w-4 text-emerald-600" title="Aceite pelo cliente" />
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeQuoteOption(index)}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            disabled={quoteOptions.length <= 1}
+                            data-testid={`quote-option-remove-${index}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                        {option.is_accepted && (
-                          <CheckCircle className="h-4 w-4 text-emerald-600" title="Aceite pelo cliente" />
+                        {attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).length > 0 && (
+                          <div className="ml-6 flex flex-wrap gap-2 items-center">
+                            <span className="text-xs text-zinc-400">PDFs:</span>
+                            {attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).map(att => {
+                              const isLinked = (option.attachment_ids || []).includes(att.id);
+                              return (
+                                <label key={att.id} className="flex items-center gap-1 cursor-pointer text-xs text-zinc-600 hover:text-zinc-800">
+                                  <input
+                                    type="checkbox"
+                                    checked={isLinked}
+                                    onChange={() => {
+                                      const current = option.attachment_ids || [];
+                                      const updated = isLinked ? current.filter(id => id !== att.id) : [...current, att.id];
+                                      updateQuoteOption(index, 'attachment_ids', updated);
+                                    }}
+                                    className="h-3 w-3 accent-amber-600"
+                                    data-testid={`pdf-link-${index}-${att.id}`}
+                                  />
+                                  <FileText className="h-3 w-3 text-red-400" />
+                                  {att.original_filename}
+                                </label>
+                              );
+                            })}
+                          </div>
                         )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeQuoteOption(index)}
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          disabled={quoteOptions.length <= 1}
-                          data-testid={`quote-option-remove-${index}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
                       </div>
                     ))}
                   </div>
