@@ -1738,6 +1738,15 @@ const TicketDetail = () => {
           {/* Quote History */}
           <QuoteHistorySection ticketId={id} getAuthHeaders={getAuthHeaders} formatDate={formatDate} />
 
+          {/* Reply Link */}
+          {canEdit && (
+            <ReplyLinkSection
+              ticketId={id}
+              getAuthHeaders={getAuthHeaders}
+              existingToken={ticket?.reply_link_token || null}
+            />
+          )}
+
           {/* Attachments */}
           <Card>
             <CardHeader className="border-b">
