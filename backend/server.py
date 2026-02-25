@@ -3682,7 +3682,8 @@ async def save_quote_options(ticket_id: str, data: QuoteOptionsUpdate, current_u
             "description": opt.description,
             "amount": opt.amount,
             "is_accepted": False,
-            "accepted_at": None
+            "accepted_at": None,
+            "attachment_ids": opt.attachment_ids
         }
         new_options.append(option_doc)
         total_amount += opt.amount
@@ -3749,11 +3750,13 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
     await db.quote_links.insert_one(quote_link_doc)
     
     # Update ticket
+    valid_until = datetime.now(timezone.utc) + timedelta(days=15)
     await db.tickets.update_one(
         {"id": ticket_id},
         {"$set": {
             "quote_sent": True,
             "quote_link_token": token,
+            "quote_valid_until": valid_until.isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }}
     )
