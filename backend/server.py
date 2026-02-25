@@ -240,6 +240,7 @@ class TicketResponse(BaseModel):
     quote_response_at: Optional[str] = None
     accepted_total: Optional[float] = None
     accepted_count: Optional[int] = None
+    quote_valid_until: Optional[str] = None
     is_overdue: bool = False
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
@@ -3594,9 +3595,14 @@ async def get_email_config(current_user: dict = Depends(get_current_user)):
     }
 
 # ============== QUOTE OPTIONS ==============
+class AttachmentPublicInfo(BaseModel):
+    id: str
+    original_filename: str
+
 class QuoteOptionCreate(BaseModel):
     description: str
     amount: float
+    attachment_ids: List[str] = []
 
 class QuoteOptionResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -3606,6 +3612,17 @@ class QuoteOptionResponse(BaseModel):
     amount: float
     is_accepted: bool = False
     accepted_at: Optional[str] = None
+    attachment_ids: List[str] = []
+
+class QuoteOptionPublicResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    ticket_id: str
+    description: str
+    amount: float
+    is_accepted: bool = False
+    accepted_at: Optional[str] = None
+    attachments: List[AttachmentPublicInfo] = []
 
 class QuoteOptionsUpdate(BaseModel):
     options: List[QuoteOptionCreate]
@@ -3626,9 +3643,11 @@ class QuoteResponseData(BaseModel):
     quote_sent_at: str
     response_status: Optional[str] = None
     response_at: Optional[str] = None
-    quote_options: List[QuoteOptionResponse] = []  # Multiple options
+    quote_options: List[QuoteOptionPublicResponse] = []
     accepted_total: Optional[float] = None
     accepted_count: Optional[int] = None
+    quote_valid_until: Optional[str] = None
+    ticket_attachments: List[AttachmentPublicInfo] = []
 
 # ============== QUOTE OPTIONS ENDPOINTS ==============
 @api_router.get("/tickets/{ticket_id}/quote-options", response_model=List[QuoteOptionResponse])
