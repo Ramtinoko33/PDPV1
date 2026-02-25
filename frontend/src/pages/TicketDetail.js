@@ -1351,6 +1351,11 @@ const TicketDetail = () => {
                               <Badge variant="outline" className="text-xs">
                                 {msg.channel}
                               </Badge>
+                              {msg.from_customer && (
+                                <Badge className="text-xs bg-blue-100 text-blue-700 border-0">
+                                  Via Portal
+                                </Badge>
+                              )}
                               <span className="text-xs text-zinc-500">
                                 {formatDate(msg.created_at)}
                               </span>
