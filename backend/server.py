@@ -2663,6 +2663,7 @@ class TicketStatusUpdate(BaseModel):
     color: Optional[str] = None
     is_final: Optional[bool] = None
     is_auto: Optional[bool] = None
+    order: Optional[int] = None
 
 class TicketStatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
