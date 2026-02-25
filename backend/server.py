@@ -4418,7 +4418,69 @@ def validate_vapid_keys():
 
 validate_vapid_keys()
 
-# ============== WEBSOCKET ==============
+# ============== VAPID DB FALLBACK + AUTO-GENERATE ==============
+async def generate_and_store_vapid_keys() -> dict:
+    """Generate new VAPID keys and persist in DB."""
+    from py_vapid import Vapid
+    import base64
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PublicFormat, PrivateFormat, NoEncryption
+    )
+    v = Vapid()
+    v.generate_keys()
+    priv_der = v.private_key.private_bytes(Encoding.DER, PrivateFormat.PKCS8, NoEncryption())
+    priv_key = base64.urlsafe_b64encode(priv_der).rstrip(b'=').decode()
+    pub_raw = v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    pub_key = base64.urlsafe_b64encode(pub_raw).rstrip(b'=').decode()
+    await db.settings.update_one(
+        {"type": "webpush_config"},
+        {"$set": {
+            "type": "webpush_config",
+            "vapid_public_key": pub_key,
+            "vapid_private_key": priv_key,
+            "vapid_claims_email": VAPID_CLAIMS_EMAIL or "admin@pdpv.pt",
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }},
+        upsert=True
+    )
+    return {"vapid_public_key": pub_key, "vapid_private_key": priv_key}
+
+
+async def load_and_validate_vapid_keys():
+    """Called on startup: env vars → DB → auto-generate. Sets globals."""
+    global VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_KEYS_VALID
+    if os.environ.get('DISABLE_WEB_PUSH', 'false').lower() == 'true':
+        return
+    if VAPID_KEYS_VALID:
+        logger.info("[VAPID] Env var keys already valid, skipping DB check")
+        return
+    # Try DB
+    try:
+        config = await db.settings.find_one({"type": "webpush_config"}, {"_id": 0})
+        if config and config.get("vapid_private_key") and config.get("vapid_public_key"):
+            from py_vapid import Vapid
+            Vapid.from_string(private_key=config["vapid_private_key"])
+            VAPID_PUBLIC_KEY = config["vapid_public_key"]
+            VAPID_PRIVATE_KEY = config["vapid_private_key"]
+            VAPID_KEYS_VALID = True
+            logger.info("[VAPID] Loaded keys from DB - Web Push enabled")
+            return
+    except Exception as e:
+        logger.warning(f"[VAPID] DB key load failed: {e}")
+    # Auto-generate
+    try:
+        keys = await generate_and_store_vapid_keys()
+        from py_vapid import Vapid
+        Vapid.from_string(private_key=keys["vapid_private_key"])
+        VAPID_PUBLIC_KEY = keys["vapid_public_key"]
+        VAPID_PRIVATE_KEY = keys["vapid_private_key"]
+        VAPID_KEYS_VALID = True
+        logger.info("[VAPID] Auto-generated new VAPID keys - Web Push enabled")
+    except Exception as e:
+        logger.error(f"[VAPID] Auto-generate failed: {e}")
+        VAPID_KEYS_VALID = False
+
+
 @app.websocket("/ws/{token}")
 async def websocket_endpoint(websocket: WebSocket, token: str):
     try:
