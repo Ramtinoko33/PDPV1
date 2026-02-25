@@ -94,9 +94,17 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - **Frontend:**
   - Nova página `TicketReplyPage.js` em `/ticket/reply/:token` (rota pública, sem auth)
   - `App.js` atualizado com nova rota
-  - `TicketDetail.js`: novo componente `ReplyLinkSection` (azul) no tab Documentos
+  - `TicketDetail.js`: componente `ReplyLinkSection` agora no tab Conversa (movido de Documentos em 25/02/2026)
   - `TicketDetail.js`: badge "Via Portal" nas mensagens INBOUND com `from_customer=true`
   - Bug corrigido: `Optional[List[UploadFile]]` → `List[UploadFile] = File(default=[])` para upload de ficheiros
+
+### Melhoria UI - Lembretes e Link de Resposta no Tab Conversa (25/02/2026)
+- **Alteração:**
+  - Secções "Lembretes" e "Link de Resposta" movidas do tab "Documentos" para o tab "Conversa"
+  - Layout em grid de 2 colunas para mostrar as duas secções lado a lado
+  - `ReplyLinkSection` convertido para usar componente Card para consistência visual
+- **Objetivo:** Facilitar acesso rápido às ações mais comuns sem precisar mudar de tab
+- **Testes:** 12/12 testes passaram (100%) - verificado navegação, criação de lembretes, geração de links
 
 
 - **Backend:**
