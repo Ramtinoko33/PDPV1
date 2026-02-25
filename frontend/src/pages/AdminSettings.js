@@ -972,10 +972,22 @@ const AdminSettings = () => {
                     ) : (
                       <>
                         <AlertCircle className="h-5 w-5 text-amber-600" />
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium text-amber-800">VAPID Não Configurado</p>
-                          <p className="text-sm text-amber-600">Configure as chaves VAPID no backend/.env</p>
+                          <p className="text-sm text-amber-600">Web Push desativado. Gere as chaves abaixo para ativar.</p>
                         </div>
+                        <Button
+                          size="sm"
+                          onClick={generateVapidKeys}
+                          disabled={generatingKeys}
+                          className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+                          data-testid="generate-vapid-keys-btn"
+                        >
+                          {generatingKeys ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          ) : null}
+                          {generatingKeys ? 'A gerar...' : 'Gerar Chaves'}
+                        </Button>
                       </>
                     )}
                   </div>
