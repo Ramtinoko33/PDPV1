@@ -44,7 +44,7 @@ def test_ticket(auth_headers):
         "customer_phone": "912345678",
         "vehicle_plate": "TEST-01",
         "description": "Test ticket for PDF quote tests",
-        "priority": "MEDIUM"
+        "priority": "NORMAL"
     }, headers=auth_headers)
     assert resp.status_code == 201, f"Failed to create ticket: {resp.text}"
     ticket = resp.json()
@@ -329,7 +329,7 @@ class TestQuoteExpiry:
             "customer_phone": "912345679",
             "vehicle_plate": "TEST-02",
             "description": "Test for non-expired quote",
-            "priority": "MEDIUM"
+            "priority": "NORMAL"
         }, headers=auth_headers)
         assert ticket_resp.status_code == 201
         new_ticket = ticket_resp.json()
