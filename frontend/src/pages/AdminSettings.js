@@ -69,6 +69,7 @@ const AdminSettings = () => {
     subscriptions_count: 0
   });
   const [loadingPush, setLoadingPush] = useState(true);
+  const [generatingKeys, setGeneratingKeys] = useState(false);
 
   // Branding Config State
   const [brandingConfig, setBrandingConfig] = useState({
