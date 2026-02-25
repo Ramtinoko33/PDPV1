@@ -11,8 +11,8 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-MONGO_URL = os.environ.get('MONGO_URL', '')
-DB_NAME = os.environ.get('DB_NAME', 'pdpv')
+MONGO_URL = os.environ.get('MONGO_URL', '').strip('"\'')
+DB_NAME = os.environ.get('DB_NAME', 'pdpv').strip('"\'')
 
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
