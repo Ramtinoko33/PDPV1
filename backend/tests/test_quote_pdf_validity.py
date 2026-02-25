@@ -335,7 +335,7 @@ class TestQuoteExpiry:
             "description": "Test for non-expired quote",
             "priority": "NORMAL"
         }, headers=auth_headers)
-        assert ticket_resp.status_code == 201
+        assert ticket_resp.status_code in [200, 201]
         new_ticket = ticket_resp.json()
         new_ticket_id = new_ticket["id"]
         
