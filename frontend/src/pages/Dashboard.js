@@ -276,6 +276,17 @@ const Dashboard = () => {
             Atualizar
           </Button>
           {['ADMIN', 'SUPERVISOR', 'AGENT'].includes(user?.role) && (
+            <Button
+              variant="outline"
+              className="border-2"
+              onClick={() => { setEditPrefs(dashboardPrefs); setShowConfig(true); }}
+              data-testid="configure-dashboard-btn"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Configurar Dashboard
+            </Button>
+          )}
+          {['ADMIN', 'SUPERVISOR', 'AGENT'].includes(user?.role) && (
             <Button 
               className="h-12 px-6 font-bold bg-orange-600 hover:bg-orange-700"
               onClick={() => navigate('/tickets/new')}
