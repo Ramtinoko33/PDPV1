@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const API_URL = 'https://garage-support-1.preview.emergentagent.com';
+const API_URL = 'https://workshop-hub-37.preview.emergentagent.com';
 
 // Test credentials
 const ADMIN_EMAIL = 'admin@pdpv.pt';
