@@ -3793,6 +3793,20 @@ async def save_quote_options(ticket_id: str, data: QuoteOptionsUpdate, current_u
     
     return new_options
 
+@api_router.post("/tickets/{ticket_id}/generate-reply-link")
+async def generate_reply_link(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate (or return existing) public reply link for a ticket"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    if current_user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    token = await get_or_create_reply_token(ticket_id)
+    reply_link = await db.reply_links.find_one({"token": token}, {"_id": 0})
+    return {"token": token, "expires_at": reply_link["expires_at"]}
+
 @api_router.post("/tickets/{ticket_id}/generate-quote-link")
 async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_current_user)):
     """Generate a unique link for client to respond to a quote"""
