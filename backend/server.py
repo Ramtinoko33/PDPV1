@@ -301,12 +301,13 @@ class ReminderCreate(BaseModel):
     description: str
     due_at: str  # ISO datetime string
     assigned_to_user_id: Optional[str] = None  # If None, assign to current user
+    ticket_id: Optional[str] = None  # Optional - can create reminders without ticket
 
 class ReminderResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
-    ticket_id: str
-    ticket_number: Optional[str] = None  # For dashboard view
+    ticket_id: Optional[str] = None  # Now optional
+    ticket_number: Optional[str] = None  # For display
     description: str
     due_at: str
     assigned_to_user_id: str
