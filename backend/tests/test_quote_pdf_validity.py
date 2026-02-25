@@ -297,20 +297,24 @@ class TestQuoteExpiry:
         assert link_resp.status_code == 200, f"Failed to generate link: {link_resp.text}"
         token = link_resp.json()["token"]
         
-        # 2. Directly update quote_valid_until to past via API (admin endpoint)
-        # We need to update the ticket's quote_valid_until directly
+        # 2. Directly update quote_valid_until to a past date using MongoDB
         past_date = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        update_resp = requests.put(
-            f"{BASE_URL}/api/tickets/{ticket_id}",
-            json={"quote_valid_until": past_date},
-            headers=auth_headers
-        )
-        # If the PUT doesn't accept quote_valid_until, we'll try via MongoDB directly via the backend
-        # Check the response
-        if update_resp.status_code not in [200, 204]:
-            pytest.skip(f"Cannot set quote_valid_until via API (status {update_resp.status_code}), need MongoDB access")
         
-        # 3. Try to respond to quote
+        if not MONGO_URL:
+            pytest.skip("MONGO_URL not available - cannot set quote_valid_until to past directly")
+        
+        async def set_expired():
+            client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URL)
+            db = client[DB_NAME]
+            await db.tickets.update_one(
+                {"id": ticket_id},
+                {"$set": {"quote_valid_until": past_date}}
+            )
+            client.close()
+        
+        asyncio.run(set_expired())
+        
+        # 3. Try to respond to quote - should be rejected as expired
         respond_resp = requests.post(
             f"{BASE_URL}/api/public/quote/{token}/respond",
             json={"status": "ACCEPTED", "comments": "", "accepted_option_ids": []}
