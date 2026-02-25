@@ -88,7 +88,49 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchData();
+    // Fetch available statuses for config modal
+    axios.get(`${API_URL}/api/ticket-statuses`, { headers: getAuthHeaders() })
+      .then(r => setAllStatuses(r.data || []))
+      .catch(() => {});
   }, []);
+
+  // Initialize prefs from user on load
+  useEffect(() => {
+    if (user) {
+      const prefs = {
+        dashboard_default_types: user.dashboard_default_types || [],
+        dashboard_default_states: user.dashboard_default_states || [],
+        dashboard_only_mine: user.dashboard_only_mine || false
+      };
+      setDashboardPrefs(prefs);
+      setEditPrefs(prefs);
+    }
+  }, [user]);
+
+  // Re-apply filters whenever tickets or filters change
+  useEffect(() => {
+    let tickets = [...allFetchedTickets];
+
+    // only_mine (client-side for admin/supervisor)
+    if (dashboardPrefs.dashboard_only_mine && user?.role !== 'AGENT') {
+      tickets = tickets.filter(t => t.assigned_to_user_id === user?.id);
+    }
+
+    // type filter: quick filter overrides prefs
+    const effectiveTypes = quickType ? [quickType] : dashboardPrefs.dashboard_default_types;
+    if (effectiveTypes.length > 0) {
+      tickets = tickets.filter(t => effectiveTypes.includes(t.type));
+    }
+
+    // status filter: quick filter overrides prefs
+    const effectiveStatuses = quickStatus ? [quickStatus] : dashboardPrefs.dashboard_default_states;
+    if (effectiveStatuses.length > 0) {
+      tickets = tickets.filter(t => effectiveStatuses.includes(t.status));
+    }
+
+    setRecentTickets(tickets.slice(0, 5));
+    setOverdueTickets(tickets.filter(t => t.is_overdue).slice(0, 5));
+  }, [allFetchedTickets, quickType, quickStatus, dashboardPrefs, user]);
 
   const handleSearch = (e) => {
     e.preventDefault();
