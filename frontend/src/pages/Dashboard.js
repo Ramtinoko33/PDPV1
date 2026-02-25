@@ -324,6 +324,58 @@ const Dashboard = () => {
         </CardContent>
       </Card>
 
+      {/* Quick Filters */}
+      {['ADMIN', 'SUPERVISOR', 'AGENT'].includes(user?.role) && (
+        <div className="flex flex-wrap items-center gap-3" data-testid="quick-filters">
+          <div className="flex items-center gap-2 text-sm text-zinc-500">
+            <Filter className="h-4 w-4" />
+            <span className="font-medium">Filtrar:</span>
+          </div>
+          <Select value={quickType} onValueChange={setQuickType} data-testid="quick-type-select">
+            <SelectTrigger className="w-44 h-9 border-2 text-sm" data-testid="quick-type-trigger">
+              <SelectValue placeholder="Tipo: Todos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Tipo: Todos</SelectItem>
+              {ticketTypes.map(t => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={quickStatus} onValueChange={setQuickStatus} data-testid="quick-status-select">
+            <SelectTrigger className="w-48 h-9 border-2 text-sm" data-testid="quick-status-trigger">
+              <SelectValue placeholder="Estado: Todos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Estado: Todos</SelectItem>
+              {allStatuses.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(quickType || quickStatus) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 text-zinc-500 hover:text-zinc-700"
+              onClick={() => { setQuickType(''); setQuickStatus(''); }}
+              data-testid="clear-quick-filters-btn"
+            >
+              Limpar filtros
+            </Button>
+          )}
+          {hasActiveFilters && (
+            <Badge className="bg-orange-100 text-orange-700 text-xs" data-testid="active-prefs-badge">
+              {[
+                dashboardPrefs.dashboard_default_types.length > 0 && `${dashboardPrefs.dashboard_default_types.length} tipo(s)`,
+                dashboardPrefs.dashboard_default_states.length > 0 && `${dashboardPrefs.dashboard_default_states.length} estado(s)`,
+                dashboardPrefs.dashboard_only_mine && 'Apenas meus'
+              ].filter(Boolean).join(' · ')}
+            </Badge>
+          )}
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Link to="/tickets?status=ABERTO" data-testid="stat-novos">
