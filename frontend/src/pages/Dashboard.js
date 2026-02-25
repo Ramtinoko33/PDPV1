@@ -350,7 +350,7 @@ const Dashboard = () => {
             <SelectContent>
               <SelectItem value="_all">Estado: Todos</SelectItem>
               {allStatuses.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                <SelectItem key={s.id} value={s.code}>{s.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
