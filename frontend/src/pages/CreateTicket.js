@@ -445,7 +445,7 @@ const CreateTicket = () => {
                 </div>
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <Label htmlFor="name" className="text-sm font-semibold">
                   Nome *
                 </Label>
@@ -453,13 +453,52 @@ const CreateTicket = () => {
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
                   <Input
                     id="name"
-                    placeholder="Nome do cliente"
+                    placeholder="Nome do cliente (pesquisa automática)"
                     value={formData.customer_name}
-                    onChange={(e) => handleChange('customer_name', e.target.value)}
+                    onChange={(e) => {
+                      handleChange('customer_name', e.target.value);
+                      if (e.target.value.length >= 2) {
+                        searchCustomers(e.target.value);
+                      }
+                    }}
+                    onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
                     className="h-12 pl-11 border-2 focus:border-orange-500"
                     required
+                    autoComplete="off"
                     data-testid="ticket-name-input"
                   />
+                  {/* Suggestions dropdown for name */}
+                  {showSuggestions && searchResults.length > 0 && formData.customer_name.length >= 2 && !selectedCustomer && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-orange-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                      <div className="p-2 bg-orange-50 border-b text-xs font-semibold text-orange-700">
+                        <Search className="h-3 w-3 inline mr-1" />
+                        Clientes encontrados por nome
+                      </div>
+                      {searchResults.map((customer) => (
+                        <div
+                          key={customer.id}
+                          className="p-3 hover:bg-zinc-50 cursor-pointer border-b last:border-0"
+                          onClick={() => selectCustomer(customer)}
+                        >
+                          <p className="font-semibold text-slate-900">{customer.name}</p>
+                          <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
+                            {customer.phones?.[0] && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {customer.phones[0]}
+                              </span>
+                            )}
+                            {customer.vehicles?.[0] && (
+                              <span className="flex items-center gap-1">
+                                <Car className="h-3 w-3" />
+                                {customer.vehicles[0].plate}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
