@@ -3328,6 +3328,139 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
         daily_ticket_counts=daily_counts[-30:]  # Last 30 entries
     )
 
+# ============== TIRE SIZE ANALYSIS ==============
+class TireSizeCount(BaseModel):
+    size: str
+    count: int
+    percentage: float
+
+class BrandCount(BaseModel):
+    brand: str
+    count: int
+
+class TireAnalysisResponse(BaseModel):
+    period: dict
+    total_tickets_analyzed: int
+    tickets_with_sizes: int
+    tire_sizes: List[TireSizeCount]
+    brands: List[BrandCount]
+    keywords: List[dict]
+
+@api_router.get("/admin/reports/tire-analysis")
+async def analyze_tire_sizes(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Analyze tire sizes and brands from ticket descriptions"""
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    import re
+    
+    # Build query
+    query = {"archived_at": None}
+    
+    if start_date:
+        query["created_at"] = {"$gte": start_date}
+    if end_date:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = end_date
+        else:
+            query["created_at"] = {"$lte": end_date}
+    
+    tickets = await db.tickets.find(query, {"_id": 0, "description": 1}).to_list(10000)
+    
+    # Regex patterns for tire sizes
+    # Matches: 205/55R16, 225/45R17, 195/65R15, 205/55 R16, 205/55/R16, etc.
+    tire_pattern = re.compile(r'\b(\d{3})[/\s]?(\d{2})[/\s]?[Rr]?(\d{2})\b')
+    
+    # Common tire brands
+    brands_list = [
+        'Michelin', 'Continental', 'Hankook', 'Bridgestone', 'Pirelli',
+        'Goodyear', 'Dunlop', 'Firestone', 'Yokohama', 'Kumho',
+        'Nexen', 'Falken', 'Toyo', 'BFGoodrich', 'Uniroyal',
+        'Vredestein', 'Nokian', 'Maxxis', 'Laufenn', 'Barum'
+    ]
+    
+    # Service keywords
+    service_keywords = [
+        ('revisão', 'Revisão'),
+        ('travões', 'Travões'),
+        ('travoes', 'Travões'),
+        ('óleo', 'Mudança de Óleo'),
+        ('oleo', 'Mudança de Óleo'),
+        ('alinhamento', 'Alinhamento'),
+        ('balanceamento', 'Balanceamento'),
+        ('suspensão', 'Suspensão'),
+        ('suspensao', 'Suspensão'),
+        ('amortecedores', 'Amortecedores'),
+        ('embraiagem', 'Embraiagem'),
+        ('distribuição', 'Correia Distribuição'),
+        ('bateria', 'Bateria'),
+        ('escape', 'Escape'),
+        ('ar condicionado', 'Ar Condicionado'),
+        ('a/c', 'Ar Condicionado'),
+        ('pneu', 'Pneus'),
+        ('pneus', 'Pneus'),
+    ]
+    
+    # Count occurrences
+    size_counts = {}
+    brand_counts = {}
+    keyword_counts = {}
+    tickets_with_sizes = 0
+    
+    for ticket in tickets:
+        desc = ticket.get("description", "") or ""
+        desc_lower = desc.lower()
+        
+        # Find tire sizes
+        sizes_found = tire_pattern.findall(desc)
+        if sizes_found:
+            tickets_with_sizes += 1
+            for match in sizes_found:
+                # Normalize format: 205/55R16
+                size = f"{match[0]}/{match[1]}R{match[2]}"
+                size_counts[size] = size_counts.get(size, 0) + 1
+        
+        # Find brands (case insensitive)
+        for brand in brands_list:
+            if brand.lower() in desc_lower:
+                brand_counts[brand] = brand_counts.get(brand, 0) + 1
+        
+        # Find service keywords
+        for keyword, label in service_keywords:
+            if keyword in desc_lower:
+                keyword_counts[label] = keyword_counts.get(label, 0) + 1
+    
+    # Sort and format results
+    total_sizes = sum(size_counts.values()) or 1
+    sorted_sizes = sorted(size_counts.items(), key=lambda x: x[1], reverse=True)[:15]
+    tire_sizes = [
+        TireSizeCount(
+            size=size,
+            count=count,
+            percentage=round(count / total_sizes * 100, 1)
+        )
+        for size, count in sorted_sizes
+    ]
+    
+    sorted_brands = sorted(brand_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    brands = [BrandCount(brand=brand, count=count) for brand, count in sorted_brands]
+    
+    sorted_keywords = sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    keywords = [{"keyword": k, "count": c} for k, c in sorted_keywords]
+    
+    return TireAnalysisResponse(
+        period={"start": start_date, "end": end_date},
+        total_tickets_analyzed=len(tickets),
+        tickets_with_sizes=tickets_with_sizes,
+        tire_sizes=tire_sizes,
+        brands=brands,
+        keywords=keywords
+    )
+
 # ============== EMAIL TEST ==============
 class TestEmailRequest(BaseModel):
     recipient_email: EmailStr
