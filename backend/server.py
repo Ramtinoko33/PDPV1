@@ -1624,26 +1624,44 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
         try:
             subject = f"[Ticket #{ticket['ticket_number']}] Resposta ao seu pedido"
             
+            # Get reply link + branding for email
+            try:
+                email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+                branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+                reply_frontend_url = email_settings.get("frontend_url", FRONTEND_URL) if email_settings else FRONTEND_URL
+                email_primary_color = branding.get("primary_color", "#f97316")
+            except Exception:
+                reply_frontend_url = FRONTEND_URL
+                email_primary_color = "#f97316"
+            
+            reply_token = await get_or_create_reply_token(ticket_id)
+            reply_link_url = f"{reply_frontend_url}/ticket/reply/{reply_token}"
+            
             # Build HTML content
             html_content = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background-color: #f97316; padding: 20px; text-align: center;">
+                <div style="background-color: {email_primary_color}; padding: 20px; text-align: center;">
                     <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
                 </div>
                 <div style="padding: 20px; background-color: #f9fafb;">
                     <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
                     <p>Recebeu uma nova resposta ao seu pedido:</p>
-                    <div style="background-color: white; padding: 15px; border-left: 4px solid #f97316; margin: 20px 0;">
+                    <div style="background-color: white; padding: 15px; border-left: 4px solid {email_primary_color}; margin: 20px 0;">
                         {message_data.body.replace(chr(10), '<br>')}
                     </div>
                     <p style="color: #6b7280; font-size: 14px;">
                         Referência do ticket: <strong>{ticket['ticket_number']}</strong>
                     </p>
                     {f'<p style="color: #6b7280; font-size: 14px;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
+                    <div style="text-align: center; margin: 24px 0;">
+                        <a href="{reply_link_url}" style="background-color: {email_primary_color}; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">
+                            Responder / Enviar documentos
+                        </a>
+                    </div>
                 </div>
                 <div style="background-color: #1f2937; padding: 15px; text-align: center;">
                     <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                        PDPV - Pneus de Pedro V. | Este é um email automático, por favor não responda.
+                        PDPV - Pneus de Pedro V. | Este é um email automático.
                     </p>
                 </div>
             </div>
