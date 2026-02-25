@@ -17,7 +17,8 @@ import {
   ChevronRight,
   Archive,
   Settings,
-  BarChart3
+  BarChart3,
+  Bell
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
