@@ -183,11 +183,19 @@ class UserResponse(BaseModel):
     name: str
     role: UserRole
     created_at: str
+    dashboard_default_types: List[str] = []
+    dashboard_default_states: List[str] = []
+    dashboard_only_mine: bool = False
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[UserRole] = None
     password: Optional[str] = None
+
+class DashboardConfigUpdate(BaseModel):
+    dashboard_default_types: List[str] = []
+    dashboard_default_states: List[str] = []
+    dashboard_only_mine: bool = False
 
 class TicketCreate(BaseModel):
     customer_name: str
@@ -2083,6 +2091,13 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         base_query["assigned_to_user_id"] = user["id"]
     elif user["role"] == UserRole.INTERNAL_CREATOR.value:
         return DashboardStats()
+    
+    # Apply dashboard preferences
+    if user.get("dashboard_only_mine") and user["role"] != UserRole.AGENT.value:
+        base_query["assigned_to_user_id"] = user["id"]
+    pref_types = user.get("dashboard_default_types", [])
+    if pref_types:
+        base_query["type"] = {"$in": pref_types}
     
     # Count stats with new statuses
     novos = await db.tickets.count_documents({**base_query, "status": TicketStatus.ABERTO.value})
