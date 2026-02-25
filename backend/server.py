@@ -3664,7 +3664,20 @@ class QuoteResponseRequest(BaseModel):
     comments: Optional[str] = None
     accepted_option_ids: List[str] = []  # IDs of accepted options
 
+class PublicReplyTicketData(BaseModel):
+    ticket_number: str
+    customer_name: str
+    vehicle_plate: Optional[str] = None
+    ticket_type: str
+    status: str
+    description: Optional[str] = None
+    company_name: str = "PDPV Tickets"
+    primary_color: str = "#f97316"
+    logo_url: Optional[str] = None
+
 class QuoteResponseData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    ticket_number: str
     customer_name: str
     vehicle_plate: Optional[str] = None
     quote_value: float
