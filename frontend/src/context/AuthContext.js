@@ -46,12 +46,24 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const savedToken = localStorage.getItem('pdpv_token');
+    if (savedToken) {
+      try {
+        const response = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${savedToken}` }
+        });
+        setUser(response.data);
+      } catch (_) {}
+    }
+  };
+
   const getAuthHeaders = () => ({
     Authorization: `Bearer ${token}`
   });
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, getAuthHeaders }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, getAuthHeaders, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
