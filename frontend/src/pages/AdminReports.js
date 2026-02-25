@@ -92,6 +92,25 @@ const AdminReports = () => {
     }
   };
 
+  const fetchTireAnalysis = async () => {
+    setLoadingTires(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.start_date) params.append('start_date', filters.start_date);
+      if (filters.end_date) params.append('end_date', filters.end_date);
+      
+      const response = await axios.get(
+        `${API_URL}/api/admin/reports/tire-analysis?${params.toString()}`,
+        { headers: getAuthHeaders() }
+      );
+      setTireAnalysis(response.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao analisar medidas');
+    } finally {
+      setLoadingTires(false);
+    }
+  };
+
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-PT', { 
       style: 'currency', 
