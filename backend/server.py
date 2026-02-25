@@ -2766,6 +2766,10 @@ async def update_ticket_status(status_id: str, status_data: TicketStatusUpdate, 
         update_doc["color"] = status_data.color
     if status_data.is_final is not None:
         update_doc["is_final"] = status_data.is_final
+    if status_data.is_auto is not None:
+        update_doc["is_auto"] = status_data.is_auto
+    if status_data.order is not None:
+        update_doc["order"] = status_data.order
     
     if update_doc:
         await db.ticket_statuses.update_one({"id": status_id}, {"$set": update_doc})
