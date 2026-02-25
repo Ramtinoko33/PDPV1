@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -18,7 +18,9 @@ import {
   AlertCircle,
   Loader2,
   Phone,
-  Mail
+  Mail,
+  FileDown,
+  AlertTriangle
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
