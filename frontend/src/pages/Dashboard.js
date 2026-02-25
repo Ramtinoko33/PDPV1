@@ -58,15 +58,15 @@ const Dashboard = () => {
 
   const fetchData = async () => {
     try {
+      const ticketsUrl = `${API_URL}/api/tickets?limit=100`;
       const [statsRes, ticketsRes, remindersRes] = await Promise.all([
         axios.get(`${API_URL}/api/dashboard/stats`, { headers: getAuthHeaders() }),
-        axios.get(`${API_URL}/api/tickets?limit=10`, { headers: getAuthHeaders() }),
+        axios.get(ticketsUrl, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/reminders/my-today`, { headers: getAuthHeaders() }).catch(() => ({ data: [] }))
       ]);
       
       setStats(statsRes.data);
-      setRecentTickets(ticketsRes.data.slice(0, 5));
-      setOverdueTickets(ticketsRes.data.filter(t => t.is_overdue).slice(0, 5));
+      setAllFetchedTickets(ticketsRes.data);
       setMyReminders(remindersRes.data || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
