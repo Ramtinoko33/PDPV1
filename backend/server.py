@@ -1645,9 +1645,11 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
                 email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
                 branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
                 reply_frontend_url = email_settings.get("frontend_url", FRONTEND_URL) if email_settings else FRONTEND_URL
+                email_from = email_settings.get("email_from", EMAIL_FROM) if email_settings else EMAIL_FROM
                 email_primary_color = branding.get("primary_color", "#f97316")
             except Exception:
                 reply_frontend_url = FRONTEND_URL
+                email_from = EMAIL_FROM
                 email_primary_color = "#f97316"
             
             reply_token = await get_or_create_reply_token(ticket_id)
