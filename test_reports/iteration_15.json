@@ -1,0 +1,70 @@
+{
+  "summary": "Tested Quote Immutability features: A) Backoffice locking (quote_locked_at on link generation, 409 on edit after lock), B) Public quote one-time decision (409 on second response, decision date displayed), C) New Version workflow (unlocks quote, allows edits). All 20 tests pass (12 backend + 8 frontend).",
+  "mode": "generate",
+  "baseline_commit": "1b23361eaf74ccadaf86f3462ba3b1a2e7f67bc2",
+  "head_commit": "60342445214d663be6cdb1726ad66a24dd40e113",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "regression_results": {
+    "total_specs": 2,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0
+  },
+  "specs_created": [
+    "/app/backend/tests/test_quote_immutability.py",
+    "/app/tests/e2e/quote-immutability.spec.ts"
+  ],
+  "specs_updated": [],
+  "quarantined_tests": [],
+  "test_report_links": [
+    "/app/backend/tests/test_quote_immutability.py",
+    "/app/tests/e2e/quote-immutability.spec.ts",
+    "/app/test_reports/pytest/pytest_quote_immutability.xml"
+  ],
+  "action_items": [],
+  "updated_files": [
+    "/app/backend/tests/test_quote_immutability.py (new - 12 backend API tests)",
+    "/app/tests/e2e/quote-immutability.spec.ts (new - 8 frontend E2E tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 passed)",
+    "frontend": "100% (8/8 passed)"
+  },
+  "seed_data_creation": "Created TEST_QuoteImmutability_*, TEST_PublicDecision, TEST_RejectedQuote test tickets during tests",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Quote immutability features fully tested. Key validations: 1) quote_locked_at set when generating quote link, 2) POST to /api/tickets/{id}/quote-options returns 409 after lock, 3) Public quote respond endpoint returns 409 on second attempt, 4) Nova Versão button resets lock and allows editing, 5) Public page displays 'Decisão registada em [data]' after response. All endpoints and UI elements working as expected.",
+  "verified_features": {
+    "backoffice_locking": {
+      "quote_locked_on_link_generation": "PASS - quote_locked_at set when generating quote link",
+      "edit_blocked_after_lock": "PASS - 409 returned when editing locked quote options",
+      "nova_versao_button_visible": "PASS - Button appears when quote is locked",
+      "inputs_readonly_when_locked": "PASS - Inputs show disabled/readonly state with bg-zinc-100"
+    },
+    "public_quote_one_time_decision": {
+      "first_response_accepted": "PASS - First response to quote link accepted",
+      "second_response_blocked_409": "PASS - Second response returns 409 'Já respondeu a este orçamento'",
+      "decision_date_displayed": "PASS - Public page shows 'Decisão registada em [data]'",
+      "checkboxes_disabled_after_decision": "PASS - Options show checkmark/X icons instead of checkboxes"
+    },
+    "new_version_workflow": {
+      "unlocks_quote": "PASS - quote_locked_at cleared after creating new version",
+      "allows_editing": "PASS - Quote options can be edited after new version",
+      "resets_option_acceptance": "PASS - is_accepted reset to false on all options",
+      "confirmation_dialog": "PASS - Dialog shown before creating new version"
+    },
+    "badge_states": {
+      "locked_badge": "PASS - Shows '🔒 Bloqueado' when locked without decision",
+      "accepted_badge": "PASS - Shows '✓ Aceite' when customer accepted",
+      "rejected_badge": "PASS - Shows '✗ Recusado' when customer rejected"
+    }
+  }
+}
