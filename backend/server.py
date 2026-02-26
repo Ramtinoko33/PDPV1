@@ -4094,6 +4094,8 @@ async def get_public_quote(token: str):
         accepted_total=accepted_total,
         accepted_count=accepted_count,
         quote_valid_until=ticket.get("quote_valid_until"),
+        quote_decided_at=ticket.get("quote_decided_at"),
+        quote_decision=ticket.get("quote_decision"),
         ticket_attachments=[AttachmentPublicInfo(id=a["id"], original_filename=a["original_filename"]) for a in ticket_attachments_raw]
     )
 
