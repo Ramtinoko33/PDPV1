@@ -3737,9 +3737,12 @@ async def get_email_config(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas administradores podem ver configuração")
     
+    email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    email_from = email_settings.get("email_from", EMAIL_FROM) if email_settings else EMAIL_FROM
+    
     return {
         "resend_configured": bool(RESEND_API_KEY),
-        "email_from": EMAIL_FROM if RESEND_API_KEY else None
+        "email_from": email_from if RESEND_API_KEY else None
     }
 
 # ============== QUOTE OPTIONS ==============
