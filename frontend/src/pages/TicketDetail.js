@@ -1455,13 +1455,32 @@ const TicketDetail = () => {
                     <div className="flex items-center gap-2">
                       <FileText className="h-5 w-5 text-amber-600" />
                       <span className="font-semibold text-amber-800">Opções de Orçamento</span>
+                      {ticket.quote_locked_at && (
+                        <span className={`text-xs px-2 py-0.5 rounded ${isQuoteDecided ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-200 text-zinc-600'}`}>
+                          {isQuoteDecided ? `${ticket.quote_decision === 'ACCEPTED' ? '✓ Aceite' : '✗ Recusado'}` : '🔒 Bloqueado'}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
+                      {ticket.quote_locked_at && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={createNewQuoteVersion}
+                          className="border-amber-400 text-amber-700 hover:bg-amber-100 text-xs"
+                          data-testid="new-quote-version-btn"
+                        >
+                          <RefreshCcw className="h-3 w-3 mr-1" />
+                          Nova Versão
+                        </Button>
+                      )}
                       <Checkbox
                         id="quote_sent_conv"
                         checked={ticket.quote_sent}
                         onCheckedChange={(checked) => updateTicket({ quote_sent: checked })}
                         data-testid="quote-sent-checkbox-conv"
+                        disabled={!canEditQuote}
                       />
                       <Label htmlFor="quote_sent_conv" className="text-sm text-amber-700">
                         Enviado
@@ -1479,8 +1498,10 @@ const TicketDetail = () => {
                             placeholder="Descrição (ex: Revisão completa)"
                             value={option.description}
                             onChange={(e) => updateQuoteOption(index, 'description', e.target.value)}
-                            className="flex-1 border-amber-300 focus:border-amber-500 text-sm"
+                            className={`flex-1 border-amber-300 focus:border-amber-500 text-sm ${!canEditQuote ? 'bg-zinc-100' : ''}`}
                             data-testid={`quote-option-desc-${index}`}
+                            readOnly={!canEditQuote}
+                            disabled={!canEditQuote}
                           />
                           <div className="flex items-center gap-1">
                             <Input
@@ -1489,27 +1510,31 @@ const TicketDetail = () => {
                               placeholder="0.00"
                               value={option.amount}
                               onChange={(e) => updateQuoteOption(index, 'amount', e.target.value)}
-                              className="w-24 border-amber-300 focus:border-amber-500 text-sm"
+                              className={`w-24 border-amber-300 focus:border-amber-500 text-sm ${!canEditQuote ? 'bg-zinc-100' : ''}`}
                               data-testid={`quote-option-amount-${index}`}
+                              readOnly={!canEditQuote}
+                              disabled={!canEditQuote}
                             />
                             <span className="text-amber-700 text-sm">€</span>
                           </div>
                           {option.is_accepted && (
                             <CheckCircle className="h-4 w-4 text-emerald-600" title="Aceite pelo cliente" />
                           )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeQuoteOption(index)}
-                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            disabled={quoteOptions.length <= 1}
-                            data-testid={`quote-option-remove-${index}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {canEditQuote && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeQuoteOption(index)}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              disabled={quoteOptions.length <= 1}
+                              data-testid={`quote-option-remove-${index}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
-                        {attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).length > 0 && (
+                        {canEditQuote && attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).length > 0 && (
                           <div className="ml-6 flex flex-wrap gap-2 items-center">
                             <span className="text-xs text-zinc-400">PDFs:</span>
                             {attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).map(att => {
@@ -1540,36 +1565,42 @@ const TicketDetail = () => {
                   
                   {/* Add Option & Total */}
                   <div className="flex items-center justify-between pt-2 border-t border-amber-200">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={addQuoteOption}
-                      className="border-amber-400 text-amber-700 hover:bg-amber-100"
-                      disabled={quoteOptions.length >= 10}
-                      data-testid="add-quote-option-btn"
-                    >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Adicionar Opção
-                    </Button>
+                    {canEditQuote ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addQuoteOption}
+                        className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                        disabled={quoteOptions.length >= 10}
+                        data-testid="add-quote-option-btn"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Adicionar Opção
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-zinc-500">🔒 Orçamento bloqueado para edição</span>
+                    )}
                     <div className="flex items-center gap-3">
                       <span className="text-amber-800 font-semibold">
                         Total: {getQuoteOptionsTotal().toFixed(2)}€
                       </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={saveQuoteOptions}
-                        disabled={savingOptions}
-                        className="bg-amber-600 hover:bg-amber-700 text-white"
-                        data-testid="save-quote-options-btn"
-                      >
-                        {savingOptions ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          'Guardar'
-                        )}
-                      </Button>
+                      {canEditQuote && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={saveQuoteOptions}
+                          disabled={savingOptions}
+                          className="bg-amber-600 hover:bg-amber-700 text-white"
+                          data-testid="save-quote-options-btn"
+                        >
+                          {savingOptions ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            'Guardar'
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </div>
                   
