@@ -44,7 +44,8 @@ import {
   Trash2,
   Bell,
   Calendar,
-  Reply
+  Reply,
+  RefreshCcw
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
