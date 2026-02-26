@@ -18,9 +18,19 @@ import asyncio
 import json
 from pywebpush import webpush, WebPushException
 import resend
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Helper function to convert URLs in text to clickable links
+def convert_urls_to_links(text: str) -> str:
+    """Convert plain text URLs to HTML anchor tags"""
+    url_pattern = r'(https?://[^\s<>"\']+)'
+    def replace_url(match):
+        url = match.group(1)
+        return f'<a href="{url}" style="color: #f97316; text-decoration: underline;">{url}</a>'
+    return re.sub(url_pattern, replace_url, text)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
