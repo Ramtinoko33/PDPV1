@@ -1117,6 +1117,9 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "sla_due": sla_due.isoformat(),
         "quote_sent": False,
         "quote_value": None,
+        "quote_locked_at": None,
+        "quote_decided_at": None,
+        "quote_decision": None,
         "created_by_user_id": user["id"],
         "archived_at": None,
         "archived_by": None
