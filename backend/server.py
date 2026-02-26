@@ -1629,9 +1629,8 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
     await db.tickets.update_one({"id": ticket_id}, {"$set": update_doc})
     
     # Send email via Resend if customer has email and API key is configured
-    # Skip if is_quote_response=true because the quote link email will be sent separately
     customer_email = ticket.get("customer_email")
-    if customer_email and RESEND_API_KEY and not message_data.is_quote_response:
+    if customer_email and RESEND_API_KEY:
         try:
             subject = f"[Ticket #{ticket['ticket_number']}] Resposta ao seu pedido"
             
