@@ -1320,10 +1320,34 @@ Qualquer dúvida estamos disponíveis.`;
               <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center">
                 <Phone className="h-5 w-5 text-zinc-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="text-xs text-zinc-500 font-medium uppercase">Telefone</p>
                 <p className="font-semibold text-slate-900">{ticket.customer_phone}</p>
               </div>
+              {normalizedPhone && (
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={copyWhatsAppMessage}
+                    className="h-8 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                    title="Copiar mensagem WhatsApp"
+                    data-testid="copy-whatsapp-btn"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openWhatsApp}
+                    className="h-8 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                    title="Abrir WhatsApp"
+                    data-testid="open-whatsapp-btn"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
             {ticket.customer_email && (
               <div className="flex items-center gap-3">
