@@ -3710,8 +3710,9 @@ async def test_email(request: TestEmailRequest, current_user: dict = Depends(get
             }
         else:
             # Use Resend
+            email_from = email_settings.get("email_from", EMAIL_FROM) if email_settings else EMAIL_FROM
             params = {
-                "from": EMAIL_FROM,
+                "from": email_from,
                 "to": [request.recipient_email],
                 "subject": f"[{company_name}] Teste de Email",
                 "html": html_content
