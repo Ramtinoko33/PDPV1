@@ -1686,7 +1686,7 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
             """
             
             params = {
-                "from": EMAIL_FROM,
+                "from": email_from,
                 "to": [customer_email],
                 "subject": subject,
                 "html": html_content
