@@ -859,9 +859,10 @@ Qualquer dúvida estamos disponíveis.`;
     try {
       await axios.post(
         `${API_URL}/api/tickets/${id}/notes`,
-        { body: '📲 Mensagem enviada por WhatsApp (manual)', is_system: true },
+        { body: '📲 Mensagem enviada por WhatsApp (manual)' },
         { headers: getAuthHeaders() }
       );
+      fetchData(); // Refresh to show new note
     } catch (err) {
       // Silent fail - don't block WhatsApp opening
     }
