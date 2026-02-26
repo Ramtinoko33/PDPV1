@@ -3803,6 +3803,8 @@ class QuoteResponseData(BaseModel):
     accepted_total: Optional[float] = None
     accepted_count: Optional[int] = None
     quote_valid_until: Optional[str] = None
+    quote_decided_at: Optional[str] = None  # When customer made decision
+    quote_decision: Optional[str] = None  # ACCEPTED or REJECTED
     ticket_attachments: List[AttachmentPublicInfo] = []
 
 # ============== QUOTE OPTIONS ENDPOINTS ==============
