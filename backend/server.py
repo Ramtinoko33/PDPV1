@@ -3825,6 +3825,10 @@ async def save_quote_options(ticket_id: str, data: QuoteOptionsUpdate, current_u
     if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     
+    # Check if quote is locked (already sent to customer)
+    if ticket.get("quote_locked_at"):
+        raise HTTPException(status_code=409, detail="Orçamento bloqueado - já foi enviado ao cliente. Use 'Criar nova versão' para alterações.")
+    
     # Delete existing options
     await db.quote_options.delete_many({"ticket_id": ticket_id})
     
