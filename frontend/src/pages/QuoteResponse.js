@@ -53,9 +53,10 @@ const QuoteResponse = () => {
       setQuote(quoteRes.data);
       setBranding(brandingRes.data);
       
-      if (quoteRes.data.response_status) {
+      // Check if decision already made (use quote_decided_at for definitive status)
+      if (quoteRes.data.quote_decided_at || quoteRes.data.response_status) {
         setSubmitted(true);
-        setResponse(quoteRes.data.response_status);
+        setResponse(quoteRes.data.quote_decision || quoteRes.data.response_status);
         // Mark accepted options as selected
         if (quoteRes.data.quote_options) {
           const acceptedIds = quoteRes.data.quote_options
