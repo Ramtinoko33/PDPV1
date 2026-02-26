@@ -3923,16 +3923,22 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
     }
     await db.quote_links.insert_one(quote_link_doc)
     
-    # Update ticket
+    # Update ticket - LOCK the quote when link is generated
     valid_until = datetime.now(timezone.utc) + timedelta(days=15)
+    now = datetime.now(timezone.utc)
+    update_fields = {
+        "quote_sent": True,
+        "quote_link_token": token,
+        "quote_valid_until": valid_until.isoformat(),
+        "updated_at": now.isoformat()
+    }
+    # Lock quote if not already locked
+    if not ticket.get("quote_locked_at"):
+        update_fields["quote_locked_at"] = now.isoformat()
+    
     await db.tickets.update_one(
         {"id": ticket_id},
-        {"$set": {
-            "quote_sent": True,
-            "quote_link_token": token,
-            "quote_valid_until": valid_until.isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }}
+        {"$set": update_fields}
     )
     
     # Log note
