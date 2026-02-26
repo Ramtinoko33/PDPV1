@@ -173,10 +173,26 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 2. **Edição de Ticket** - Modal completo para editar todos os campos
 3. **Dashboard Urgentes** - Tickets urgentes com destaque visual (sublinhado vermelho)
 
+### Quote Immutability + One-Time Decision (26/02/2026)
+1. **Backoffice Locking:**
+   - Novos campos: `quote_locked_at`, `quote_decided_at`, `quote_decision`
+   - Orçamento bloqueado automaticamente ao gerar link
+   - Edição retorna 409 quando locked
+   - Inputs ficam read-only, badge mostra estado
+2. **Public Quote One-Time Decision:**
+   - Primeira resposta aceite, segunda bloqueada (409)
+   - Página pública mostra "Decisão registada em [data]"
+   - Checkboxes disabled após decisão
+3. **New Version Workflow:**
+   - Botão "Nova Versão" desbloqueia orçamento
+   - Gera novo link, mantém histórico
+
 ### Bug Fixes Anteriores
 - Navegação na lista de tickets
 - Auto-atribuição de agentes na criação
 - assigned_to_name preenchido na criação
+- URLs em texto convertidos em links clicáveis nos emails (26/02/2026)
+- Email duplicado removido - "Gerar Link" não envia email automático (26/02/2026)
 
 ## Test Credentials (ATUALIZADAS)
 - Admin: admin@pdpv.pt / HCNMEnKMLq
@@ -184,6 +200,7 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Agent: agente@pdpv.pt / yHprFGvPUJ
 
 ## Pending Features (Backlog)
+- [ ] P1: Refatorar backend server.py em estrutura modular (/routes, /models, /services)
 - [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
 - [ ] P2: Importação Excel com validação
 - [x] P3: VAPID Keys - configuração correta para Web Push ✅ (21/02/2026)
@@ -192,3 +209,4 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 ## Notes
 - Email via SMTP configurável na UI admin (/admin/settings > Email)
 - Sistema 100% funcional e testado
+- Quote immutability implementado com decisão única do cliente (26/02/2026)
