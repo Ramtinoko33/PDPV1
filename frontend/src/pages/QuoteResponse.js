@@ -488,6 +488,11 @@ const QuoteResponse = () => {
                     <p className="text-emerald-700">
                       {branding?.quote_page_accepted_message || 'Obrigado pela sua resposta. Entraremos em contacto em breve para agendar o serviço.'}
                     </p>
+                    {quote.quote_decided_at && (
+                      <p className="text-sm text-emerald-600 mt-3">
+                        Decisão registada em {new Date(quote.quote_decided_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>
@@ -498,6 +503,11 @@ const QuoteResponse = () => {
                     <p className="text-red-700">
                       {branding?.quote_page_rejected_message || 'Obrigado pela sua resposta. Se mudar de ideias, não hesite em contactar-nos.'}
                     </p>
+                    {quote.quote_decided_at && (
+                      <p className="text-sm text-red-600 mt-3">
+                        Decisão registada em {new Date(quote.quote_decided_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
                   </>
                 )}
               </div>
