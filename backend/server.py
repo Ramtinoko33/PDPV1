@@ -4107,10 +4107,6 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         }}
     )
     
-    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket não encontrado")
-    
     # Update ticket based on response - SET ONE-TIME DECISION FIELDS
     ticket_update = {
         "updated_at": now.isoformat(),
