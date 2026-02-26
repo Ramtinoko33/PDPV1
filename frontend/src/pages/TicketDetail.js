@@ -830,10 +830,21 @@ Respondemos ao seu pedido.
 Qualquer dúvida estamos disponíveis.`;
   };
 
-  const copyWhatsAppMessage = () => {
+  const copyWhatsAppMessage = async () => {
     const message = getWhatsAppMessage();
-    navigator.clipboard.writeText(message);
-    toast.success('Mensagem copiada!');
+    try {
+      await navigator.clipboard.writeText(message);
+      toast.success('Mensagem copiada!');
+    } catch (err) {
+      // Fallback for environments without clipboard permission
+      const textarea = document.createElement('textarea');
+      textarea.value = message;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      toast.success('Mensagem copiada!');
+    }
   };
 
   const openWhatsApp = () => {
