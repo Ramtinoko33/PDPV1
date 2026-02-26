@@ -774,6 +774,24 @@ const TicketDetail = () => {
     return quoteOptions.reduce((sum, o) => sum + (parseFloat(o.amount) || 0), 0);
   };
 
+  // Check if quote is locked (sent to customer)
+  const isQuoteLocked = ticket?.quote_locked_at && !ticket?.quote_decided_at;
+  const isQuoteDecided = ticket?.quote_decided_at;
+  const canEditQuote = !ticket?.quote_locked_at;
+
+  const createNewQuoteVersion = async () => {
+    if (!window.confirm('Criar nova versão do orçamento?\n\nIsto irá desbloquear o orçamento para edição e invalidar o link anterior.')) {
+      return;
+    }
+    try {
+      await axios.post(`${API_URL}/api/tickets/${id}/quote-new-version`, {}, { headers: getAuthHeaders() });
+      toast.success('Nova versão criada - pode editar o orçamento');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao criar nova versão');
+    }
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
