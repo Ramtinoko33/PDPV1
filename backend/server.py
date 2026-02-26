@@ -1657,7 +1657,7 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
                     <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
                     <p>Recebeu uma nova resposta ao seu pedido:</p>
                     <div style="background-color: white; padding: 15px; border-left: 4px solid {email_primary_color}; margin: 20px 0;">
-                        {message_data.body.replace(chr(10), '<br>')}
+                        {convert_urls_to_links(message_data.body.replace(chr(10), '<br>'))}
                     </div>
                     <p style="color: #6b7280; font-size: 14px;">
                         Referência do ticket: <strong>{ticket['ticket_number']}</strong>
