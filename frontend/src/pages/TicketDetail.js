@@ -847,13 +847,25 @@ Qualquer dúvida estamos disponíveis.`;
     }
   };
 
-  const openWhatsApp = () => {
+  const openWhatsApp = async () => {
     const phone = normalizePhone(ticket?.customer_phone);
     if (!phone) {
       toast.error('Número de telefone inválido');
       return;
     }
     const message = encodeURIComponent(getWhatsAppMessage());
+    
+    // Log to history
+    try {
+      await axios.post(
+        `${API_URL}/api/tickets/${id}/notes`,
+        { body: '📲 Mensagem enviada por WhatsApp (manual)', is_system: true },
+        { headers: getAuthHeaders() }
+      );
+    } catch (err) {
+      // Silent fail - don't block WhatsApp opening
+    }
+    
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
   };
 
