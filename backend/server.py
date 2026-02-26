@@ -4111,11 +4111,13 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
     
-    # Update ticket based on response
+    # Update ticket based on response - SET ONE-TIME DECISION FIELDS
     ticket_update = {
         "updated_at": now.isoformat(),
         "quote_response_status": response_data.status,
-        "quote_response_at": now.isoformat()
+        "quote_response_at": now.isoformat(),
+        "quote_decided_at": now.isoformat(),  # Mark decision timestamp
+        "quote_decision": response_data.status  # ACCEPTED or REJECTED
     }
     
     if response_data.status == "ACCEPTED":
