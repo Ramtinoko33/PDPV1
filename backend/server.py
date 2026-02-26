@@ -3964,6 +3964,72 @@ async def generate_quote_link(ticket_id: str, current_user: dict = Depends(get_c
         "email_sent": False  # Email não é enviado automaticamente - utilizador envia manualmente
     }
 
+@api_router.post("/tickets/{ticket_id}/quote-new-version")
+async def create_new_quote_version(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Create a new version of the quote - unlocks for editing and generates new link"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    # Check permissions
+    if current_user["role"] == UserRole.AGENT.value and ticket.get("assigned_to_user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    if current_user["role"] == UserRole.INTERNAL_CREATOR.value:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    # Only allow if quote was previously locked
+    if not ticket.get("quote_locked_at"):
+        raise HTTPException(status_code=400, detail="Orçamento não está bloqueado")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Log previous decision if any
+    previous_decision = ticket.get("quote_decision")
+    previous_total = ticket.get("accepted_total")
+    
+    # Reset quote lock and decision fields for new version
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {
+            "quote_locked_at": None,
+            "quote_decided_at": None,
+            "quote_decision": None,
+            "quote_response_status": None,
+            "quote_response_at": None,
+            "accepted_total": None,
+            "accepted_count": None,
+            "quote_link_token": None,
+            "quote_valid_until": None,
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    # Reset quote options is_accepted status
+    await db.quote_options.update_many(
+        {"ticket_id": ticket_id},
+        {"$set": {"is_accepted": False, "accepted_at": None}}
+    )
+    
+    # Log note
+    note_body = "Nova versão do orçamento criada - desbloqueado para edição"
+    if previous_decision:
+        note_body += f"\n(Decisão anterior: {previous_decision}"
+        if previous_total:
+            note_body += f", Total: {previous_total:.2f}€"
+        note_body += ")"
+    
+    note_doc = {
+        "id": str(uuid.uuid4()),
+        "ticket_id": ticket_id,
+        "created_at": now.isoformat(),
+        "created_by_user_id": current_user["id"],
+        "body": note_body,
+        "is_system": True
+    }
+    await db.notes.insert_one(note_doc)
+    
+    return {"status": "success", "message": "Orçamento desbloqueado para edição"}
+
 @api_router.get("/public/quote/{token}", response_model=QuoteResponseData)
 async def get_public_quote(token: str):
     """Get quote details by public token - NO AUTH REQUIRED"""
