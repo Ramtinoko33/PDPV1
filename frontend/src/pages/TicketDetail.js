@@ -793,6 +793,61 @@ const TicketDetail = () => {
     }
   };
 
+  // WhatsApp Helper Functions
+  const normalizePhone = (phone) => {
+    if (!phone) return null;
+    // Remove spaces and +
+    let normalized = phone.replace(/[\s+]/g, '');
+    // If starts with 9 and has 9 digits, prepend 351 (Portugal)
+    if (/^9\d{8}$/.test(normalized)) {
+      normalized = '351' + normalized;
+    }
+    // If starts with 351, keep as is
+    if (/^351\d{9}$/.test(normalized)) {
+      return normalized;
+    }
+    // Otherwise invalid
+    return null;
+  };
+
+  const getWhatsAppMessage = () => {
+    const ticketCode = ticket?.ticket_number || 'N/A';
+    // Check if there's a public quote link
+    if (ticket?.quote_link_token && ticket?.quote_sent) {
+      const frontendUrl = window.location.origin;
+      const quoteLink = `${frontendUrl}/quote/${ticket.quote_link_token}`;
+      return `PDPV - Ticket ${ticketCode}
+O seu orçamento está pronto.
+
+Pode escolher e aceitar aqui:
+${quoteLink}
+
+Qualquer dúvida responda a esta mensagem.`;
+    }
+    return `PDPV - Ticket ${ticketCode}
+Respondemos ao seu pedido.
+
+Qualquer dúvida estamos disponíveis.`;
+  };
+
+  const copyWhatsAppMessage = () => {
+    const message = getWhatsAppMessage();
+    navigator.clipboard.writeText(message);
+    toast.success('Mensagem copiada!');
+  };
+
+  const openWhatsApp = () => {
+    const phone = normalizePhone(ticket?.customer_phone);
+    if (!phone) {
+      toast.error('Número de telefone inválido');
+      return;
+    }
+    const message = encodeURIComponent(getWhatsAppMessage());
+    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+  };
+
+  const normalizedPhone = ticket ? normalizePhone(ticket.customer_phone) : null;
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
