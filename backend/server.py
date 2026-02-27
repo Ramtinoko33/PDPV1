@@ -1685,7 +1685,7 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb;">
                 <!-- Header -->
                 <div style="background-color: #0B2E4F; padding: 24px 20px; text-align: center;">
-                    <h1 style="color: white; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">Gestor de Pedido</h1>
+                    <h1 style="color: white; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">Gestor De Pedidos</h1>
                     <img src="{logo_url}" alt="Pneus D. Pedro V" style="max-width: 220px; height: auto;" />
                 </div>
                 
