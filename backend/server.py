@@ -1646,44 +1646,83 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
                 branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
                 reply_frontend_url = email_settings.get("frontend_url", FRONTEND_URL) if email_settings else FRONTEND_URL
                 email_from = email_settings.get("email_from", EMAIL_FROM) if email_settings else EMAIL_FROM
-                email_primary_color = branding.get("primary_color", "#f97316")
             except Exception:
                 reply_frontend_url = FRONTEND_URL
                 email_from = EMAIL_FROM
-                email_primary_color = "#f97316"
             
             reply_token = await get_or_create_reply_token(ticket_id)
             reply_link_url = f"{reply_frontend_url}/ticket/reply/{reply_token}"
             
-            # Build HTML content
-            html_content = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background-color: {email_primary_color}; padding: 20px; text-align: center;">
-                    <h1 style="color: white; margin: 0;">PDPV Tickets</h1>
-                </div>
-                <div style="padding: 20px; background-color: #f9fafb;">
-                    <p>Olá <strong>{ticket['customer_name']}</strong>,</p>
-                    <p>Recebeu uma nova resposta ao seu pedido:</p>
-                    <div style="background-color: white; padding: 15px; border-left: 4px solid {email_primary_color}; margin: 20px 0;">
-                        {convert_urls_to_links(message_data.body.replace(chr(10), '<br>'))}
+            # Extract quote link from message if present and remove from visible text
+            message_body = message_data.body
+            quote_link = None
+            quote_link_match = re.search(r'(https?://[^\s]+/quote/[^\s]+)', message_body)
+            if quote_link_match:
+                quote_link = quote_link_match.group(1)
+                # Remove the URL from message body
+                message_body = re.sub(r'https?://[^\s]+/quote/[^\s]+', '', message_body).strip()
+            
+            # Clean up message - convert newlines to <br> and remove empty lines
+            message_html = message_body.replace(chr(10), '<br>')
+            message_html = re.sub(r'(<br>\s*){3,}', '<br><br>', message_html)  # Max 2 line breaks
+            
+            # Logo URL
+            logo_url = "https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/6nemfz40_LOGOTIPO-PNEUS-D-PEDRO-V-2.png"
+            
+            # Build quote button HTML (only if quote_link exists)
+            quote_button_html = ""
+            if quote_link:
+                quote_button_html = f'''
+                    <div style="text-align: center; margin: 28px 0 16px 0;">
+                        <a href="{quote_link}" style="background-color: #F4B400; color: #0B2E4F; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                            Ver Proposta / Orçamento
+                        </a>
                     </div>
-                    <p style="color: #6b7280; font-size: 14px;">
+                '''
+            
+            # Build HTML content with new design
+            html_content = f'''
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb;">
+                <!-- Header -->
+                <div style="background-color: #0B2E4F; padding: 24px 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">Gestor de Pedido</h1>
+                    <img src="{logo_url}" alt="Pneus D. Pedro V" style="max-width: 220px; height: auto;" />
+                </div>
+                
+                <!-- Body -->
+                <div style="padding: 24px 20px; background-color: #f9fafb;">
+                    <p style="color: #333; font-size: 15px; margin: 0 0 16px 0;">Olá <strong>{ticket['customer_name']}</strong>,</p>
+                    <p style="color: #333; font-size: 15px; margin: 0 0 20px 0;">Recebeu uma nova resposta ao seu pedido:</p>
+                    
+                    <!-- Message Box -->
+                    <div style="background-color: white; padding: 16px; border-left: 4px solid #F4B400; margin: 0 0 20px 0; border-radius: 0 6px 6px 0;">
+                        <p style="color: #333; font-size: 14px; line-height: 1.6; margin: 0;">{message_html}</p>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 8px 0;">
                         Referência do ticket: <strong>{ticket['ticket_number']}</strong>
                     </p>
-                    {f'<p style="color: #6b7280; font-size: 14px;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
-                    <div style="text-align: center; margin: 24px 0;">
-                        <a href="{reply_link_url}" style="background-color: {email_primary_color}; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">
+                    {f'<p style="color: #6b7280; font-size: 13px; margin: 0 0 16px 0;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
+                    
+                    <!-- Primary Button: Quote (only if quote_link exists) -->
+                    {quote_button_html}
+                    
+                    <!-- Secondary Button: Reply -->
+                    <div style="text-align: center; margin: 16px 0 8px 0;">
+                        <a href="{reply_link_url}" style="background-color: #0F5132; color: #FFFFFF; padding: 8px 18px; text-decoration: none; border-radius: 6px; font-size: 13px; display: inline-block;">
                             Responder / Enviar documentos
                         </a>
                     </div>
                 </div>
-                <div style="background-color: #1f2937; padding: 15px; text-align: center;">
+                
+                <!-- Footer -->
+                <div style="background-color: #0B2E4F; padding: 16px; text-align: center;">
                     <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                        PDPV - Pneus de Pedro V. | Este é um email automático.
+                        Pneus D. Pedro V. | Este é um email automático.
                     </p>
                 </div>
             </div>
-            """
+            '''
             
             params = {
                 "from": email_from,
