@@ -318,6 +318,21 @@ export const NotificationProvider = ({ children }) => {
       checkPushSubscription().then(isSubscribed => {
         setWebPushEnabled(isSubscribed);
       });
+
+      // Fallback polling every 2 minutes (in case WebSocket disconnects)
+      const pollInterval = setInterval(() => {
+        fetchNotifications();
+      }, 2 * 60 * 1000);
+
+      return () => {
+        clearInterval(pollInterval);
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+      };
     }
 
     return () => {
