@@ -27,14 +27,8 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Auto-refresh page every 5 minutes
-  useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      window.location.reload();
-    }, 5 * 60 * 1000); // 5 minutes in milliseconds
-
-    return () => clearInterval(refreshInterval);
-  }, []);
+  // Note: Removed auto-refresh that was causing data loss when typing
+  // Notifications are now handled via NotificationContext polling
 
   const handleLogout = () => {
     logout();
