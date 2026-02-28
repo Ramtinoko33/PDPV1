@@ -1669,59 +1669,90 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
             # Logo URL (white text version)
             logo_url = "https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/bstd2ega_logotipo%20de%20letras%20brancas.png"
             
-            # Build quote button HTML (only if quote_link exists)
+            # Build quote button HTML (only if quote_link exists) - Mobile optimized
             quote_button_html = ""
             if quote_link:
                 quote_button_html = f'''
-                    <div style="text-align: center; margin: 28px 0 16px 0;">
-                        <a href="{quote_link}" style="background-color: #F4B400; color: #0B2E4F; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                    <!--[if mso]>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr><td align="center" style="padding: 20px 0 12px 0;">
+                    <![endif]-->
+                    <div style="text-align: center; margin: 20px 0 12px 0;">
+                        <a href="{quote_link}" style="background-color: #F4B400; color: #0B2E4F; padding: 14px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block; min-width: 200px; box-sizing: border-box;">
                             Ver Proposta / Orçamento
                         </a>
                     </div>
+                    <!--[if mso]>
+                    </td></tr></table>
+                    <![endif]-->
                 '''
             
-            # Build HTML content with new design
+            # Build HTML content with compact responsive design
             html_content = f'''
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb;">
-                <!-- Header -->
-                <div style="background-color: #0B2E4F; padding: 24px 20px; text-align: center;">
-                    <h1 style="color: white; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">Gestor De Pedidos</h1>
-                    <img src="{logo_url}" alt="Pneus D. Pedro V" style="max-width: 220px; height: auto;" />
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Gestor De Pedidos</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #f4f4f4;">
+            <!--[if mso]>
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center">
+            <tr><td>
+            <![endif]-->
+            <div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #f9fafb;">
+                <!-- Header - Compact -->
+                <div style="background-color: #0B2E4F; padding: 18px 16px; text-align: center;">
+                    <h1 style="color: white; margin: 0 0 10px 0; font-size: 20px; font-weight: bold; line-height: 1.2;">Gestor De Pedidos</h1>
+                    <img src="{logo_url}" alt="Pneus D. Pedro V" style="max-width: 160px; width: 45%; height: auto; display: inline-block;" />
                 </div>
                 
                 <!-- Body -->
-                <div style="padding: 24px 20px; background-color: #f9fafb;">
-                    <p style="color: #333; font-size: 15px; margin: 0 0 16px 0;">Olá <strong>{ticket['customer_name']}</strong>,</p>
-                    <p style="color: #333; font-size: 15px; margin: 0 0 20px 0;">Recebeu uma nova resposta ao seu pedido:</p>
+                <div style="padding: 20px 18px; background-color: #f9fafb;">
+                    <p style="color: #333; font-size: 15px; margin: 0 0 14px 0; line-height: 1.4;">Olá <strong>{ticket['customer_name']}</strong>,</p>
+                    <p style="color: #333; font-size: 15px; margin: 0 0 16px 0; line-height: 1.4;">Recebeu uma nova resposta ao seu pedido:</p>
                     
                     <!-- Message Box -->
-                    <div style="background-color: white; padding: 16px; border-left: 4px solid #F4B400; margin: 0 0 20px 0; border-radius: 0 6px 6px 0;">
+                    <div style="background-color: white; padding: 14px 16px; border-left: 4px solid #F4B400; margin: 0 0 16px 0; border-radius: 0 6px 6px 0;">
                         <p style="color: #333; font-size: 14px; line-height: 1.6; margin: 0;">{message_html}</p>
                     </div>
                     
-                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 8px 0;">
-                        Referência do ticket: <strong>{ticket['ticket_number']}</strong>
+                    <p style="color: #6b7280; font-size: 13px; margin: 0 0 6px 0;">
+                        Referência: <strong>{ticket['ticket_number']}</strong>
                     </p>
-                    {f'<p style="color: #6b7280; font-size: 13px; margin: 0 0 16px 0;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
+                    {f'<p style="color: #6b7280; font-size: 13px; margin: 0 0 12px 0;">Este email inclui {len(message_data.attachment_ids)} anexo(s).</p>' if message_data.attachment_ids else ''}
                     
                     <!-- Primary Button: Quote (only if quote_link exists) -->
                     {quote_button_html}
                     
                     <!-- Secondary Button: Reply -->
-                    <div style="text-align: center; margin: 16px 0 8px 0;">
-                        <a href="{reply_link_url}" style="background-color: #0F5132; color: #FFFFFF; padding: 8px 18px; text-decoration: none; border-radius: 6px; font-size: 13px; display: inline-block;">
+                    <!--[if mso]>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr><td align="center" style="padding: 12px 0 6px 0;">
+                    <![endif]-->
+                    <div style="text-align: center; margin: 12px 0 6px 0;">
+                        <a href="{reply_link_url}" style="background-color: #0F5132; color: #FFFFFF; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-size: 13px; display: inline-block;">
                             Responder / Enviar documentos
                         </a>
                     </div>
+                    <!--[if mso]>
+                    </td></tr></table>
+                    <![endif]-->
                 </div>
                 
-                <!-- Footer -->
-                <div style="background-color: #0B2E4F; padding: 16px; text-align: center;">
-                    <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                        Pneus D. Pedro V. | Este é um email automático.
+                <!-- Footer - Compact -->
+                <div style="background-color: #0B2E4F; padding: 12px 16px; text-align: center;">
+                    <p style="color: #9ca3af; font-size: 11px; margin: 0; line-height: 1.3;">
+                        Pneus D. Pedro V. | Email automático
                     </p>
                 </div>
             </div>
+            <!--[if mso]>
+            </td></tr></table>
+            <![endif]-->
+            </body>
+            </html>
             '''
             
             params = {
