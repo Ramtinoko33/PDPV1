@@ -1667,7 +1667,7 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
             message_html = re.sub(r'(<br>\s*){3,}', '<br><br>', message_html)  # Max 2 line breaks
             
             # Logo URL (white text version)
-            logo_url = "https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/klhakbk1_WhatsApp%20Image%202026-02-11%20at%2016.45.30.jpeg"
+            logo_url = "https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/bstd2ega_logotipo%20de%20letras%20brancas.png"
             
             # Build quote button HTML (only if quote_link exists)
             quote_button_html = ""
