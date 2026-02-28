@@ -1702,10 +1702,16 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
             <tr><td>
             <![endif]-->
             <div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #f9fafb;">
-                <!-- Header - Compact -->
-                <div style="background-color: #0B2E4F; padding: 18px 16px; text-align: center;">
-                    <h1 style="color: white; margin: 0 0 10px 0; font-size: 20px; font-weight: bold; line-height: 1.2;">Gestor De Pedidos</h1>
-                    <img src="{logo_url}" alt="Pneus D. Pedro V" style="max-width: 160px; width: 45%; height: auto; display: inline-block;" />
+                <!-- Header - Minimal -->
+                <div style="background-color: #0B2E4F; padding: 12px 16px; text-align: center;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                            <td style="text-align: center; vertical-align: middle;">
+                                <span style="color: white; font-size: 16px; font-weight: bold;">Gestor De Pedidos</span>
+                                <span style="color: #9ca3af; font-size: 12px; margin-left: 8px;">| Pneus D. Pedro V</span>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
                 
                 <!-- Body -->
@@ -1741,10 +1747,10 @@ async def create_message(ticket_id: str, message_data: MessageCreate, current_us
                     <![endif]-->
                 </div>
                 
-                <!-- Footer - Compact -->
-                <div style="background-color: #0B2E4F; padding: 12px 16px; text-align: center;">
-                    <p style="color: #9ca3af; font-size: 11px; margin: 0; line-height: 1.3;">
-                        Pneus D. Pedro V. | Email automático
+                <!-- Footer - Minimal -->
+                <div style="background-color: #0B2E4F; padding: 10px 16px; text-align: center;">
+                    <p style="color: #9ca3af; font-size: 11px; margin: 0;">
+                        Email automático | Pneus D. Pedro V.
                     </p>
                 </div>
             </div>
