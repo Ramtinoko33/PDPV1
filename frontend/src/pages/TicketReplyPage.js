@@ -108,13 +108,11 @@ export default function TicketReplyPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const primaryColor = ticket?.primary_color || '#f97316';
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-zinc-500">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: primaryColor }} />
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: BRAND_YELLOW }} />
           <p className="text-sm">A carregar...</p>
         </div>
       </div>
@@ -123,7 +121,7 @@ export default function TicketReplyPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-red-200">
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
             <AlertCircle className="h-12 w-12 text-red-500" />
