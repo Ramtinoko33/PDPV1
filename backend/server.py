@@ -686,8 +686,8 @@ async def login(credentials: UserLogin, request: Request):
     }
 
 @api_router.post("/auth/refresh")
-async def refresh_token(request: Request):
-    """Exchange refresh token for new access token"""
+async def refresh_token_endpoint(request: Request):
+    """Exchange refresh token for new access token with rotation"""
     body = await request.json()
     refresh_token_str = body.get("refresh_token")
     
@@ -710,17 +710,36 @@ async def refresh_token(request: Request):
         if not user:
             raise HTTPException(status_code=401, detail="Utilizador não encontrado")
         
-        # Validate token_version
+        # Validate token_version (logout invalidation)
         token_version = payload.get("tv", 0)
         user_token_version = user.get("token_version", 0)
         if token_version != user_token_version:
             raise HTTPException(status_code=401, detail="Sessão inválida. Faça login novamente.")
         
-        # Issue new tokens
-        new_access_token = create_access_token({"sub": user["id"], "role": user["role"]}, user_token_version)
-        new_refresh_token = create_refresh_token({"sub": user["id"]}, user_token_version)
+        # Validate refresh_version (rotation check)
+        refresh_version = payload.get("rv", 0)
+        user_refresh_version = user.get("refresh_version", 0)
+        if refresh_version != user_refresh_version:
+            # Possible token reuse attack - invalidate all sessions
+            logger.warning(f"[SECURITY] Refresh token reuse detected for user {user['email']}. Invalidating all sessions.")
+            await db.users.update_one(
+                {"id": user_id},
+                {"$inc": {"token_version": 1, "refresh_version": 1}}
+            )
+            raise HTTPException(status_code=401, detail="Token já utilizado. Por segurança, faça login novamente.")
         
-        logger.info(f"[AUTH] Token refreshed for: {user['email']}")
+        # Rotate: increment refresh_version
+        new_refresh_version = user_refresh_version + 1
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {"refresh_version": new_refresh_version}}
+        )
+        
+        # Issue new tokens with updated versions
+        new_access_token = create_access_token({"sub": user["id"], "role": user["role"]}, user_token_version)
+        new_refresh_token = create_refresh_token({"sub": user["id"]}, user_token_version, new_refresh_version)
+        
+        logger.info(f"[AUTH] Token refreshed for: {user['email']} (rv: {user_refresh_version} -> {new_refresh_version})")
         
         return {
             "token": new_access_token,
@@ -733,17 +752,15 @@ async def refresh_token(request: Request):
 
 @api_router.post("/auth/logout")
 async def logout(current_user: dict = Depends(get_current_user)):
-    """Logout - invalidates all tokens by incrementing token_version"""
+    """Logout - invalidates all tokens by incrementing token_version and refresh_version"""
     user_id = current_user["id"]
-    current_version = current_user.get("token_version", 0)
-    new_version = current_version + 1
     
     await db.users.update_one(
         {"id": user_id},
-        {"$set": {"token_version": new_version}}
+        {"$inc": {"token_version": 1, "refresh_version": 1}}
     )
     
-    logger.info(f"[AUTH] Logout: {current_user['email']} - token_version incremented to {new_version}")
+    logger.info(f"[AUTH] Logout: {current_user['email']} - all tokens invalidated")
     
     return {"status": "ok", "message": "Sessão terminada. Todos os dispositivos foram desconectados."}
 
