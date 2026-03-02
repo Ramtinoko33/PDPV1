@@ -3468,6 +3468,186 @@ async def download_attachment_public(token: str, attachment_id: str):
         media_type=attachment["file_type"]
     )
 
+@api_router.get("/public/quote/{token}/pdf")
+async def generate_quote_pdf(token: str):
+    """Generate PDF on-the-fly for public quote - NO AUTH REQUIRED"""
+    from fastapi.responses import Response
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.colors import HexColor
+    import io
+    
+    # Validate token
+    quote_link = await db.quote_links.find_one({"token": token}, {"_id": 0})
+    if not quote_link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(quote_link["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=410, detail="Link expirado")
+    
+    # Get ticket and quote options
+    ticket = await db.tickets.find_one({"id": quote_link["ticket_id"]}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    
+    quote_options = await db.quote_options.find({"ticket_id": quote_link["ticket_id"]}, {"_id": 0}).to_list(100)
+    
+    # Get branding
+    branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+    company_name = branding.get("company_name", "Pneus D. Pedro V")
+    
+    # Create PDF in memory
+    buffer = io.BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    
+    # Brand colors
+    NAVY = HexColor('#0B2E4F')
+    YELLOW = HexColor('#F4B400')
+    GRAY = HexColor('#666666')
+    
+    # Header
+    c.setFillColor(NAVY)
+    c.rect(0, height - 80, width, 80, fill=1, stroke=0)
+    c.setFillColor(HexColor('#FFFFFF'))
+    c.setFont("Helvetica-Bold", 20)
+    c.drawCentredString(width/2, height - 45, company_name)
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(width/2, height - 65, "Gestor De Pedidos")
+    
+    # Title
+    y = height - 120
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(40, y, f"Orçamento #{ticket['ticket_number']}")
+    
+    # Customer info
+    y -= 40
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(NAVY)
+    c.drawString(40, y, "Cliente:")
+    c.setFont("Helvetica", 12)
+    c.setFillColor(GRAY)
+    c.drawString(100, y, ticket.get("customer_name", "-"))
+    
+    y -= 20
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(NAVY)
+    c.drawString(40, y, "Telefone:")
+    c.setFont("Helvetica", 12)
+    c.setFillColor(GRAY)
+    c.drawString(110, y, ticket.get("customer_phone", "-"))
+    
+    if ticket.get("vehicle_plate"):
+        y -= 20
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(NAVY)
+        c.drawString(40, y, "Matrícula:")
+        c.setFont("Helvetica", 12)
+        c.setFillColor(GRAY)
+        c.drawString(115, y, ticket.get("vehicle_plate", "-"))
+    
+    # Description
+    if ticket.get("description"):
+        y -= 35
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(NAVY)
+        c.drawString(40, y, "Descrição:")
+        y -= 18
+        c.setFont("Helvetica", 10)
+        c.setFillColor(GRAY)
+        # Wrap description text
+        desc_lines = ticket["description"].split("\n")
+        for line in desc_lines[:10]:  # Limit to 10 lines
+            if len(line) > 80:
+                line = line[:80] + "..."
+            c.drawString(40, y, line)
+            y -= 14
+    
+    # Quote Options
+    y -= 30
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, y, "Opções de Orçamento:")
+    
+    total = 0
+    if quote_options:
+        for i, opt in enumerate(quote_options, 1):
+            y -= 25
+            if y < 100:  # New page if needed
+                c.showPage()
+                y = height - 50
+            
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(40, y, f"Opção {i}:")
+            
+            c.setFont("Helvetica", 11)
+            c.setFillColor(GRAY)
+            desc = opt.get("description", "-")
+            if len(desc) > 60:
+                desc = desc[:60] + "..."
+            c.drawString(100, y, desc)
+            
+            amount = float(opt.get("amount", 0) or 0)
+            total += amount
+            c.setFillColor(NAVY)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawRightString(width - 40, y, f"{amount:.2f} €")
+    elif ticket.get("quote_value"):
+        y -= 25
+        total = float(ticket.get("quote_value", 0))
+        c.setFillColor(GRAY)
+        c.setFont("Helvetica", 11)
+        c.drawString(40, y, "Valor do orçamento")
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawRightString(width - 40, y, f"{total:.2f} €")
+    
+    # Total
+    y -= 35
+    c.setFillColor(YELLOW)
+    c.rect(40, y - 5, width - 80, 25, fill=1, stroke=0)
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y + 3, "TOTAL:")
+    c.drawRightString(width - 50, y + 3, f"{total:.2f} €")
+    
+    # Validity
+    y -= 40
+    valid_until = ticket.get("quote_valid_until", "")
+    if valid_until:
+        try:
+            valid_date = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+            c.setFillColor(GRAY)
+            c.setFont("Helvetica", 10)
+            c.drawString(40, y, f"Válido até: {valid_date.strftime('%d/%m/%Y')}")
+        except:
+            pass
+    
+    # Footer
+    c.setFillColor(GRAY)
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(width/2, 30, f"Gerado automaticamente em {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')}")
+    
+    c.save()
+    
+    # Return PDF
+    buffer.seek(0)
+    pdf_bytes = buffer.read()
+    
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="orcamento_{ticket["ticket_number"]}.pdf"',
+            "Content-Length": str(len(pdf_bytes))
+        }
+    )
+
 # ============== PUBLIC REPLY ENDPOINTS ==============
 @api_router.get("/public/reply/{token}", response_model=PublicReplyTicketData)
 async def get_public_reply(token: str):
