@@ -305,3 +305,149 @@ async def add_vehicle(customer_id: str, vehicle_data: VehicleCreate, current_use
     }
     await db.vehicles.insert_one(vehicle_doc)
     return VehicleResponse(**vehicle_doc)
+
+
+@router.post("/import")
+async def import_customers(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Import customers from Excel file."""
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para importar")
+    
+    import pandas as pd
+    import io
+    
+    content = await file.read()
+    xlsx = pd.ExcelFile(io.BytesIO(content))
+    
+    imported_customers = 0
+    imported_vehicles = 0
+    errors = []
+    
+    customers_df = None
+    vehicles_df = None
+    
+    for sheet in xlsx.sheet_names:
+        if 'cliente' in sheet.lower():
+            customers_df = pd.read_excel(xlsx, sheet_name=sheet)
+        elif 'viatura' in sheet.lower():
+            vehicles_df = pd.read_excel(xlsx, sheet_name=sheet)
+    
+    if customers_df is None:
+        raise HTTPException(status_code=400, detail="Folha de clientes não encontrada")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    customer_map = {}
+    
+    for _, row in customers_df.iterrows():
+        try:
+            code = str(row.get('Código', '')).strip()
+            if not code or code == 'nan':
+                continue
+            
+            name = str(row.get('Nome', '')).strip()
+            if not name or name == 'nan':
+                continue
+            
+            if code not in customer_map:
+                customer_map[code] = {
+                    "code": code,
+                    "name": name,
+                    "nif": str(row.get('Nif', '')).strip() if pd.notna(row.get('Nif')) else None,
+                    "customer_type": str(row.get('tipo de cliente', '')).strip() if pd.notna(row.get('tipo de cliente')) else None,
+                    "address": str(row.get('Morada', '')).strip() if pd.notna(row.get('Morada')) else None,
+                    "phones": set(),
+                    "fax": str(row.get('Fax', '')).strip() if pd.notna(row.get('Fax')) else None,
+                    "emails": set()
+                }
+            
+            for phone_col in ['Telefone1', 'Telefone2']:
+                phone = row.get(phone_col)
+                if pd.notna(phone):
+                    phone_str = str(int(phone) if isinstance(phone, float) else phone).strip()
+                    if phone_str and phone_str != 'nan':
+                        customer_map[code]["phones"].add(phone_str)
+            
+            email = row.get('Email')
+            if pd.notna(email):
+                email_str = str(email).strip()
+                if email_str and email_str != 'nan' and '@' in email_str:
+                    customer_map[code]["emails"].add(email_str)
+        except Exception as e:
+            errors.append(f"Erro na linha cliente: {str(e)}")
+    
+    customer_id_map = {}
+    for code, cdata in customer_map.items():
+        try:
+            existing = await db.customers.find_one({"code": code})
+            if existing:
+                customer_id_map[cdata["name"]] = existing["id"]
+                await db.customers.update_one(
+                    {"id": existing["id"]},
+                    {"$addToSet": {
+                        "phones": {"$each": list(cdata["phones"])},
+                        "emails": {"$each": list(cdata["emails"])}
+                    }}
+                )
+                continue
+            
+            customer_id = str(uuid.uuid4())
+            customer_doc = {
+                "id": customer_id,
+                "code": code,
+                "name": cdata["name"],
+                "nif": cdata["nif"],
+                "customer_type": cdata["customer_type"],
+                "address": cdata["address"],
+                "phones": list(cdata["phones"]),
+                "fax": cdata["fax"],
+                "emails": list(cdata["emails"]),
+                "created_at": now,
+                "updated_at": now
+            }
+            await db.customers.insert_one(customer_doc)
+            customer_id_map[cdata["name"]] = customer_id
+            imported_customers += 1
+        except Exception as e:
+            errors.append(f"Erro ao criar cliente {cdata['name']}: {str(e)}")
+    
+    if vehicles_df is not None:
+        for _, row in vehicles_df.iterrows():
+            try:
+                plate = str(row.get('Matrícula', '')).strip().upper()
+                if not plate or plate == 'NAN':
+                    continue
+                
+                client_name = str(row.get('Cliente', '')).strip()
+                model = str(row.get('Modelo', '')).strip() if pd.notna(row.get('Modelo')) else None
+                obs = str(row.get('Observações', '')).strip() if pd.notna(row.get('Observações')) else None
+                
+                customer_id = customer_id_map.get(client_name)
+                if not customer_id:
+                    customer = await db.customers.find_one({"name": client_name}, {"_id": 0, "id": 1})
+                    if customer:
+                        customer_id = customer["id"]
+                    else:
+                        continue
+                
+                existing = await db.vehicles.find_one({"plate": plate})
+                if existing:
+                    continue
+                
+                vehicle_doc = {
+                    "id": str(uuid.uuid4()),
+                    "customer_id": customer_id,
+                    "plate": plate,
+                    "model": model,
+                    "observations": obs
+                }
+                await db.vehicles.insert_one(vehicle_doc)
+                imported_vehicles += 1
+            except Exception as e:
+                errors.append(f"Erro ao criar veículo: {str(e)}")
+    
+    return {
+        "message": "Importação concluída",
+        "imported_customers": imported_customers,
+        "imported_vehicles": imported_vehicles,
+        "errors": errors[:10]
+    }
