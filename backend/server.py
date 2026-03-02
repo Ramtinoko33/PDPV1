@@ -4759,6 +4759,16 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on application startup"""
+    # Create TTL index for login attempts cleanup (30 days)
+    try:
+        await db.auth_login_attempts.create_index(
+            "updated_at",
+            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
+        )
+        logger.info("[STARTUP] TTL index created for auth_login_attempts (30 days)")
+    except Exception as e:
+        logger.warning(f"[STARTUP] TTL index may already exist: {e}")
+    
     # Start SLA check background task
     asyncio.create_task(run_sla_check())
     logger.info("[STARTUP] SLA background check started (runs every 15 minutes)")
