@@ -23,6 +23,16 @@ import re
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Import modular components
+from db import db, client
+from schemas.user import UserRole, UserCreate, UserLogin, UserResponse, UserUpdate, DashboardConfigUpdate
+from core.security import (
+    SECRET_KEY, ALGORITHM, pwd_context,
+    create_access_token, create_refresh_token, get_current_user,
+    hash_password, verify_password
+)
+from routes.auth import router as auth_router
+
 # Helper function to convert URLs in text to clickable links
 def convert_urls_to_links(text: str) -> str:
     """Convert plain text URLs to HTML anchor tags"""
@@ -31,11 +41,6 @@ def convert_urls_to_links(text: str) -> str:
         url = match.group(1)
         return f'<a href="{url}" style="color: #f97316; text-decoration: underline;">{url}</a>'
     return re.sub(url_pattern, replace_url, text)
-
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
 
 # Resend config
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
