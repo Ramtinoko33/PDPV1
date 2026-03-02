@@ -124,11 +124,7 @@ async def api_health_check():
     return {"status": "healthy", "service": "pdpv-tickets-api"}
 
 # ============== ENUMS ==============
-class UserRole(str, Enum):
-    ADMIN = "ADMIN"
-    SUPERVISOR = "SUPERVISOR"
-    AGENT = "AGENT"
-    INTERNAL_CREATOR = "INTERNAL_CREATOR"
+# UserRole is imported from schemas.user
 
 class TicketChannel(str, Enum):
     TELEFONE = "TELEFONE"
@@ -173,36 +169,8 @@ class AlertType(str, Enum):
     FOLLOWUP = "FOLLOWUP"
 
 # ============== MODELS ==============
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    role: UserRole = UserRole.AGENT
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    email: str
-    name: str
-    role: UserRole
-    created_at: str
-    dashboard_default_types: List[str] = []
-    dashboard_default_states: List[str] = []
-    dashboard_only_mine: bool = False
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    role: Optional[UserRole] = None
-    password: Optional[str] = None
-
-class DashboardConfigUpdate(BaseModel):
-    dashboard_default_types: List[str] = []
-    dashboard_default_states: List[str] = []
-    dashboard_only_mine: bool = False
+# User models (UserCreate, UserLogin, UserResponse, UserUpdate, DashboardConfigUpdate) 
+# are imported from schemas.user
 
 class TicketCreate(BaseModel):
     customer_name: str
