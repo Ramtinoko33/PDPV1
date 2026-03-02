@@ -428,7 +428,8 @@ const QuoteResponse = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <Button
                     variant="outline"
-                    className="h-14 text-lg border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
+                    className="h-14 text-lg border-2"
+                    style={{ borderColor: '#dc2626', color: '#dc2626' }}
                     onClick={() => submitResponse('REJECTED')}
                     disabled={submitting || isExpired}
                     data-testid="reject-quote-btn"
@@ -441,8 +442,8 @@ const QuoteResponse = () => {
                     Recusar Tudo
                   </Button>
                   <Button
-                    className="h-14 text-lg"
-                    style={{ backgroundColor: branding?.primary_color || '#16a34a' }}
+                    className="h-14 text-lg font-bold"
+                    style={{ backgroundColor: BRAND_YELLOW, color: BRAND_NAVY }}
                     onClick={() => submitResponse('ACCEPTED')}
                     disabled={submitting || isExpired || (hasOptions && selectedOptions.length === 0)}
                     data-testid="accept-quote-btn"
