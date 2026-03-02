@@ -48,18 +48,6 @@ EMAIL_FROM = os.environ.get('EMAIL_FROM', 'onboarding@resend.dev')
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
-# JWT Config - SECURITY: No fallback, must be set in environment
-JWT_SECRET = os.environ.get('JWT_SECRET')
-if not JWT_SECRET:
-    raise RuntimeError("FATAL: JWT_SECRET environment variable is required. Server cannot start without it.")
-SECRET_KEY = JWT_SECRET
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 2  # Short-lived access token
-REFRESH_TOKEN_EXPIRE_DAYS = 14  # Long-lived refresh token
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # File storage
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
