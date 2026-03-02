@@ -450,20 +450,25 @@ def compute_sla_due() -> datetime:
 
 def create_access_token(data: dict, token_version: int = 0):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode.update({
         "exp": expire,
+        "iat": int(now.timestamp()),  # Issued at
         "tv": token_version,  # Token version for revocation
         "type": "access"
     })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def create_refresh_token(data: dict, token_version: int = 0):
+def create_refresh_token(data: dict, token_version: int = 0, refresh_version: int = 0):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({
         "exp": expire,
-        "tv": token_version,
+        "iat": int(now.timestamp()),  # Issued at
+        "tv": token_version,  # Token version (logout invalidation)
+        "rv": refresh_version,  # Refresh version (rotation)
         "type": "refresh"
     })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
