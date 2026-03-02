@@ -654,11 +654,18 @@ async def login(credentials: UserLogin, request: Request):
     # Success - clear attempts
     await clear_login_attempts(credentials.email, client_ip)
     
-    token = create_access_token({"sub": user["id"], "role": user["role"]})
+    # Get token_version (default 0 for existing users)
+    token_version = user.get("token_version", 0)
+    
+    # Create tokens
+    access_token = create_access_token({"sub": user["id"], "role": user["role"]}, token_version)
+    refresh_token = create_refresh_token({"sub": user["id"]}, token_version)
+    
     logger.info(f"[AUTH] Successful login: {user['email']} from {client_ip}")
     
     return {
-        "token": token,
+        "token": access_token,
+        "refresh_token": refresh_token,
         "user": {
             "id": user["id"],
             "email": user["email"],
@@ -667,6 +674,68 @@ async def login(credentials: UserLogin, request: Request):
             "created_at": user["created_at"]
         }
     }
+
+@api_router.post("/auth/refresh")
+async def refresh_token(request: Request):
+    """Exchange refresh token for new access token"""
+    body = await request.json()
+    refresh_token_str = body.get("refresh_token")
+    
+    if not refresh_token_str:
+        raise HTTPException(status_code=400, detail="Refresh token não fornecido")
+    
+    try:
+        payload = jwt.decode(refresh_token_str, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Validate token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Token inválido")
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        
+        # Get user from DB
+        user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="Utilizador não encontrado")
+        
+        # Validate token_version
+        token_version = payload.get("tv", 0)
+        user_token_version = user.get("token_version", 0)
+        if token_version != user_token_version:
+            raise HTTPException(status_code=401, detail="Sessão inválida. Faça login novamente.")
+        
+        # Issue new tokens
+        new_access_token = create_access_token({"sub": user["id"], "role": user["role"]}, user_token_version)
+        new_refresh_token = create_refresh_token({"sub": user["id"]}, user_token_version)
+        
+        logger.info(f"[AUTH] Token refreshed for: {user['email']}")
+        
+        return {
+            "token": new_access_token,
+            "refresh_token": new_refresh_token
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expirado. Faça login novamente.")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+@api_router.post("/auth/logout")
+async def logout(current_user: dict = Depends(get_current_user)):
+    """Logout - invalidates all tokens by incrementing token_version"""
+    user_id = current_user["id"]
+    current_version = current_user.get("token_version", 0)
+    new_version = current_version + 1
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"token_version": new_version}}
+    )
+    
+    logger.info(f"[AUTH] Logout: {current_user['email']} - token_version incremented to {new_version}")
+    
+    return {"status": "ok", "message": "Sessão terminada. Todos os dispositivos foram desconectados."}
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: dict = Depends(get_current_user)):
