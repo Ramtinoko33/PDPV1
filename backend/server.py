@@ -185,6 +185,11 @@ async def log_status_change(ticket_id: str, old_status: Optional[str], new_statu
 # ============== AUTH ROUTES ==============
 # Auth routes (register, login, refresh, logout, /me) are in routes/auth.py
 
+# ============== CUSTOMER/USER/VEHICLE ROUTES ==============
+# Customer routes are in routes/customers.py
+# User management routes are in routes/users.py
+# Vehicle routes are in routes/vehicles.py
+
 # ============== TICKET ROUTES ==============
 @api_router.post("/tickets", response_model=TicketResponse)
 async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
