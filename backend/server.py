@@ -547,13 +547,14 @@ async def register(user_data: UserCreate):
         "password_hash": hashed_password,
         "name": user_data.name,
         "role": user_data.role.value,
-        "token_version": 0,  # For token revocation
+        "token_version": 0,  # For access token revocation (logout)
+        "refresh_version": 0,  # For refresh token rotation
         "created_at": now
     }
     await db.users.insert_one(user_doc)
     
     access_token = create_access_token({"sub": user_id, "role": user_data.role.value}, 0)
-    refresh_token = create_refresh_token({"sub": user_id}, 0)
+    refresh_token = create_refresh_token({"sub": user_id}, 0, 0)
     return {
         "token": access_token,
         "refresh_token": refresh_token,
