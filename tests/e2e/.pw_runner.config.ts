@@ -11,7 +11,7 @@ export default defineConfig({
     ['json', { outputFile: '/root/.emergent/automation_output/20260226_112929/results.json' }],
   ],
   use: {
-    baseURL: 'https://workshop-hub-37.preview.emergentagent.com',
+    baseURL: 'https://ticket-system-97.preview.emergentagent.com',
     screenshot: 'only-on-failure',
     trace: 'off',
     headless: true,

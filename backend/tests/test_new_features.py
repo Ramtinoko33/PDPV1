@@ -146,7 +146,7 @@ class TestEmailSettings:
         # Revert settings
         admin_client.put(f"{BASE_URL}/api/admin/email-settings", json={
             "email_from": original.get("email_from") or "onboarding@resend.dev",
-            "frontend_url": original.get("frontend_url") or "https://workshop-hub-37.preview.emergentagent.com"
+            "frontend_url": original.get("frontend_url") or "https://ticket-system-97.preview.emergentagent.com"
         })
         print("Email settings update successful")
     

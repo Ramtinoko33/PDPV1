@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = 'https://workshop-hub-37.preview.emergentagent.com';
+const BASE_URL = 'https://ticket-system-97.preview.emergentagent.com';
 
 // Test credentials
 const ADMIN_EMAIL = 'admin@pdpv.pt';
