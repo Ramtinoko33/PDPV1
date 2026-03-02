@@ -448,10 +448,24 @@ def compute_sla_due() -> datetime:
     now = datetime.now(timezone.utc)
     return now + timedelta(hours=2)
 
-def create_access_token(data: dict):
+def create_access_token(data: dict, token_version: int = 0):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "tv": token_version,  # Token version for revocation
+        "type": "access"
+    })
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_refresh_token(data: dict, token_version: int = 0):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({
+        "exp": expire,
+        "tv": token_version,
+        "type": "refresh"
+    })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 async def get_current_user(authorization: str = Header(None)):
@@ -462,12 +476,25 @@ async def get_current_user(authorization: str = Header(None)):
         if token.startswith("Bearer "):
             token = token[7:]
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Check token type
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Token inválido")
+        
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Token inválido")
+        
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if user is None:
             raise HTTPException(status_code=401, detail="Utilizador não encontrado")
+        
+        # Validate token_version
+        token_version = payload.get("tv", 0)
+        user_token_version = user.get("token_version", 0)
+        if token_version != user_token_version:
+            raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
+        
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
