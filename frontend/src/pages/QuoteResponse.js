@@ -533,6 +533,15 @@ const QuoteResponse = () => {
           </div>
         )}
       </main>
+
+      {/* Footer - Uniform Design */}
+      <footer style={{ backgroundColor: BRAND_NAVY }} className="py-3 px-4 mt-6">
+        <div className="max-w-xl mx-auto text-center">
+          <p className="text-gray-400 text-xs">
+            Pneus D. Pedro V. | Ticket #{quote?.ticket_number}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };
