@@ -297,7 +297,7 @@ export default function TicketReplyPage() {
 
             <Button
               className="w-full h-12 text-base font-bold"
-              style={{ backgroundColor: primaryColor }}
+              style={{ backgroundColor: BRAND_YELLOW, color: BRAND_NAVY }}
               onClick={handleSubmit}
               disabled={submitting || !message.trim()}
               data-testid="reply-submit-btn"
