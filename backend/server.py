@@ -49,7 +49,8 @@ if not JWT_SECRET:
     raise RuntimeError("FATAL: JWT_SECRET environment variable is required. Server cannot start without it.")
 SECRET_KEY = JWT_SECRET
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 2  # Reduced from 24h for security
+ACCESS_TOKEN_EXPIRE_HOURS = 2  # Short-lived access token
+REFRESH_TOKEN_EXPIRE_DAYS = 14  # Long-lived refresh token
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
