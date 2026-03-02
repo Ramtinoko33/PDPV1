@@ -3633,8 +3633,11 @@ async def run_sla_check():
         await asyncio.sleep(15 * 60)
 
 # Include the routers
-# Include auth router under /api prefix
+# Include all modular routers under /api prefix
 api_router.include_router(auth_router)
+api_router.include_router(customers_router)
+api_router.include_router(users_router)
+api_router.include_router(vehicles_router)
 app.include_router(api_router)
 
 app.add_middleware(
