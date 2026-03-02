@@ -3452,9 +3452,23 @@ async def download_attachment_public(token: str, attachment_id: str):
     if not quote_link:
         raise HTTPException(status_code=404, detail="Link não encontrado")
     
-    # Validate attachment belongs to this ticket
     ticket_id = quote_link["ticket_id"]
+    attachment = None
+    
+    # First, try to find in the main attachments collection (ticket attachments)
     attachment = await db.attachments.find_one({"id": attachment_id, "ticket_id": ticket_id}, {"_id": 0})
+    
+    # If not found, search in quote_options attachments (embedded)
+    if not attachment:
+        quote_options = await db.quote_options.find({"ticket_id": ticket_id}, {"_id": 0}).to_list(100)
+        for opt in quote_options:
+            for att in opt.get("attachments", []):
+                if att.get("id") == attachment_id:
+                    attachment = att
+                    break
+            if attachment:
+                break
+    
     if not attachment:
         raise HTTPException(status_code=404, detail="Ficheiro não encontrado")
     
@@ -3465,7 +3479,7 @@ async def download_attachment_public(token: str, attachment_id: str):
     return FileResponse(
         path=str(file_path),
         filename=attachment["original_filename"],
-        media_type=attachment["file_type"]
+        media_type=attachment.get("file_type", "application/pdf")
     )
 
 @api_router.get("/public/quote/{token}/pdf")

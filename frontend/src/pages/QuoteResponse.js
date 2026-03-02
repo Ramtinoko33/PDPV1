@@ -162,14 +162,9 @@ const QuoteResponse = () => {
   const anyOptionHasAttachments = hasOptions && quote.quote_options.some(o => o.attachments?.length > 0);
   const showGeneralPDFs = !anyOptionHasAttachments && quote.ticket_attachments?.length > 0;
 
-  // Open attachment PDF from disk (legacy)
+  // Open attachment PDF from server
   const openAttachmentPDF = (attachmentId) => {
     window.open(`${API_URL}/api/public/quote/${token}/attachments/${attachmentId}/download`, '_blank');
-  };
-
-  // Download generated PDF (on-the-fly)
-  const downloadQuotePDF = () => {
-    window.open(`${API_URL}/api/public/quote/${token}/pdf`, '_blank');
   };
 
   // Brand colors - fixed for uniformity
@@ -221,19 +216,6 @@ const QuoteResponse = () => {
             </div>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
-            {/* Download PDF Button */}
-            <div className="flex justify-end">
-              <Button
-                onClick={downloadQuotePDF}
-                variant="outline"
-                className="gap-2"
-                data-testid="download-quote-pdf"
-              >
-                <FileDown className="h-4 w-4" />
-                Download PDF
-              </Button>
-            </div>
-
             {/* Customer Info */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center gap-3">
@@ -407,7 +389,7 @@ const QuoteResponse = () => {
                   {quote.ticket_attachments.map((att) => (
                     <button
                       key={att.id}
-                      onClick={() => openPDF(att.id)}
+                      onClick={() => openAttachmentPDF(att.id)}
                       className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 transition-colors"
                       data-testid={`pdf-general-${att.id}`}
                     >
