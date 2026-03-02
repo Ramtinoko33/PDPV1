@@ -201,7 +201,7 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 
 ## Pending Features (Backlog)
 - [x] P1: Refatorar backend server.py em estrutura modular (/routes, /models, /services) ✅ (02/03/2026)
-- [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
+- [x] P1: Filtros nos Relatórios Admin (data, cliente, agente, status) ✅ (Já existia - verificado 02/03/2026)
 - [ ] P2: Importação Excel com validação
 - [x] P3: VAPID Keys - configuração correta para Web Push ✅ (21/02/2026)
 - [ ] P4: Portal do cliente (visualização de todos os tickets)
