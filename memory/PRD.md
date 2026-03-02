@@ -200,11 +200,44 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Agent: agente@pdpv.pt / yHprFGvPUJ
 
 ## Pending Features (Backlog)
-- [ ] P1: Refatorar backend server.py em estrutura modular (/routes, /models, /services)
+- [x] P1: Refatorar backend server.py em estrutura modular (/routes, /models, /services) ✅ (02/03/2026) - Passo 1 completo (auth)
+- [ ] P1: Continuar refatoração - mover tickets, quotes, customers para módulos separados
 - [ ] P1: Filtros nos Relatórios Admin (data, cliente, agente, status)
 - [ ] P2: Importação Excel com validação
 - [x] P3: VAPID Keys - configuração correta para Web Push ✅ (21/02/2026)
 - [ ] P4: Portal do cliente (visualização de todos os tickets)
+
+## Refatoração do Backend (02/03/2026)
+### Passo 1 Concluído - Módulo de Autenticação
+Nova estrutura:
+```
+backend/
+  app.py          (futuro - substituir server.py)
+  db.py           ✅ Conexão MongoDB centralizada
+  core/
+    __init__.py   ✅
+    security.py   ✅ JWT tokens, passwords, get_current_user
+  routes/
+    __init__.py   ✅
+    auth.py       ✅ /register, /login, /refresh, /logout, /me
+    tickets.py    (próximo passo)
+    quotes.py     (próximo passo)
+  services/
+    __init__.py   ✅
+    auth_service.py ✅ Rate limiting
+    ticket_service.py (próximo passo)
+    quote_service.py  (próximo passo)
+  schemas/
+    __init__.py   ✅
+    user.py       ✅ UserRole, UserCreate, UserLogin, UserResponse, UserUpdate
+```
+
+Endpoints de Auth movidos:
+- POST /api/auth/register
+- POST /api/auth/login (com rate limiting)
+- POST /api/auth/refresh (token rotation)
+- POST /api/auth/logout (token invalidation)
+- GET /api/auth/me
 
 ## Notes
 - Email via SMTP configurável na UI admin (/admin/settings > Email)
