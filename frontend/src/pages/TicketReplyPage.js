@@ -51,6 +51,12 @@ export default function TicketReplyPage() {
   const [submitted, setSubmitted] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Brand colors - fixed for uniformity
+  const BRAND_NAVY = '#0B2E4F';
+  const BRAND_YELLOW = '#F4B400';
+  const BRAND_GREEN = '#0F5132';
+  const LOGO_URL = 'https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/bstd2ega_logotipo%20de%20letras%20brancas.png';
+
   useEffect(() => {
     const fetchTicket = async () => {
       try {
