@@ -135,53 +135,66 @@ export default function TicketReplyPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-10 pb-10 flex flex-col items-center gap-5 text-center">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: `${primaryColor}20` }}>
-              <CheckCircle className="h-9 w-9" style={{ color: primaryColor }} />
-            </div>
-            <div>
-              <p className="text-xl font-bold text-slate-800">Mensagem enviada!</p>
-              <p className="text-sm text-zinc-500 mt-2">
-                A sua resposta foi recebida com sucesso. A nossa equipa irá tratar do seu pedido em breve.
-              </p>
-            </div>
-            <div className="w-full p-4 bg-zinc-50 rounded-lg text-left space-y-1">
-              <p className="text-xs text-zinc-500">Referência do pedido</p>
-              <p className="font-mono font-bold text-slate-800">{ticket?.ticket_number}</p>
-            </div>
-            {files.length > 0 && (
-              <p className="text-xs text-zinc-500">
-                {files.length} ficheiro(s) enviado(s) com sucesso.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header style={{ backgroundColor: BRAND_NAVY }} className="py-5 px-4">
+          <div className="max-w-xl mx-auto text-center">
+            <img src={LOGO_URL} alt="Pneus D. Pedro V" className="h-12 mx-auto mb-2 object-contain" />
+            <h1 className="text-white text-lg font-bold">Gestor De Pedidos</h1>
+          </div>
+        </header>
+        
+        <div className="max-w-md mx-auto p-4 mt-8">
+          <Card>
+            <CardContent className="pt-10 pb-10 flex flex-col items-center gap-5 text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: `${BRAND_GREEN}20` }}>
+                <CheckCircle className="h-9 w-9" style={{ color: BRAND_GREEN }} />
+              </div>
+              <div>
+                <p className="text-xl font-bold text-slate-800">Mensagem enviada!</p>
+                <p className="text-sm text-zinc-500 mt-2">
+                  A sua resposta foi recebida com sucesso. A nossa equipa irá tratar do seu pedido em breve.
+                </p>
+              </div>
+              <div className="w-full p-4 bg-zinc-50 rounded-lg text-left space-y-1">
+                <p className="text-xs text-zinc-500">Referência do pedido</p>
+                <p className="font-mono font-bold text-slate-800">{ticket?.ticket_number}</p>
+              </div>
+              {files.length > 0 && (
+                <p className="text-xs text-zinc-500">
+                  {files.length} ficheiro(s) enviado(s) com sucesso.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Footer */}
+        <footer style={{ backgroundColor: BRAND_NAVY }} className="py-3 px-4 mt-8 fixed bottom-0 w-full">
+          <div className="max-w-xl mx-auto text-center">
+            <p className="text-gray-400 text-xs">Pneus D. Pedro V. | Ticket #{ticket?.ticket_number}</p>
+          </div>
+        </footer>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      {/* Header */}
-      <div className="py-5 px-6 text-white" style={{ backgroundColor: primaryColor }}>
-        <div className="max-w-xl mx-auto flex items-center gap-3">
-          {ticket.logo_url ? (
-            <img src={ticket.logo_url} alt="Logo" className="h-8 w-8 object-contain rounded" />
-          ) : (
-            <Wrench className="h-6 w-6 text-white/80" />
-          )}
-          <span className="text-lg font-bold">{ticket.company_name}</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header - Uniform Design */}
+      <header style={{ backgroundColor: BRAND_NAVY }} className="py-5 px-4">
+        <div className="max-w-xl mx-auto text-center">
+          <img src={LOGO_URL} alt="Pneus D. Pedro V" className="h-12 mx-auto mb-2 object-contain" />
+          <h1 className="text-white text-lg font-bold">Gestor De Pedidos</h1>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-xl mx-auto px-4 py-8 space-y-5">
+      <div className="max-w-xl mx-auto px-4 py-6 space-y-5">
         {/* Ticket Info */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold text-slate-700 flex items-center gap-2">
-              <FileText className="h-4 w-4" style={{ color: primaryColor }} />
+              <FileText className="h-4 w-4" style={{ color: BRAND_YELLOW }} />
               Informações do Pedido
             </CardTitle>
           </CardHeader>
