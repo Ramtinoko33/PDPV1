@@ -1,0 +1,8 @@
+{"_id":{"$oid":"69911048f4d2c05d30d2390f"},"id":"c82554aa-4e37-4a9f-a2fe-28655c28c4a1","code":"ORCAMENTO_PNEUS","label":"Orçamento Pneus","color":"#f97316","created_at":"2026-02-15T00:16:08.255261+00:00"}
+{"_id":{"$oid":"69911048f4d2c05d30d23910"},"id":"1ccc82c1-45e1-4aec-9896-aa345f4fca6c","code":"ORCAMENTO_MECANICA","label":"Orçamento Mecânica","color":"#3b82f6","created_at":"2026-02-15T00:16:08.255296+00:00"}
+{"_id":{"$oid":"69911048f4d2c05d30d23911"},"id":"49febef2-9b85-4491-bfab-6806c00fe1c9","code":"MARCACAO","label":"Marcação","color":"#10b981","created_at":"2026-02-15T00:16:08.255302+00:00"}
+{"_id":{"$oid":"69911048f4d2c05d30d23912"},"id":"0f774a78-354f-4e09-ae75-8fc02b2e8a73","code":"INFORMACAO","label":"Informação","color":"#8b5cf6","created_at":"2026-02-15T00:16:08.255307+00:00"}
+{"_id":{"$oid":"69911048f4d2c05d30d23913"},"id":"6b4de6bc-76ee-4e32-8348-70eb95e73237","code":"INTERNO","label":"Interno","color":"#6b7280","created_at":"2026-02-15T00:16:08.255311+00:00"}
+{"_id":{"$oid":"69911048f4d2c05d30d23914"},"id":"df5c920c-82c1-4f99-9b3a-2c1d4bac9e98","code":"RECLAMACAO","label":"Reclamação","color":"#ef4444","created_at":"2026-02-15T00:16:08.255315+00:00"}
+{"_id":{"$oid":"6991119f4e1ceb9ece0de2ed"},"id":"e18dcba5-ed34-4c03-90dd-c3ae0e2996ac","code":"TEST_TYPE_845AB4","label":"Test Ticket Type Updated Updated","color":"#00ff00","created_at":"2026-02-15T00:21:51.631385+00:00"}
+{"_id":{"$oid":"69911265f3ad6e3aeabd987b"},"id":"ce23cb56-5dd4-46ad-b821-ee6d2223c11b","code":"TEST_TYPE_544227","label":"Test Ticket Type","color":"#ff0000","created_at":"2026-02-15T00:25:09.812711+00:00"}
