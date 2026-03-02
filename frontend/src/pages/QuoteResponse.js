@@ -166,37 +166,28 @@ const QuoteResponse = () => {
     window.open(`${API_URL}/api/public/quote/${token}/attachments/${attachmentId}/download`, '_blank');
   };
 
+  // Brand colors - fixed for uniformity
+  const BRAND_NAVY = '#0B2E4F';
+  const BRAND_YELLOW = '#F4B400';
+  const BRAND_GREEN = '#0F5132';
+  const LOGO_URL = 'https://customer-assets.emergentagent.com/job_808588e9-0bee-4c5b-a24f-c36fa11718a7/artifacts/bstd2ega_logotipo%20de%20letras%20brancas.png';
+
   return (
-    <div className="min-h-screen bg-zinc-100">
-      {/* Header */}
-      <header 
-        className="py-4 px-6"
-        style={{ backgroundColor: branding?.secondary_color || '#1f2937' }}
-      >
-        <div className="max-w-2xl mx-auto flex items-center">
-          {branding?.company_logo_url ? (
-            <img 
-              src={branding.company_logo_url} 
-              alt={branding?.company_name || 'Logo'} 
-              className="h-10 mr-3 object-contain"
-            />
-          ) : (
-            <Wrench 
-              className="h-8 w-8 mr-3" 
-              style={{ color: branding?.primary_color || '#f97316' }}
-            />
-          )}
-          <span className="text-xl font-black tracking-tight text-white">
-            {branding?.company_name || 'PDPV'}
-          </span>
-          <span className="text-zinc-400 ml-2">
-            {branding?.company_subtitle || 'Pneus de Pedro V.'}
-          </span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header - Uniform Design */}
+      <header style={{ backgroundColor: BRAND_NAVY }} className="py-5 px-4">
+        <div className="max-w-xl mx-auto text-center">
+          <img 
+            src={LOGO_URL} 
+            alt="Pneus D. Pedro V" 
+            className="h-12 mx-auto mb-2 object-contain"
+          />
+          <h1 className="text-white text-lg font-bold">Gestor De Pedidos</h1>
         </div>
       </header>
 
       {/* Content */}
-      <main className="max-w-2xl mx-auto p-4 md:p-6">
+      <main className="max-w-xl mx-auto p-4 md:p-6">
         <Card>
           <CardHeader className="border-b">
             <div className="flex items-center justify-between">
