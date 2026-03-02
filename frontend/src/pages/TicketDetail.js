@@ -607,6 +607,7 @@ const TicketDetail = () => {
   const [notes, setNotes] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [attachmentUrls, setAttachmentUrls] = useState({}); // Blob URLs for authenticated preview
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -684,6 +685,43 @@ const TicketDetail = () => {
     fetchUsers();
     fetchStatuses();
   }, [id]);
+
+  // Create blob URLs for authenticated attachment preview
+  useEffect(() => {
+    const loadAttachmentUrls = async () => {
+      const urls = {};
+      for (const att of attachments) {
+        const isImage = att.file_type?.startsWith('image/');
+        const isPdf = att.file_type === 'application/pdf';
+        
+        if (isImage || isPdf) {
+          try {
+            const response = await fetch(`${API_URL}/api/attachments/${att.id}/download`, {
+              headers: getAuthHeaders()
+            });
+            if (response.ok) {
+              const blob = await response.blob();
+              urls[att.id] = URL.createObjectURL(blob);
+            }
+          } catch (error) {
+            console.error(`Error loading attachment ${att.id}:`, error);
+          }
+        }
+      }
+      setAttachmentUrls(urls);
+    };
+
+    if (attachments.length > 0) {
+      loadAttachmentUrls();
+    }
+
+    // Cleanup: revoke blob URLs when component unmounts or attachments change
+    return () => {
+      Object.values(attachmentUrls).forEach(url => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, [attachments]);
 
   const updateTicket = async (updates) => {
     try {
@@ -1505,10 +1543,10 @@ Qualquer dúvida estamos disponíveis.`;
                                       onClick={() => downloadFile(attachId, att.original_filename)}
                                       data-testid={`msg-attachment-${attachId}`}
                                     >
-                                      {isImage ? (
+                                      {isImage && attachmentUrls[attachId] ? (
                                         <div className="w-10 h-10 rounded overflow-hidden bg-zinc-100">
                                           <img 
-                                            src={`${API_URL}/api/attachments/${attachId}/download`} 
+                                            src={attachmentUrls[attachId]} 
                                             alt={att.original_filename}
                                             className="w-full h-full object-cover"
                                             onError={(e) => { e.target.style.display = 'none'; }}
@@ -1984,10 +2022,10 @@ Qualquer dúvida estamos disponíveis.`;
                         </div>
                         
                         {/* Preview Section */}
-                        {isImage && (
+                        {isImage && attachmentUrls[att.id] && (
                           <div className="mt-2 rounded-lg overflow-hidden border border-zinc-200 max-w-md">
                             <img 
-                              src={`${API_URL}/api/attachments/${att.id}/download`}
+                              src={attachmentUrls[att.id]}
                               alt={att.original_filename}
                               className="w-full h-auto max-h-64 object-contain bg-zinc-50"
                               loading="lazy"
@@ -1995,14 +2033,20 @@ Qualquer dúvida estamos disponíveis.`;
                           </div>
                         )}
                         
-                        {isPdf && (
+                        {isPdf && attachmentUrls[att.id] && (
                           <div className="mt-2 rounded-lg overflow-hidden border border-zinc-200">
                             <iframe
-                              src={`${API_URL}/api/attachments/${att.id}/download#toolbar=0`}
+                              src={`${attachmentUrls[att.id]}#toolbar=0`}
                               title={att.original_filename}
                               className="w-full h-96 bg-zinc-50"
                               data-testid={`pdf-preview-${att.id}`}
                             />
+                          </div>
+                        )}
+                        
+                        {(isImage || isPdf) && !attachmentUrls[att.id] && (
+                          <div className="mt-2 p-4 rounded-lg border border-zinc-200 bg-zinc-50 text-center text-zinc-500 text-sm">
+                            A carregar preview...
                           </div>
                         )}
                       </div>
