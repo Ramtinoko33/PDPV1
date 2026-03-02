@@ -663,12 +663,13 @@ async def login(credentials: UserLogin, request: Request):
     # Success - clear attempts
     await clear_login_attempts(credentials.email, client_ip)
     
-    # Get token_version (default 0 for existing users)
+    # Get token versions (default 0 for existing users)
     token_version = user.get("token_version", 0)
+    refresh_version = user.get("refresh_version", 0)
     
     # Create tokens
     access_token = create_access_token({"sub": user["id"], "role": user["role"]}, token_version)
-    refresh_token = create_refresh_token({"sub": user["id"]}, token_version)
+    refresh_token = create_refresh_token({"sub": user["id"]}, token_version, refresh_version)
     
     logger.info(f"[AUTH] Successful login: {user['email']} from {client_ip}")
     
