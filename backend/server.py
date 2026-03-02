@@ -26,12 +26,26 @@ load_dotenv(ROOT_DIR / '.env')
 # Import modular components
 from db import db, client
 from schemas.user import UserRole, UserCreate, UserLogin, UserResponse, UserUpdate, DashboardConfigUpdate
+from schemas.ticket import (
+    TicketChannel, TicketType, TicketStatus, TicketPriority,
+    MessageDirection, MessageChannel, AlertType,
+    TicketCreate, TicketUpdate, TicketResponse, TicketStatusHistoryResponse,
+    MessageCreate, MessageResponse, NoteCreate, NoteResponse, AlertResponse,
+    ReminderCreate, ReminderResponse, AttachmentResponse, DashboardStats
+)
+from schemas.customer import (
+    VehicleCreate, VehicleResponse, CustomerCreate, CustomerUpdate,
+    CustomerResponse, CustomerSearchResult, WhatsAppWebhook, TelegramWebhook
+)
 from core.security import (
     SECRET_KEY, ALGORITHM, pwd_context,
     create_access_token, create_refresh_token, get_current_user,
     hash_password, verify_password
 )
 from routes.auth import router as auth_router
+from routes.customers import router as customers_router
+from routes.users import router as users_router
+from routes.vehicles import router as vehicles_router
 
 # Helper function to convert URLs in text to clickable links
 def convert_urls_to_links(text: str) -> str:
