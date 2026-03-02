@@ -4403,7 +4403,9 @@ async def run_sla_check():
         # Wait 15 minutes before next check
         await asyncio.sleep(15 * 60)
 
-# Include the router
+# Include the routers
+# Include auth router under /api prefix
+api_router.include_router(auth_router)
 app.include_router(api_router)
 
 app.add_middleware(
