@@ -40,7 +40,8 @@ const CreateTicket = () => {
     channel: 'TELEFONE',
     priority: 'NORMAL',
     description: '',
-    assigned_to_user_id: ''
+    // Auto-assign to self for agents
+    assigned_to_user_id: user?.role === 'AGENT' ? user.id : ''
   });
 
   useEffect(() => {
@@ -59,6 +60,8 @@ const CreateTicket = () => {
       // Agents can only assign to themselves
       if (user?.role === 'AGENT') {
         setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
+        // Auto-assign to self for agents
+        setFormData(prev => ({ ...prev, assigned_to_user_id: user.id }));
         return;
       }
       const response = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
@@ -68,6 +71,7 @@ const CreateTicket = () => {
       // If agent gets 403, show only self
       if (user?.role === 'AGENT') {
         setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
+        setFormData(prev => ({ ...prev, assigned_to_user_id: user.id }));
       }
     }
   };
@@ -86,11 +90,26 @@ const CreateTicket = () => {
         { headers: getAuthHeaders() }
       );
       setSearchResults(response.data);
+      // Only show suggestions if there are results
       setShowSuggestions(response.data.length > 0);
     } catch (error) {
       console.error('Error searching customers:', error);
+      setSearchResults([]);
+      setShowSuggestions(false);
     }
   }, [getAuthHeaders]);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      // Close suggestions if clicking outside the input areas
+      if (showSuggestions && !e.target.closest('[data-suggestions-container]')) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showSuggestions]);
 
   const handlePhoneChange = (value) => {
     setFormData(prev => ({ ...prev, customer_phone: value }));
@@ -390,7 +409,7 @@ const CreateTicket = () => {
                 <Label htmlFor="phone" className="text-sm font-semibold">
                   Telefone *
                 </Label>
-                <div className="relative">
+                <div className="relative" data-suggestions-container>
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
                   <Input
                     ref={phoneRef}
@@ -398,7 +417,10 @@ const CreateTicket = () => {
                     placeholder="912 345 678"
                     value={formData.customer_phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
-                    onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
+                    onBlur={() => {
+                      // Delay closing to allow click on suggestion
+                      setTimeout(() => setShowSuggestions(false), 200);
+                    }}
                     className="h-12 pl-11 border-2 focus:border-orange-500"
                     required
                     autoComplete="off"
@@ -449,7 +471,7 @@ const CreateTicket = () => {
                 <Label htmlFor="name" className="text-sm font-semibold">
                   Nome *
                 </Label>
-                <div className="relative">
+                <div className="relative" data-suggestions-container>
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
                   <Input
                     id="name"
@@ -457,11 +479,21 @@ const CreateTicket = () => {
                     value={formData.customer_name}
                     onChange={(e) => {
                       handleChange('customer_name', e.target.value);
+                      // Reset selected customer when manually editing
+                      if (selectedCustomer) {
+                        setSelectedCustomer(null);
+                      }
                       if (e.target.value.length >= 2) {
                         searchCustomers(e.target.value);
+                      } else {
+                        setSearchResults([]);
+                        setShowSuggestions(false);
                       }
                     }}
-                    onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
+                    onBlur={() => {
+                      // Delay closing to allow click on suggestion
+                      setTimeout(() => setShowSuggestions(false), 200);
+                    }}
                     className="h-12 pl-11 border-2 focus:border-orange-500"
                     required
                     autoComplete="off"
