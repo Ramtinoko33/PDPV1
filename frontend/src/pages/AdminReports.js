@@ -35,7 +35,8 @@ const AdminReports = () => {
   const [tireAnalysis, setTireAnalysis] = useState(null);
   const [loadingTires, setLoadingTires] = useState(false);
   const [filters, setFilters] = useState({
-    start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    // Default to last 90 days to capture more data
+    start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
     status: '',
     type: '',
