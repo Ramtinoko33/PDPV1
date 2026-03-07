@@ -1676,29 +1676,66 @@ Qualquer dúvida estamos disponíveis.`;
                             </Button>
                           )}
                         </div>
-                        {canEditQuote && attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).length > 0 && (
-                          <div className="ml-6 flex flex-wrap gap-2 items-center">
-                            <span className="text-xs text-zinc-400">PDFs:</span>
-                            {attachments.filter(a => a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')).map(att => {
-                              const isLinked = (option.attachment_ids || []).includes(att.id);
-                              return (
-                                <label key={att.id} className="flex items-center gap-1 cursor-pointer text-xs text-zinc-600 hover:text-zinc-800">
-                                  <input
-                                    type="checkbox"
-                                    checked={isLinked}
-                                    onChange={() => {
-                                      const current = option.attachment_ids || [];
-                                      const updated = isLinked ? current.filter(id => id !== att.id) : [...current, att.id];
+                        {/* PDFs section - show both available PDFs and already linked PDFs */}
+                        {canEditQuote && (
+                          <div className="ml-6 space-y-1">
+                            {/* Already linked PDFs with remove button */}
+                            {(option.attachment_ids || []).length > 0 && (
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-xs text-zinc-400">Anexados:</span>
+                                {(option.attachment_ids || []).map(attId => {
+                                  const att = attachments.find(a => a.id === attId);
+                                  const filename = att?.original_filename || `PDF ${attId.slice(0,8)}...`;
+                                  return (
+                                    <div key={attId} className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                                      <FileText className="h-3 w-3 text-red-400" />
+                                      <span className="text-xs text-amber-800">{filename}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = (option.attachment_ids || []).filter(id => id !== attId);
+                                          updateQuoteOption(index, 'attachment_ids', updated);
+                                        }}
+                                        className="ml-1 text-red-400 hover:text-red-600 hover:bg-red-100 rounded p-0.5"
+                                        title="Remover PDF"
+                                        data-testid={`pdf-remove-${index}-${attId}`}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {/* Available PDFs to add (not already linked) */}
+                            {attachments.filter(a => 
+                              (a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')) &&
+                              !(option.attachment_ids || []).includes(a.id)
+                            ).length > 0 && (
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-xs text-zinc-400">Adicionar:</span>
+                                {attachments.filter(a => 
+                                  (a.file_type?.includes('pdf') || a.original_filename?.toLowerCase().endsWith('.pdf')) &&
+                                  !(option.attachment_ids || []).includes(a.id)
+                                ).map(att => (
+                                  <button
+                                    key={att.id}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...(option.attachment_ids || []), att.id];
                                       updateQuoteOption(index, 'attachment_ids', updated);
                                     }}
-                                    className="h-3 w-3 accent-amber-600"
-                                    data-testid={`pdf-link-${index}-${att.id}`}
-                                  />
-                                  <FileText className="h-3 w-3 text-red-400" />
-                                  {att.original_filename}
-                                </label>
-                              );
-                            })}
+                                    className="flex items-center gap-1 text-xs text-zinc-500 hover:text-amber-700 hover:bg-amber-50 rounded px-2 py-0.5 border border-dashed border-zinc-300 hover:border-amber-400"
+                                    title="Adicionar PDF"
+                                    data-testid={`pdf-add-${index}-${att.id}`}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    <FileText className="h-3 w-3 text-red-400" />
+                                    {att.original_filename}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
