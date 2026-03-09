@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
 import {
   Table,
   TableBody,
@@ -45,7 +44,13 @@ import {
   Phone,
   User,
   Car,
-  MessageSquare
+  MessageSquare,
+  Search,
+  Filter,
+  StickyNote,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -55,15 +60,30 @@ const IntakePage = () => {
   const { getAuthHeaders } = useAuth();
   const navigate = useNavigate();
   
+  // Data state
   const [requests, setRequests] = useState([]);
+  const [stats, setStats] = useState({ pending: 0, processing: 0, converted: 0, rejected: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [moduleEnabled, setModuleEnabled] = useState(false);
   const [checkingModule, setCheckingModule] = useState(true);
+  
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  
+  // Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterSource, setFilterSource] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
   
   // Create dialog
   const [createDialog, setCreateDialog] = useState(false);
   const [newRequest, setNewRequest] = useState({
     source: 'manual',
+    source_type: 'manual',
     sender_name: '',
     sender_contact: '',
     raw_text: '',
@@ -76,6 +96,12 @@ const IntakePage = () => {
   const [editDialog, setEditDialog] = useState(false);
   const [editingRequest, setEditingRequest] = useState(null);
   const [saving, setSaving] = useState(false);
+  
+  // Notes dialog
+  const [notesDialog, setNotesDialog] = useState(false);
+  const [notesRequest, setNotesRequest] = useState(null);
+  const [newNote, setNewNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
   
   // Convert dialog
   const [convertDialog, setConvertDialog] = useState(false);
@@ -108,29 +134,59 @@ const IntakePage = () => {
     checkModule();
   }, [getAuthHeaders]);
 
-  // Fetch requests
+  // Fetch stats
+  const fetchStats = useCallback(async () => {
+    if (!moduleEnabled) return;
+    try {
+      const response = await axios.get(`${API_URL}/api/intake/stats`, {
+        headers: getAuthHeaders()
+      });
+      setStats(response.data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, [getAuthHeaders, moduleEnabled]);
+
+  // Fetch requests with filters and pagination
   const fetchRequests = useCallback(async () => {
     if (!moduleEnabled) return;
     
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/intake`, {
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('page_size', pageSize);
+      
+      if (searchTerm) params.append('search', searchTerm);
+      if (filterStatus !== 'all') params.append('status', filterStatus);
+      if (filterSource !== 'all') params.append('source', filterSource);
+      
+      const response = await axios.get(`${API_URL}/api/intake?${params.toString()}`, {
         headers: getAuthHeaders()
       });
-      setRequests(response.data);
+      
+      setRequests(response.data.items || []);
+      setTotal(response.data.total || 0);
+      setTotalPages(response.data.total_pages || 1);
     } catch (error) {
       console.error('Error fetching intake requests:', error);
       toast.error('Erro ao carregar pedidos');
     } finally {
       setLoading(false);
     }
-  }, [getAuthHeaders, moduleEnabled]);
+  }, [getAuthHeaders, moduleEnabled, page, pageSize, searchTerm, filterStatus, filterSource]);
 
   useEffect(() => {
     if (moduleEnabled) {
       fetchRequests();
+      fetchStats();
     }
-  }, [moduleEnabled, fetchRequests]);
+  }, [moduleEnabled, fetchRequests, fetchStats]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, filterStatus, filterSource]);
 
   // Status badge
   const getStatusBadge = (status) => {
@@ -156,6 +212,7 @@ const IntakePage = () => {
       whatsapp: { label: 'WhatsApp', className: 'bg-green-100 text-green-800' },
       email: { label: 'Email', className: 'bg-purple-100 text-purple-800' },
       web_form: { label: 'Formulário', className: 'bg-gray-100 text-gray-800' },
+      telefone: { label: 'Telefone', className: 'bg-cyan-100 text-cyan-800' },
       manual: { label: 'Manual', className: 'bg-orange-100 text-orange-800' }
     };
     const { label, className } = config[source] || { label: source, className: 'bg-gray-100 text-gray-800' };
@@ -166,10 +223,28 @@ const IntakePage = () => {
     );
   };
 
+  // Source type badge
+  const getSourceTypeBadge = (sourceType) => {
+    const config = {
+      manual: { label: 'Manual', className: 'bg-zinc-100 text-zinc-600' },
+      bot_telegram: { label: 'Bot TG', className: 'bg-blue-50 text-blue-600' },
+      bot_whatsapp: { label: 'Bot WA', className: 'bg-green-50 text-green-600' },
+      api: { label: 'API', className: 'bg-violet-50 text-violet-600' },
+      import: { label: 'Import', className: 'bg-amber-50 text-amber-600' }
+    };
+    const { label, className } = config[sourceType] || { label: sourceType || 'Manual', className: 'bg-zinc-100 text-zinc-600' };
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${className}`}>
+        {label}
+      </span>
+    );
+  };
+
   // Create handlers
   const handleOpenCreate = () => {
     setNewRequest({
       source: 'manual',
+      source_type: 'manual',
       sender_name: '',
       sender_contact: '',
       raw_text: '',
@@ -195,6 +270,7 @@ const IntakePage = () => {
       toast.success('Pré-ticket criado com sucesso');
       setCreateDialog(false);
       fetchRequests();
+      fetchStats();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao criar pré-ticket');
     } finally {
@@ -231,6 +307,7 @@ const IntakePage = () => {
       toast.success('Pré-ticket atualizado');
       setEditDialog(false);
       fetchRequests();
+      fetchStats();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao atualizar');
     } finally {
@@ -248,8 +325,40 @@ const IntakePage = () => {
       });
       toast.success('Pré-ticket eliminado');
       fetchRequests();
+      fetchStats();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao eliminar');
+    }
+  };
+
+  // Notes handlers
+  const handleOpenNotes = (request) => {
+    setNotesRequest(request);
+    setNewNote('');
+    setNotesDialog(true);
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) {
+      toast.error('A nota não pode estar vazia');
+      return;
+    }
+
+    setAddingNote(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/intake/${notesRequest.id}/notes`,
+        { note: newNote.trim() },
+        { headers: getAuthHeaders() }
+      );
+      setNotesRequest(response.data);
+      setNewNote('');
+      toast.success('Nota adicionada');
+      fetchRequests();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao adicionar nota');
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -283,6 +392,7 @@ const IntakePage = () => {
       toast.success(`Ticket ${response.data.ticket_number} criado!`);
       setConvertDialog(false);
       fetchRequests();
+      fetchStats();
       
       // Navigate to the new ticket
       if (response.data.ticket_id) {
@@ -293,6 +403,11 @@ const IntakePage = () => {
     } finally {
       setConverting(false);
     }
+  };
+
+  // Search handler with debounce
+  const handleSearch = (value) => {
+    setSearchTerm(value);
   };
 
   // Module disabled view
@@ -316,14 +431,6 @@ const IntakePage = () => {
     );
   }
 
-  // Stats
-  const stats = {
-    pending: requests.filter(r => r.status === 'PENDING').length,
-    processing: requests.filter(r => r.status === 'PROCESSING').length,
-    converted: requests.filter(r => r.status === 'CONVERTED').length,
-    rejected: requests.filter(r => r.status === 'REJECTED').length
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -338,11 +445,11 @@ const IntakePage = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchRequests} variant="outline" className="gap-2">
+          <Button onClick={() => { fetchRequests(); fetchStats(); }} variant="outline" className="gap-2">
             <RefreshCw className="h-4 w-4" />
             Atualizar
           </Button>
-          <Button onClick={handleOpenCreate} className="gap-2 bg-orange-500 hover:bg-orange-600">
+          <Button onClick={handleOpenCreate} className="gap-2 bg-orange-500 hover:bg-orange-600" data-testid="new-intake-btn">
             <Plus className="h-4 w-4" />
             Novo Pré-Ticket
           </Button>
@@ -351,7 +458,7 @@ const IntakePage = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-amber-400">
+        <Card className="border-l-4 border-l-amber-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus(filterStatus === 'PENDING' ? 'all' : 'PENDING')}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -362,7 +469,7 @@ const IntakePage = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-blue-400">
+        <Card className="border-l-4 border-l-blue-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus(filterStatus === 'PROCESSING' ? 'all' : 'PROCESSING')}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -373,7 +480,7 @@ const IntakePage = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-green-400">
+        <Card className="border-l-4 border-l-green-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus(filterStatus === 'CONVERTED' ? 'all' : 'CONVERTED')}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -384,7 +491,7 @@ const IntakePage = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-red-400">
+        <Card className="border-l-4 border-l-red-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilterStatus(filterStatus === 'REJECTED' ? 'all' : 'REJECTED')}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -397,13 +504,101 @@ const IntakePage = () => {
         </Card>
       </div>
 
+      {/* Search and Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap gap-4 items-center">
+            {/* Search */}
+            <div className="flex-1 min-w-[250px] relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+              <Input
+                placeholder="Pesquisar por nome, contacto, matrícula, medida..."
+                value={searchTerm}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="pl-10"
+                data-testid="intake-search"
+              />
+            </div>
+            
+            {/* Quick Filters */}
+            <div className="flex gap-2 items-center">
+              <Button 
+                variant={showFilters ? "secondary" : "outline"} 
+                size="sm" 
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-1"
+              >
+                <Filter className="h-4 w-4" />
+                Filtros
+              </Button>
+              
+              {(filterStatus !== 'all' || filterSource !== 'all' || searchTerm) && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    setFilterStatus('all');
+                    setFilterSource('all');
+                    setSearchTerm('');
+                  }}
+                  className="text-zinc-500"
+                >
+                  Limpar
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Expanded Filters */}
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t flex gap-4 flex-wrap">
+              <div className="w-48">
+                <Label className="text-xs text-zinc-500 mb-1 block">Estado</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="PENDING">Pendente</SelectItem>
+                    <SelectItem value="PROCESSING">Em Processamento</SelectItem>
+                    <SelectItem value="CONVERTED">Convertido</SelectItem>
+                    <SelectItem value="REJECTED">Rejeitado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-48">
+                <Label className="text-xs text-zinc-500 mb-1 block">Origem</Label>
+                <Select value={filterSource} onValueChange={setFilterSource}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="telefone">Telefone</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="telegram">Telegram</SelectItem>
+                    <SelectItem value="web_form">Formulário Web</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <FileText className="h-5 w-5 text-zinc-500" />
-            Lista de Pré-Tickets
-          </CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5 text-zinc-500" />
+              Lista de Pré-Tickets
+            </CardTitle>
+            <span className="text-sm text-zinc-500">{total} resultado(s)</span>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -413,94 +608,149 @@ const IntakePage = () => {
           ) : requests.length === 0 ? (
             <div className="text-center py-12 text-zinc-500">
               <Inbox className="h-16 w-16 mx-auto mb-3 text-zinc-300" />
-              <p className="text-lg font-medium">Nenhum pré-ticket</p>
-              <p className="text-sm mt-1">Clique em "Novo Pré-Ticket" para criar um</p>
+              <p className="text-lg font-medium">Nenhum pré-ticket encontrado</p>
+              <p className="text-sm mt-1">
+                {searchTerm || filterStatus !== 'all' || filterSource !== 'all' 
+                  ? 'Tente ajustar os filtros de pesquisa'
+                  : 'Clique em "Novo Pré-Ticket" para criar um'}
+              </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Origem</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Contacto</TableHead>
-                  <TableHead>Matrícula</TableHead>
-                  <TableHead>Medida Pneu</TableHead>
-                  <TableHead>Mensagem</TableHead>
-                  <TableHead className="w-28">Estado</TableHead>
-                  <TableHead className="w-28">Data</TableHead>
-                  <TableHead className="text-right w-32">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requests.map(request => (
-                  <TableRow key={request.id} data-testid={`intake-row-${request.id}`}>
-                    <TableCell>{getSourceBadge(request.source)}</TableCell>
-                    <TableCell className="font-medium">{request.sender_name}</TableCell>
-                    <TableCell className="font-mono text-sm">{request.sender_contact}</TableCell>
-                    <TableCell className="font-mono text-sm">{request.license_plate || '-'}</TableCell>
-                    <TableCell className="text-sm">{request.tire_size || '-'}</TableCell>
-                    <TableCell className="max-w-[200px]">
-                      <span className="truncate block text-sm text-zinc-600" title={request.raw_text}>
-                        {request.raw_text || '-'}
-                      </span>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(request.status)}</TableCell>
-                    <TableCell className="text-sm text-zinc-500">
-                      {new Date(request.created_at).toLocaleDateString('pt-PT', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {request.status === 'CONVERTED' ? (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-24">Origem</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Contacto</TableHead>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Medida Pneu</TableHead>
+                    <TableHead>Mensagem</TableHead>
+                    <TableHead className="w-20">Notas</TableHead>
+                    <TableHead className="w-28">Estado</TableHead>
+                    <TableHead className="w-28">Data</TableHead>
+                    <TableHead className="text-right w-32">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {requests.map(request => (
+                    <TableRow key={request.id} data-testid={`intake-row-${request.id}`}>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {getSourceBadge(request.source)}
+                          {getSourceTypeBadge(request.source_type)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">{request.sender_name}</TableCell>
+                      <TableCell className="font-mono text-sm">{request.sender_contact}</TableCell>
+                      <TableCell className="font-mono text-sm">{request.license_plate || '-'}</TableCell>
+                      <TableCell className="text-sm">{request.tire_size || '-'}</TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <span className="truncate block text-sm text-zinc-600" title={request.raw_text}>
+                          {request.raw_text || '-'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         <Button
                           size="sm"
-                          variant="link"
-                          className="text-green-600"
-                          onClick={() => navigate(`/tickets/${request.converted_ticket_id}`)}
+                          variant="ghost"
+                          onClick={() => handleOpenNotes(request)}
+                          className={request.review_notes?.length > 0 ? 'text-amber-600' : 'text-zinc-400'}
+                          title={`${request.review_notes?.length || 0} nota(s)`}
                         >
-                          Ver Ticket
+                          <StickyNote className="h-4 w-4" />
+                          {request.review_notes?.length > 0 && (
+                            <span className="ml-1 text-xs">{request.review_notes.length}</span>
+                          )}
                         </Button>
-                      ) : (
-                        <div className="flex justify-end gap-1">
+                      </TableCell>
+                      <TableCell>{getStatusBadge(request.status)}</TableCell>
+                      <TableCell className="text-sm text-zinc-500">
+                        {new Date(request.created_at).toLocaleDateString('pt-PT', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {request.status === 'CONVERTED' ? (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            onClick={() => handleEdit(request)}
-                            title="Editar"
-                            data-testid={`intake-edit-${request.id}`}
+                            variant="link"
+                            className="text-green-600 gap-1"
+                            onClick={() => navigate(`/tickets/${request.converted_ticket_id}`)}
+                            title={`Ticket ${request.converted_ticket_number}`}
                           >
-                            <Edit className="h-4 w-4 text-zinc-500" />
+                            <ExternalLink className="h-3 w-3" />
+                            {request.converted_ticket_number || 'Ver Ticket'}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                            onClick={() => handleConvert(request)}
-                            title="Converter em Ticket"
-                            data-testid={`intake-convert-${request.id}`}
-                          >
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => handleDelete(request.id)}
-                            title="Eliminar"
-                            data-testid={`intake-delete-${request.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        ) : (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleEdit(request)}
+                              title="Editar"
+                              data-testid={`intake-edit-${request.id}`}
+                            >
+                              <Edit className="h-4 w-4 text-zinc-500" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                              onClick={() => handleConvert(request)}
+                              title="Converter em Ticket"
+                              data-testid={`intake-convert-${request.id}`}
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDelete(request.id)}
+                              title="Eliminar"
+                              data-testid={`intake-delete-${request.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <span className="text-sm text-zinc-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -515,24 +765,44 @@ const IntakePage = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Origem</Label>
-              <Select
-                value={newRequest.source}
-                onValueChange={(v) => setNewRequest({...newRequest, source: v})}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual</SelectItem>
-                  <SelectItem value="telefone">Telefone</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                  <SelectItem value="telegram">Telegram</SelectItem>
-                  <SelectItem value="web_form">Formulário Web</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Origem</Label>
+                <Select
+                  value={newRequest.source}
+                  onValueChange={(v) => setNewRequest({...newRequest, source: v})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="telefone">Telefone</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="telegram">Telegram</SelectItem>
+                    <SelectItem value="web_form">Formulário Web</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Tipo de Origem</Label>
+                <Select
+                  value={newRequest.source_type}
+                  onValueChange={(v) => setNewRequest({...newRequest, source_type: v})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="bot_telegram">Bot Telegram</SelectItem>
+                    <SelectItem value="bot_whatsapp">Bot WhatsApp</SelectItem>
+                    <SelectItem value="api">API</SelectItem>
+                    <SelectItem value="import">Importação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -690,6 +960,81 @@ const IntakePage = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Notes Dialog */}
+      <Dialog open={notesDialog} onOpenChange={setNotesDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <StickyNote className="h-5 w-5 text-amber-500" />
+              Notas de Revisão
+            </DialogTitle>
+          </DialogHeader>
+          {notesRequest && (
+            <div className="space-y-4">
+              {/* Info about the request */}
+              <div className="p-3 bg-zinc-50 rounded-lg">
+                <p className="text-sm text-zinc-600">
+                  <strong>{notesRequest.sender_name}</strong> - {notesRequest.sender_contact}
+                </p>
+                {notesRequest.license_plate && (
+                  <p className="text-xs text-zinc-500 mt-1">Matrícula: {notesRequest.license_plate}</p>
+                )}
+              </div>
+
+              {/* Notes list */}
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {notesRequest.review_notes?.length > 0 ? (
+                  notesRequest.review_notes.map((note, idx) => (
+                    <div key={idx} className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                      <p className="text-sm text-zinc-700">{note.note}</p>
+                      <p className="text-xs text-zinc-500 mt-2">
+                        {note.author_name} • {new Date(note.created_at).toLocaleDateString('pt-PT', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-zinc-400 py-4">Nenhuma nota ainda</p>
+                )}
+              </div>
+
+              {/* Add note */}
+              {notesRequest.status !== 'CONVERTED' && (
+                <div className="pt-4 border-t">
+                  <Label>Nova nota</Label>
+                  <Textarea
+                    placeholder="Escreva uma nota sobre este pedido..."
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    rows={3}
+                    className="mt-1"
+                  />
+                  <Button 
+                    onClick={handleAddNote} 
+                    disabled={addingNote || !newNote.trim()}
+                    className="mt-2 w-full"
+                    size="sm"
+                  >
+                    {addingNote ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                    Adicionar Nota
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNotesDialog(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Convert Dialog */}
       <Dialog open={convertDialog} onOpenChange={setConvertDialog}>
         <DialogContent className="max-w-lg">
@@ -702,6 +1047,9 @@ const IntakePage = () => {
           <div className="space-y-4">
             <div className="p-3 bg-zinc-50 rounded-lg text-sm text-zinc-600">
               A converter pré-ticket de <strong>{convertingRequest?.sender_name}</strong>
+              {convertingRequest?.review_notes?.length > 0 && (
+                <span className="text-amber-600 ml-2">({convertingRequest.review_notes.length} nota(s))</span>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

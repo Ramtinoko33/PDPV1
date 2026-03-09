@@ -138,11 +138,16 @@ class TestIntakeRead:
     """Test READ intake request operations."""
     
     def test_list_intake_requests(self, api_client):
-        """List all intake requests."""
+        """List all intake requests with pagination."""
         response = api_client.get(f"{BASE_URL}/api/intake")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        # New paginated response format
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+        assert "page_size" in data
+        assert isinstance(data["items"], list)
     
     def test_get_single_intake_request(self, api_client):
         """Get a specific intake request by ID."""
@@ -179,8 +184,8 @@ class TestIntakeRead:
         response = api_client.get(f"{BASE_URL}/api/intake?status=PENDING")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        for item in data:
+        assert "items" in data
+        for item in data["items"]:
             assert item["status"] == "PENDING"
 
 
@@ -382,9 +387,10 @@ class TestIntakeConversion:
     def test_convert_already_converted_returns_400(self, api_client):
         """Converting already converted intake returns 400."""
         # First, get a converted intake from the list
-        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&limit=1")
-        if list_response.status_code == 200 and list_response.json():
-            converted_intake = list_response.json()[0]
+        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&page_size=1")
+        data = list_response.json()
+        if list_response.status_code == 200 and data.get("items"):
+            converted_intake = data["items"][0]
             
             # Try to convert again
             convert_response = api_client.post(f"{BASE_URL}/api/intake/{converted_intake['id']}/convert_to_ticket", json={
@@ -398,9 +404,10 @@ class TestIntakeConversion:
     def test_cannot_delete_converted_intake(self, api_client):
         """Cannot delete an intake that has been converted."""
         # Get a converted intake
-        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&limit=1")
-        if list_response.status_code == 200 and list_response.json():
-            converted_intake = list_response.json()[0]
+        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&page_size=1")
+        data = list_response.json()
+        if list_response.status_code == 200 and data.get("items"):
+            converted_intake = data["items"][0]
             
             # Try to delete
             delete_response = api_client.delete(f"{BASE_URL}/api/intake/{converted_intake['id']}")
@@ -412,9 +419,10 @@ class TestIntakeConversion:
     def test_cannot_edit_converted_intake(self, api_client):
         """Cannot edit an intake that has been converted."""
         # Get a converted intake
-        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&limit=1")
-        if list_response.status_code == 200 and list_response.json():
-            converted_intake = list_response.json()[0]
+        list_response = api_client.get(f"{BASE_URL}/api/intake?status=CONVERTED&page_size=1")
+        data = list_response.json()
+        if list_response.status_code == 200 and data.get("items"):
+            converted_intake = data["items"][0]
             
             # Try to edit
             edit_response = api_client.put(f"{BASE_URL}/api/intake/{converted_intake['id']}", json={

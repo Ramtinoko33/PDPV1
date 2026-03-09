@@ -4,8 +4,9 @@ API endpoints for intake requests.
 Only loaded if module is enabled in config/modules.json
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -15,30 +16,58 @@ from .models import (
     IntakeRequestCreate,
     IntakeRequestUpdate,
     IntakeRequestResponse,
+    IntakeListResponse,
     ConvertToTicketRequest,
-    IntakeStatus
+    ReviewNoteCreate,
+    IntakeStatus,
+    IntakeSourceType
 )
 from . import service
 
 router = APIRouter(prefix="/intake", tags=["intake"])
 
 
-@router.get("", response_model=List[IntakeRequestResponse])
-async def list_intake_requests(
-    status: Optional[str] = Query(None),
-    source: Optional[str] = Query(None),
-    limit: int = Query(100, le=500),
-    skip: int = Query(0),
+@router.get("/stats")
+async def get_intake_stats(
     current_user: dict = Depends(get_current_user)
 ):
-    """List all intake requests."""
-    requests = await service.list_intake_requests(
+    """Get intake statistics."""
+    return await service.get_intake_stats()
+
+
+@router.get("", response_model=IntakeListResponse)
+async def list_intake_requests(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    source: Optional[str] = Query(None, description="Filter by source"),
+    source_type: Optional[str] = Query(None, description="Filter by source type"),
+    search: Optional[str] = Query(None, description="Search in name, contact, plate, tire, message"),
+    date_from: Optional[str] = Query(None, description="Filter from date (ISO format)"),
+    date_to: Optional[str] = Query(None, description="Filter to date (ISO format)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    current_user: dict = Depends(get_current_user)
+):
+    """List all intake requests with filters, search and pagination."""
+    items, total = await service.list_intake_requests(
         status=status,
         source=source,
-        limit=limit,
-        skip=skip
+        source_type=source_type,
+        search=search,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size
     )
-    return [IntakeRequestResponse(**r) for r in requests]
+    
+    total_pages = ceil(total / page_size) if total > 0 else 1
+    
+    return IntakeListResponse(
+        items=[IntakeRequestResponse(**r) for r in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
+    )
 
 
 @router.get("/{intake_id}", response_model=IntakeRequestResponse)
@@ -61,6 +90,7 @@ async def create_intake_request(
     """Create a new intake request manually."""
     request = await service.create_intake_request(
         source=data.source,
+        source_type=data.source_type,
         sender_name=data.sender_name,
         sender_contact=data.sender_contact,
         raw_text=data.raw_text,
@@ -110,6 +140,33 @@ async def delete_intake_request(
     return {"message": "Pedido eliminado"}
 
 
+@router.post("/{intake_id}/notes", response_model=IntakeRequestResponse)
+async def add_review_note(
+    intake_id: str,
+    data: ReviewNoteCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add a review note to an intake request."""
+    existing = await service.get_intake_request(intake_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+    
+    if not data.note.strip():
+        raise HTTPException(status_code=400, detail="Nota não pode estar vazia")
+    
+    updated = await service.add_review_note(
+        intake_id=intake_id,
+        note=data.note.strip(),
+        author_id=current_user["id"],
+        author_name=current_user.get("name", current_user.get("email", "Unknown"))
+    )
+    
+    if not updated:
+        raise HTTPException(status_code=500, detail="Erro ao adicionar nota")
+    
+    return IntakeRequestResponse(**updated)
+
+
 @router.post("/{intake_id}/convert_to_ticket")
 async def convert_to_ticket(
     intake_id: str,
@@ -118,7 +175,7 @@ async def convert_to_ticket(
 ):
     """
     Convert intake request to a regular ticket.
-    Uses existing ticket creation logic.
+    Creates ticket with full traceability back to intake.
     """
     # Get intake request
     intake = await service.get_intake_request(intake_id)
@@ -134,7 +191,7 @@ async def convert_to_ticket(
     vehicle_plate = data.vehicle_plate or intake.get("license_plate")
     description = data.description or intake["raw_text"]
     
-    # Create ticket using existing logic (import from db, create directly)
+    # Create ticket
     now = datetime.now(timezone.utc)
     ticket_id = str(uuid.uuid4())
     ticket_number = f"TK{now.strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
@@ -144,7 +201,9 @@ async def convert_to_ticket(
         "telegram": "TELEGRAM",
         "whatsapp": "WHATSAPP",
         "email": "EMAIL",
-        "web_form": "FORMULARIO"
+        "web_form": "FORMULARIO",
+        "telefone": "TELEFONE",
+        "manual": "FORMULARIO"
     }
     channel = source_to_channel.get(intake["source"], "FORMULARIO")
     
@@ -165,16 +224,24 @@ async def convert_to_ticket(
         "assigned_to_user_id": None,
         "created_by_user_id": current_user["id"],
         "first_response_done": False,
-        "sla_due": (now + __import__('datetime').timedelta(hours=2)).isoformat(),
+        "sla_due": (now + timedelta(hours=2)).isoformat(),
         "quote_sent": False,
         "quote_value": None,
-        "intake_request_id": intake_id  # Link back to intake
+        # Traceability - link back to intake
+        "intake_request_id": intake_id,
+        "intake_source": intake["source"],
+        "intake_source_type": intake.get("source_type", "manual")
     }
     
     await db.tickets.insert_one(ticket_doc)
     
-    # Mark intake as converted
-    await service.mark_as_converted(intake_id, ticket_id)
+    # Mark intake as converted with full tracking
+    await service.mark_as_converted(
+        intake_id=intake_id,
+        ticket_id=ticket_id,
+        ticket_number=ticket_number,
+        converted_by=current_user["id"]
+    )
     
     # Return created ticket info
     return {

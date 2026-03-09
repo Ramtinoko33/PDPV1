@@ -246,18 +246,23 @@ backend/
 - Sistema 100% funcional e testado
 - Quote immutability implementado com decisão única do cliente (26/02/2026)
 
-## Módulo Intake (Pré-Tickets) - NOVO (09/03/2026)
+## Módulo Intake (Pré-Tickets) - COMPLETO (09/03/2026)
 
 ### Descrição
 Sistema modular para pré-tickets que permite gerir pedidos antes de se tornarem tickets oficiais.
 
 ### Funcionalidades Implementadas ✅
+
+#### CRUD Básico
 1. **CREATE** - Criar pré-tickets manualmente
-   - Campos: origem, nome, contacto, matrícula, medida pneu, mensagem
+   - Campos: origem, source_type, nome, contacto, matrícula, medida pneu, mensagem
    - Validação: nome e contacto obrigatórios
 2. **READ** - Listar e visualizar pré-tickets
    - Estatísticas: Pendentes, Em Processamento, Convertidos, Rejeitados
    - Tabela com todas as informações
+   - **Pesquisa global** em nome, contacto, matrícula, medida, mensagem
+   - **Filtros** por status e origem
+   - **Paginação** para grandes volumes
 3. **UPDATE** - Editar pré-tickets
    - Permite editar todos os campos antes da conversão
    - Não permite editar após conversão
@@ -270,10 +275,31 @@ Sistema modular para pré-tickets que permite gerir pedidos antes de se tornarem
    - Mapeia source para channel (telegram→TELEGRAM, etc.)
    - Redireciona para o ticket criado
 
+#### Campos Auxiliares (v2)
+- **source_type**: Enum com valores: `manual`, `bot_telegram`, `bot_whatsapp`, `api`, `import`
+- **review_notes**: Lista de notas de revisão com autor e data
+- **reviewed_by**: ID do último revisor
+- **reviewed_at**: Data/hora da última revisão
+- **converted_by**: Quem converteu o pré-ticket
+
+#### Rastreabilidade Bidirecional ✅
+- **Intake → Ticket**: `converted_ticket_id`, `converted_ticket_number`, `converted_at`, `converted_by`
+- **Ticket → Intake**: `intake_request_id`, `intake_source`, `intake_source_type`
+
 ### Isolamento do Módulo ✅
 - Pode ser ativado/desativado via `/backend/config/modules.json`
 - Com módulo desativado: mostra "Módulo Desativado"
 - Não afeta resto do sistema
+
+### API Endpoints
+- `GET /api/intake` - Lista com filtros, pesquisa e paginação
+- `GET /api/intake/stats` - Estatísticas
+- `GET /api/intake/{id}` - Detalhe
+- `POST /api/intake` - Criar
+- `PUT /api/intake/{id}` - Editar
+- `DELETE /api/intake/{id}` - Eliminar
+- `POST /api/intake/{id}/notes` - Adicionar nota
+- `POST /api/intake/{id}/convert_to_ticket` - Converter
 
 ### Arquitetura
 ```
@@ -283,18 +309,18 @@ backend/
   modules/
     intake/
       __init__.py
-      models.py      # IntakeRequestCreate, IntakeRequestResponse, ConvertToTicketRequest
-      routes.py      # GET/POST/PUT/DELETE /api/intake, POST /api/intake/{id}/convert_to_ticket
+      models.py      # IntakeRequestCreate, IntakeRequestResponse, ReviewNote, etc.
+      routes.py      # Endpoints com paginação e notas
       service.py     # Business logic
 
 frontend/
   src/pages/
-    IntakePage.js    # UI completa com dialogs para Create, Edit, Convert
+    IntakePage.js    # UI com pesquisa, filtros, notas, paginação
 ```
 
 ### Testes Automatizados
 - **24 testes backend** em `/app/backend/tests/test_intake_module.py`
-- Cobertura: CRUD, conversão, isolamento, mapeamento source→channel
+- Cobertura: CRUD, conversão, isolamento, mapeamento source→channel, paginação
 
 ### Próximos Passos (Future)
 - [ ] P2: Integração com Telegram para criação automática
