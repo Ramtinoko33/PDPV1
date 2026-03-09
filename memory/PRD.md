@@ -245,3 +245,59 @@ backend/
 - Email via SMTP configurável na UI admin (/admin/settings > Email)
 - Sistema 100% funcional e testado
 - Quote immutability implementado com decisão única do cliente (26/02/2026)
+
+## Módulo Intake (Pré-Tickets) - NOVO (09/03/2026)
+
+### Descrição
+Sistema modular para pré-tickets que permite gerir pedidos antes de se tornarem tickets oficiais.
+
+### Funcionalidades Implementadas ✅
+1. **CREATE** - Criar pré-tickets manualmente
+   - Campos: origem, nome, contacto, matrícula, medida pneu, mensagem
+   - Validação: nome e contacto obrigatórios
+2. **READ** - Listar e visualizar pré-tickets
+   - Estatísticas: Pendentes, Em Processamento, Convertidos, Rejeitados
+   - Tabela com todas as informações
+3. **UPDATE** - Editar pré-tickets
+   - Permite editar todos os campos antes da conversão
+   - Não permite editar após conversão
+4. **DELETE** - Eliminar pré-tickets
+   - Apenas permite eliminar pré-tickets não convertidos
+   - Não afeta tickets reais
+5. **CONVERT** - Converter para ticket real
+   - Cria ticket com todos os dados do pré-ticket
+   - Marca pré-ticket como CONVERTED
+   - Mapeia source para channel (telegram→TELEGRAM, etc.)
+   - Redireciona para o ticket criado
+
+### Isolamento do Módulo ✅
+- Pode ser ativado/desativado via `/backend/config/modules.json`
+- Com módulo desativado: mostra "Módulo Desativado"
+- Não afeta resto do sistema
+
+### Arquitetura
+```
+backend/
+  config/
+    modules.json     # {"intake": true/false, ...}
+  modules/
+    intake/
+      __init__.py
+      models.py      # IntakeRequestCreate, IntakeRequestResponse, ConvertToTicketRequest
+      routes.py      # GET/POST/PUT/DELETE /api/intake, POST /api/intake/{id}/convert_to_ticket
+      service.py     # Business logic
+
+frontend/
+  src/pages/
+    IntakePage.js    # UI completa com dialogs para Create, Edit, Convert
+```
+
+### Testes Automatizados
+- **24 testes backend** em `/app/backend/tests/test_intake_module.py`
+- Cobertura: CRUD, conversão, isolamento, mapeamento source→channel
+
+### Próximos Passos (Future)
+- [ ] P2: Integração com Telegram para criação automática
+- [ ] P2: Integração com WhatsApp para criação automática
+- [ ] P3: OCR para extração de matrículas/medidas de imagens
+- [ ] P3: Reconhecimento de áudio

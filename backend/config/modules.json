@@ -1,5 +1,5 @@
 {
-  "intake": false,
+  "intake": true,
   "telegram": false,
   "whatsapp": false
 }

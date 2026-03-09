@@ -6,7 +6,7 @@ from datetime import datetime
 import json
 
 class PDPVTicketsAPITester:
-    def __init__(self, base_url="https://ticket-system-97.preview.emergentagent.com"):
+    def __init__(self, base_url="https://ticket-workshop-sys.preview.emergentagent.com"):
         self.base_url = base_url
         self.admin_token = None
         self.supervisor_token = None
