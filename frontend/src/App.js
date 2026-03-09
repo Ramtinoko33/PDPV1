@@ -15,6 +15,7 @@ import AdminSettings from "./pages/AdminSettings";
 import AdminReports from "./pages/AdminReports";
 import QuoteResponse from "./pages/QuoteResponse";
 import TicketReplyPage from "./pages/TicketReplyPage";
+import IntakePage from "./pages/IntakePage";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -112,6 +113,13 @@ function AppRoutes() {
       <Route path="/reports" element={
         <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
           <AdminReports />
+        </ProtectedRoute>
+      } />
+      
+      {/* Hidden module pages - only visible if module enabled */}
+      <Route path="/intake" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+          <IntakePage />
         </ProtectedRoute>
       } />
       

@@ -137,6 +137,20 @@ async def api_health_check():
     """API health check endpoint."""
     return {"status": "healthy", "service": "pdpv-tickets-api"}
 
+# Modules status endpoint
+@api_router.get("/modules/status")
+async def modules_status():
+    """Get status of all optional modules."""
+    try:
+        from modules import get_enabled_modules
+        modules = get_enabled_modules()
+        return {
+            "modules": modules,
+            "enabled_count": sum(1 for v in modules.values() if v)
+        }
+    except Exception as e:
+        return {"modules": {}, "enabled_count": 0, "error": str(e)}
+
 # ============== ENUMS & MODELS ==============
 # All enums and models are imported from schemas package:
 # - schemas.user: UserRole, UserCreate, UserLogin, UserResponse, UserUpdate, DashboardConfigUpdate
@@ -3832,6 +3846,17 @@ api_router.include_router(auth_router)
 api_router.include_router(customers_router)
 api_router.include_router(users_router)
 api_router.include_router(vehicles_router)
+
+# Load optional modules (intake, telegram, whatsapp, etc.)
+# Modules are only loaded if enabled in config/modules.json
+try:
+    from modules import register_modules
+    enabled_modules = register_modules(api_router)
+    if enabled_modules:
+        logging.info(f"[MODULES] Enabled modules: {enabled_modules}")
+except Exception as e:
+    logging.warning(f"[MODULES] Failed to load modules: {e}")
+
 app.include_router(api_router)
 
 app.add_middleware(
