@@ -323,7 +323,36 @@ frontend/
 - Cobertura: CRUD, conversão, isolamento, mapeamento source→channel, paginação
 
 ### Próximos Passos (Future)
-- [ ] P2: Integração com Telegram para criação automática
+- [x] P2: Integração com Telegram para criação automática ✅ (14/03/2026)
 - [ ] P2: Integração com WhatsApp para criação automática
 - [ ] P3: OCR para extração de matrículas/medidas de imagens
 - [ ] P3: Reconhecimento de áudio
+
+---
+
+## Módulo Telegram - IMPLEMENTADO (14/03/2026)
+
+### Descrição
+Bot Telegram que recebe mensagens de clientes e cria automaticamente pré-tickets no sistema Intake.
+
+### Funcionalidades
+1. **Webhook** - Recebe updates do Telegram em `/api/telegram/webhook`
+2. **Extração AI** - Usa Gemini para extrair matrícula, medida, tipo de serviço, urgência
+3. **Fallback Regex** - Se Gemini falhar, usa regex para extrair dados
+4. **Criação Automática** - Cria intake request com source_type `bot_telegram`
+5. **Confirmação** - Envia mensagem de confirmação ao utilizador
+
+### Endpoints
+- `POST /api/telegram/webhook` - Webhook público (sem auth)
+- `GET /api/telegram/status` - Status do bot e webhook
+- `POST /api/telegram/webhook/setup` - Configurar webhook (admin)
+- `DELETE /api/telegram/webhook` - Remover webhook (admin)
+
+### Configuração
+```
+TELEGRAM_BOT_TOKEN=xxx
+GEMINI_API_KEY=xxx
+```
+
+### Webhook URL
+`https://[seu-dominio]/api/telegram/webhook`
