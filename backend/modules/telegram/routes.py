@@ -66,6 +66,32 @@ async def telegram_webhook(request: Request):
                 logger.info("[TELEGRAM] Message has no text, skipping")
                 return {"ok": True, "action": "skipped", "reason": "no_text"}
             
+            # Skip bot commands - they should NOT create pre-tickets
+            if text.startswith("/"):
+                logger.info(f"[TELEGRAM] Skipping bot command: {text.split()[0]}")
+                
+                # Handle /start command with welcome message
+                if text.lower().startswith("/start"):
+                    user = msg.from_user
+                    first_name = user.first_name if user else "Cliente"
+                    welcome_msg = f"""👋 <b>Bem-vindo aos Pneus D. Pedro V!</b>
+
+Olá {first_name}! Sou o assistente virtual da oficina.
+
+📝 <b>Como posso ajudar?</b>
+Envie-me uma mensagem com:
+• A matrícula do seu veículo
+• A medida dos pneus (ex: 205/55 R16)
+• O que precisa (orçamento, marcação, etc.)
+
+Exemplo:
+<i>"Preciso de orçamento para 4 pneus 205/55 R16 para o carro AA-00-BB"</i>
+
+A nossa equipa responderá brevemente! 🚗"""
+                    await service.send_telegram_message(msg.chat.id, welcome_msg)
+                
+                return {"ok": True, "action": "skipped", "reason": "bot_command"}
+            
             # Get user info
             user = msg.from_user
             if not user:

@@ -153,6 +153,65 @@ def extract_info_with_regex(text: str) -> dict:
     return result
 
 
+async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
+    """
+    Lookup customer information by license plate.
+    Searches in vehicles, customers, and tickets collections.
+    Returns customer name if found, None otherwise.
+    """
+    if not license_plate:
+        return None
+    
+    # Normalize plate format
+    plate = license_plate.upper().replace(" ", "-")
+    
+    try:
+        # 1. Search in vehicles collection
+        vehicle = await db.vehicles.find_one(
+            {"plate": {"$regex": f"^{plate}$", "$options": "i"}},
+            {"_id": 0, "customer_id": 1}
+        )
+        
+        if vehicle and vehicle.get("customer_id"):
+            customer = await db.customers.find_one(
+                {"id": vehicle["customer_id"]},
+                {"_id": 0, "name": 1, "phone": 1}
+            )
+            if customer:
+                logger.info(f"[TELEGRAM] Found customer via vehicle: {customer.get('name')}")
+                return customer
+        
+        # 2. Search in tickets collection by vehicle_plate
+        ticket = await db.tickets.find_one(
+            {"vehicle_plate": {"$regex": f"^{plate}$", "$options": "i"}},
+            {"_id": 0, "customer_name": 1, "customer_phone": 1}
+        )
+        
+        if ticket and ticket.get("customer_name"):
+            logger.info(f"[TELEGRAM] Found customer via ticket: {ticket.get('customer_name')}")
+            return {"name": ticket["customer_name"], "phone": ticket.get("customer_phone")}
+        
+        # 3. Search in customers collection directly (if they have a plate field)
+        customer = await db.customers.find_one(
+            {"$or": [
+                {"vehicle_plate": {"$regex": f"^{plate}$", "$options": "i"}},
+                {"plates": {"$elemMatch": {"$regex": f"^{plate}$", "$options": "i"}}}
+            ]},
+            {"_id": 0, "name": 1, "phone": 1}
+        )
+        
+        if customer:
+            logger.info(f"[TELEGRAM] Found customer directly: {customer.get('name')}")
+            return customer
+        
+        logger.info(f"[TELEGRAM] No customer found for plate: {plate}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error looking up customer: {e}")
+        return None
+
+
 async def process_telegram_message(
     chat_id: int,
     user_id: int,
@@ -164,19 +223,31 @@ async def process_telegram_message(
     """
     Process incoming Telegram message:
     1. Extract information using Gemini
-    2. Create intake request
-    3. Send confirmation to user
+    2. Lookup customer by plate if found
+    3. Create intake request
+    4. Send confirmation to user
     """
-    # Build sender name
-    sender_name = first_name
-    if last_name:
-        sender_name = f"{first_name} {last_name}"
-    
-    # Build contact info
+    # Build contact info from Telegram
     sender_contact = f"@{username}" if username else f"tg:{user_id}"
     
     # Extract info with AI
     extracted = await extract_info_with_gemini(message_text)
+    
+    # Try to lookup customer by license plate
+    customer_info = None
+    if extracted.get("license_plate"):
+        customer_info = await lookup_customer_by_plate(extracted["license_plate"])
+    
+    # Use customer name from DB if found, otherwise use Telegram name
+    if customer_info and customer_info.get("name"):
+        sender_name = customer_info["name"]
+        logger.info(f"[TELEGRAM] Using customer name from DB: {sender_name}")
+    else:
+        # Fallback to Telegram name
+        sender_name = first_name
+        if last_name:
+            sender_name = f"{first_name} {last_name}"
+        logger.info(f"[TELEGRAM] Using Telegram name: {sender_name}")
     
     # Create intake request
     try:

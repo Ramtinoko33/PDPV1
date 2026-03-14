@@ -18,7 +18,9 @@ import {
   Archive,
   Settings,
   BarChart3,
-  Bell
+  Bell,
+  ClipboardList,
+  Send
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
@@ -55,6 +57,12 @@ const Layout = ({ children }) => {
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
     },
     { 
+      path: '/intake', 
+      label: 'Pré-Tickets', 
+      icon: ClipboardList,
+      roles: ['ADMIN', 'SUPERVISOR']
+    },
+    { 
       path: '/tickets/archived', 
       label: 'Arquivados', 
       icon: Archive,
@@ -83,6 +91,12 @@ const Layout = ({ children }) => {
       label: 'Relatórios', 
       icon: BarChart3,
       roles: ['ADMIN', 'SUPERVISOR']
+    },
+    { 
+      path: '/telegram', 
+      label: 'Telegram', 
+      icon: Send,
+      roles: ['ADMIN']
     },
     { 
       path: '/settings', 
