@@ -3,6 +3,7 @@ Telegram Module Routes
 API endpoints for Telegram bot webhook and management.
 """
 import logging
+import os
 from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import Optional
 
@@ -13,6 +14,33 @@ from . import service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+
+
+@router.post("/setup-webhook")
+async def auto_setup_webhook(request: Request):
+    """
+    Auto-configure Telegram webhook based on request host.
+    PUBLIC endpoint for easy setup.
+    """
+    # Get the host from the request
+    host = request.headers.get("host", "")
+    scheme = request.headers.get("x-forwarded-proto", "https")
+    
+    if not host:
+        raise HTTPException(status_code=400, detail="Could not determine host")
+    
+    webhook_url = f"{scheme}://{host}/api/telegram/webhook"
+    
+    success, message = await service.setup_webhook(webhook_url)
+    
+    if success:
+        return {
+            "ok": True,
+            "message": "Webhook configurado com sucesso",
+            "webhook_url": webhook_url
+        }
+    else:
+        raise HTTPException(status_code=400, detail=message)
 
 
 @router.post("/webhook")
