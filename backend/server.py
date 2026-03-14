@@ -1796,6 +1796,36 @@ async def unsubscribe_from_push(subscription: PushSubscription, current_user: di
     })
     return {"message": "Subscrição removida"}
 
+@api_router.post("/push/cleanup")
+async def cleanup_invalid_push_subscriptions(current_user: dict = Depends(get_current_user)):
+    """Remove all invalid/expired push subscriptions (admin only)"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores")
+    
+    # Remove subscriptions with invalid endpoints
+    result1 = await db.push_subscriptions.delete_many({
+        "$or": [
+            {"endpoint": {"$regex": "permanently-removed"}},
+            {"endpoint": {"$regex": "invalid"}},
+            {"endpoint": {"$not": {"$regex": "^https://"}}},
+            {"endpoint": None},
+            {"endpoint": ""}
+        ]
+    })
+    
+    # Remove subscriptions without required keys
+    result2 = await db.push_subscriptions.delete_many({
+        "$or": [
+            {"keys": None},
+            {"keys": {}},
+            {"keys.p256dh": None},
+            {"keys.auth": None}
+        ]
+    })
+    
+    total_removed = result1.deleted_count + result2.deleted_count
+    return {"message": f"Removidas {total_removed} subscrições inválidas"}
+
 async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = None):
     """Send web push notification to all devices of a user"""
     # Check if VAPID keys are valid before attempting to send
@@ -1807,8 +1837,7 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
     
     try:
         subscriptions = await db.push_subscriptions.find(
-            {"user_id": user_id},
-            {"_id": 0}
+            {"user_id": user_id}
         ).to_list(100)
         
         if not subscriptions:
@@ -1826,7 +1855,15 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
             try:
                 # Validate subscription has required fields
                 if not sub.get("endpoint") or not sub.get("keys"):
-                    logger.warning(f"Invalid subscription format for user {user_id}, skipping")
+                    logger.warning(f"Invalid subscription format for user {user_id}, removing")
+                    await db.push_subscriptions.delete_one({"_id": sub.get("_id")})
+                    continue
+                
+                # Skip invalid endpoints
+                endpoint = sub["endpoint"]
+                if "permanently-removed" in endpoint or "invalid" in endpoint or not endpoint.startswith("https://"):
+                    logger.warning(f"Invalid endpoint for user {user_id}, removing subscription")
+                    await db.push_subscriptions.delete_one({"endpoint": endpoint})
                     continue
                     
                 webpush(
@@ -1840,18 +1877,24 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
                 )
                 logger.info(f"Web push sent to user {user_id}")
             except WebPushException as e:
-                logger.error(f"Web push failed for user {user_id}: {e}")
-                # If subscription is expired/invalid, remove it
-                if e.response and e.response.status_code in [404, 410]:
+                # If subscription is expired/invalid (400, 404, 410), remove it silently
+                if e.response and e.response.status_code in [400, 404, 410]:
                     await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
-                    logger.info(f"Removed invalid subscription for user {user_id}")
+                    logger.debug(f"Removed expired subscription for user {user_id}")
+                else:
+                    logger.warning(f"Web push failed for user {user_id}: {e.response.status_code if e.response else 'unknown'}")
             except ValueError as e:
                 # VAPID key format error - log and skip silently
                 logger.warning(f"VAPID key format error, web push disabled: {e}")
                 return  # Exit early, no point trying other subscriptions with invalid keys
             except Exception as e:
-                # Catch any other unexpected errors
-                logger.error(f"Unexpected error sending web push to user {user_id}: {e}")
+                # Catch any other unexpected errors - remove problematic subscription
+                error_str = str(e)
+                if "permanently-removed" in error_str or "NameResolutionError" in error_str:
+                    await db.push_subscriptions.delete_one({"endpoint": sub.get("endpoint", "")})
+                    logger.debug(f"Removed invalid subscription for user {user_id}")
+                else:
+                    logger.warning(f"Web push error for user {user_id}: {type(e).__name__}")
                 continue
     except Exception as e:
         # Catch any top-level errors to prevent task crash
