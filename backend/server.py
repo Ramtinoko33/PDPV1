@@ -207,6 +207,8 @@ async def log_status_change(ticket_id: str, old_status: Optional[str], new_statu
 # ============== TICKET ROUTES ==============
 @api_router.post("/tickets", response_model=TicketResponse)
 async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
+    from services.customer_service import find_or_create_customer_vehicle
+    
     user = current_user
     
     # INTERNAL_CREATOR can only create INTERNO tickets
@@ -228,6 +230,15 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         assigned_user = await db.users.find_one({"id": ticket_data.assigned_to_user_id})
         if assigned_user:
             assigned_to_name = assigned_user.get("name")
+    
+    # Auto-create customer and vehicle if plate provided
+    customer_id, vehicle_id, was_created = await find_or_create_customer_vehicle(
+        license_plate=ticket_data.vehicle_plate,
+        customer_name=ticket_data.customer_name,
+        customer_phone=ticket_data.customer_phone,
+        customer_email=ticket_data.customer_email,
+        source="ticket_manual"
+    )
     
     ticket_doc = {
         "id": ticket_id,
@@ -254,6 +265,9 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "quote_decided_at": None,
         "quote_decision": None,
         "created_by_user_id": user["id"],
+        "created_by_name": user.get("name", user.get("email", "Sistema")),  # NEW: Store creator name
+        "customer_id": customer_id,  # Link to auto-created customer
+        "vehicle_id": vehicle_id,    # Link to auto-created vehicle
         "archived_at": None,
         "archived_by": None
     }
@@ -1400,6 +1414,14 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         em_tratamento=em_tratamento,
         total=total
     )
+
+@api_router.get("/dashboard/customer-stats")
+async def get_customer_stats(current_user: dict = Depends(get_current_user)):
+    """Get customer statistics for dashboard."""
+    from services.customer_service import get_customer_stats as fetch_customer_stats
+    
+    stats = await fetch_customer_stats()
+    return stats
 
 # ============== WEBHOOKS ==============
 @api_router.post("/webhook/whatsapp/inbound")

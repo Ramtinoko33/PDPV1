@@ -1209,6 +1209,9 @@ Qualquer dúvida estamos disponíveis.`;
           </div>
           <p className="text-zinc-500 mt-1">
             Criado em {formatDate(ticket.created_at)}
+            {ticket.created_by_name && (
+              <span className="ml-2">por <span className="font-medium text-zinc-600">{ticket.created_by_name}</span></span>
+            )}
           </p>
         </div>
 

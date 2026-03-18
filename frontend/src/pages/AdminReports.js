@@ -32,6 +32,7 @@ const AdminReports = () => {
   
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
+  const [customerStats, setCustomerStats] = useState(null);
   const [tireAnalysis, setTireAnalysis] = useState(null);
   const [loadingTires, setLoadingTires] = useState(false);
   const [filters, setFilters] = useState({
@@ -50,7 +51,17 @@ const AdminReports = () => {
     fetchUsers();
     fetchTicketTypes();
     generateReport();
+    fetchCustomerStats();
   }, []);
+
+  const fetchCustomerStats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/dashboard/customer-stats`, { headers: getAuthHeaders() });
+      setCustomerStats(response.data);
+    } catch (error) {
+      console.error('Error fetching customer stats:', error);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -241,6 +252,43 @@ const AdminReports = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Customer Stats Card */}
+      {customerStats && (
+        <Card className="border-l-4 border-l-emerald-500">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5 text-emerald-600" />
+              Novos Clientes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <p className="text-3xl font-bold text-emerald-700">{customerStats.new_customers_today || 0}</p>
+                <p className="text-sm text-zinc-500 mt-1">Hoje</p>
+              </div>
+              <div className="text-center p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <p className="text-3xl font-bold text-emerald-700">{customerStats.new_customers_week || 0}</p>
+                <p className="text-sm text-zinc-500 mt-1">Esta Semana</p>
+              </div>
+              <div className="text-center p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <p className="text-3xl font-bold text-emerald-700">{customerStats.new_customers_month || 0}</p>
+                <p className="text-sm text-zinc-500 mt-1">Este Mês</p>
+              </div>
+              <div className="text-center p-4 bg-zinc-100 border border-zinc-200 rounded-lg">
+                <p className="text-3xl font-bold text-zinc-700">{customerStats.total_customers || 0}</p>
+                <p className="text-sm text-zinc-500 mt-1">Total</p>
+              </div>
+            </div>
+            {customerStats.auto_created_customers > 0 && (
+              <p className="text-xs text-zinc-400 mt-3 text-center">
+                {customerStats.auto_created_customers} criados automaticamente via Telegram/Intake
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">

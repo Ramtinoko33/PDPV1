@@ -178,7 +178,10 @@ async def convert_to_ticket(
     """
     Convert intake request to a regular ticket.
     Creates ticket with full traceability back to intake.
+    Auto-creates customer and vehicle if they don't exist.
     """
+    from services.customer_service import find_or_create_customer_vehicle
+    
     # Get intake request
     intake = await service.get_intake_request(intake_id)
     if not intake:
@@ -193,6 +196,21 @@ async def convert_to_ticket(
     customer_email = data.customer_email or intake.get("sender_email")
     vehicle_plate = data.vehicle_plate or intake.get("license_plate")
     description = data.description or intake["raw_text"]
+    
+    # Auto-create customer and vehicle if plate provided
+    customer_id, vehicle_id, was_created = await find_or_create_customer_vehicle(
+        license_plate=vehicle_plate,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        customer_email=customer_email,
+        source="intake_conversion"
+    )
+    
+    # Determine created_by_name - for Telegram, use the sender from intake
+    if intake["source"] == "telegram":
+        created_by_name = f"Telegram: {intake.get('sender_name', 'Desconhecido')}"
+    else:
+        created_by_name = current_user.get("name", current_user.get("email", "Sistema"))
     
     # Create ticket
     now = datetime.now(timezone.utc)
@@ -210,6 +228,16 @@ async def convert_to_ticket(
     }
     channel = source_to_channel.get(intake["source"], "FORMULARIO")
     
+    # Get assigned user name if assigning
+    assigned_to_name = None
+    if data.assigned_to:
+        assigned_user = await db.users.find_one({"id": data.assigned_to})
+        if assigned_user:
+            assigned_to_name = assigned_user.get("name")
+    
+    # Set status based on assignment
+    initial_status = "EM_TRATAMENTO" if data.assigned_to else "ABERTO"
+    
     ticket_doc = {
         "id": ticket_id,
         "ticket_number": ticket_number,
@@ -217,15 +245,19 @@ async def convert_to_ticket(
         "updated_at": now.isoformat(),
         "channel": channel,
         "type": data.ticket_type,
-        "status": "ABERTO",
+        "status": initial_status,
         "priority": "NORMAL",
         "description": description,
         "customer_name": customer_name,
         "customer_phone": customer_phone,
         "customer_email": customer_email,
         "vehicle_plate": vehicle_plate,
-        "assigned_to_user_id": data.assigned_to,  # Support assignment on conversion
+        "assigned_to_user_id": data.assigned_to,
+        "assigned_to_name": assigned_to_name,
         "created_by_user_id": current_user["id"],
+        "created_by_name": created_by_name,  # NEW: Store creator name
+        "customer_id": customer_id,          # Link to auto-created customer
+        "vehicle_id": vehicle_id,            # Link to auto-created vehicle
         "first_response_done": False,
         "sla_due": (now + timedelta(hours=2)).isoformat(),
         "quote_sent": False,
@@ -234,7 +266,7 @@ async def convert_to_ticket(
         "intake_request_id": intake_id,
         "intake_source": intake["source"],
         "intake_source_type": intake.get("source_type", "manual"),
-        "telegram_username": intake.get("telegram_username")  # Keep telegram reference
+        "telegram_username": intake.get("telegram_username")
     }
     
     await db.tickets.insert_one(ticket_doc)
@@ -252,5 +284,6 @@ async def convert_to_ticket(
         "message": "Ticket criado com sucesso",
         "ticket_id": ticket_id,
         "ticket_number": ticket_number,
-        "intake_id": intake_id
+        "intake_id": intake_id,
+        "customer_created": was_created
     }

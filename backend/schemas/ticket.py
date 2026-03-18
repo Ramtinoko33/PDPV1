@@ -99,6 +99,9 @@ class TicketResponse(BaseModel):
     assigned_to_user_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
     created_by_user_id: Optional[str] = None
+    created_by_name: Optional[str] = None  # NEW: Name of who created the ticket
+    customer_id: Optional[str] = None      # Link to customer
+    vehicle_id: Optional[str] = None       # Link to vehicle
     last_public_message_at: Optional[str] = None
     first_response_done: bool = False
     sla_due: Optional[str] = None
@@ -121,6 +124,7 @@ class TicketResponse(BaseModel):
     intake_request_id: Optional[str] = None
     intake_source: Optional[str] = None
     intake_source_type: Optional[str] = None
+    telegram_username: Optional[str] = None
 
 
 class TicketStatusHistoryResponse(BaseModel):

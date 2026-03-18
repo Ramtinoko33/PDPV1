@@ -394,14 +394,21 @@ const TicketList = () => {
                       }}
                     >
                       <TableCell>
-                        <span className="font-mono text-sm font-semibold text-orange-600">
-                          {ticket.ticket_number}
-                        </span>
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${
-                          ticket.priority === 'URGENTE' ? 'priority-urgente' : ''
-                        }`}>
-                          {ticket.priority === 'URGENTE' && 'URGENTE'}
-                        </span>
+                        <div>
+                          <span className="font-mono text-sm font-semibold text-orange-600">
+                            {ticket.ticket_number}
+                          </span>
+                          <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${
+                            ticket.priority === 'URGENTE' ? 'priority-urgente' : ''
+                          }`}>
+                            {ticket.priority === 'URGENTE' && 'URGENTE'}
+                          </span>
+                          {ticket.created_by_name && (
+                            <p className="text-[10px] text-zinc-400 mt-0.5" title={`Criado por ${ticket.created_by_name}`}>
+                              por {ticket.created_by_name.length > 20 ? ticket.created_by_name.substring(0, 20) + '...' : ticket.created_by_name}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div>
