@@ -1,12 +1,13 @@
 """
-Telegram Module Service
-Business logic for Telegram bot integration.
+Telegram Module Service v3
+Business logic for Telegram bot integration with image support.
 """
 import os
 import re
+import base64
 import httpx
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from datetime import datetime, timezone
 
 from db import db
@@ -52,6 +53,128 @@ async def send_telegram_message(chat_id: int, text: str, parse_mode: str = "HTML
         return False
 
 
+async def download_telegram_file(file_id: str) -> Optional[bytes]:
+    """
+    Download a file from Telegram servers.
+    Returns the file bytes or None on failure.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("[TELEGRAM] Bot token not configured")
+        return None
+    
+    try:
+        # Step 1: Get file path from Telegram
+        get_file_url = f"{TELEGRAM_API_URL}{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(get_file_url, timeout=10.0)
+            
+            if response.status_code != 200:
+                logger.error(f"[TELEGRAM] Failed to get file info: {response.text}")
+                return None
+            
+            data = response.json()
+            if not data.get("ok"):
+                logger.error(f"[TELEGRAM] getFile failed: {data}")
+                return None
+            
+            file_path = data.get("result", {}).get("file_path")
+            if not file_path:
+                logger.error("[TELEGRAM] No file_path in response")
+                return None
+            
+            # Step 2: Download the file
+            download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+            
+            download_response = await client.get(download_url, timeout=30.0)
+            
+            if download_response.status_code == 200:
+                file_bytes = download_response.content
+                logger.info(f"[TELEGRAM] Downloaded file: {len(file_bytes)} bytes")
+                return file_bytes
+            else:
+                logger.error(f"[TELEGRAM] Failed to download file: {download_response.status_code}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error downloading file: {e}", exc_info=True)
+        return None
+
+
+async def analyze_image_with_gemini(image_bytes: bytes) -> dict:
+    """
+    Use Gemini Vision to analyze an image.
+    Extracts: license plate, tire size, tire condition, brand.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("[TELEGRAM] Gemini API key not configured")
+        return {}
+    
+    # Convert image to base64
+    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+    
+    prompt = """Analisa esta imagem de um contexto automóvel/oficina.
+Extrai as seguintes informações se visíveis:
+
+1. Matrícula do veículo (formato português: AA-00-AA ou 00-AA-00)
+2. Medida de pneu (exemplo: 205/55 R16, 225/45R17) - procura no flanco do pneu
+3. Marca do pneu (Michelin, Continental, Pirelli, Bridgestone, etc.)
+4. Estado do pneu (bom, desgastado, danificado)
+5. Descrição breve do que vês na imagem
+
+Responde APENAS em formato JSON válido:
+{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "tire_brand": "marca ou null", "tire_condition": "estado ou null", "description": "descrição breve"}
+"""
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json={
+                    "contents": [{
+                        "parts": [
+                            {"text": prompt},
+                            {
+                                "inline_data": {
+                                    "mime_type": "image/jpeg",
+                                    "data": image_base64
+                                }
+                            }
+                        ]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 512
+                    }
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                result_text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                
+                # Parse JSON from response
+                import json
+                result_text = result_text.strip()
+                if result_text.startswith("```"):
+                    result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+                    result_text = re.sub(r'\s*```$', '', result_text)
+                
+                extracted = json.loads(result_text)
+                logger.info(f"[TELEGRAM] Gemini Vision extracted: {extracted}")
+                return extracted
+            else:
+                logger.error(f"[TELEGRAM] Gemini Vision API error: {response.status_code} - {response.text}")
+                return {}
+                
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error calling Gemini Vision: {e}", exc_info=True)
+        return {}
+
+
 async def extract_info_with_gemini(text: str) -> dict:
     """
     Use Gemini to extract structured information from message text.
@@ -95,12 +218,9 @@ Responde APENAS em formato JSON válido com estas chaves:
             
             if response.status_code == 200:
                 data = response.json()
-                # Extract text from Gemini response
                 result_text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                 
-                # Parse JSON from response
                 import json
-                # Clean the response - remove markdown code blocks if present
                 result_text = result_text.strip()
                 if result_text.startswith("```"):
                     result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
@@ -130,9 +250,9 @@ def extract_info_with_regex(text: str) -> dict:
     
     # License plate patterns (Portuguese)
     plate_patterns = [
-        r'\b([A-Z]{2}[-\s]?\d{2}[-\s]?[A-Z]{2})\b',  # AA-00-AA
-        r'\b(\d{2}[-\s]?[A-Z]{2}[-\s]?\d{2})\b',      # 00-AA-00
-        r'\b([A-Z]{2}[-\s]?\d{2}[-\s]?\d{2})\b',      # AA-00-00
+        r'\b([A-Z]{2}[-\s]?\d{2}[-\s]?[A-Z]{2})\b',
+        r'\b(\d{2}[-\s]?[A-Z]{2}[-\s]?\d{2})\b',
+        r'\b([A-Z]{2}[-\s]?\d{2}[-\s]?\d{2})\b',
     ]
     for pattern in plate_patterns:
         match = re.search(pattern, text.upper())
@@ -157,12 +277,10 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
     """
     Lookup customer information by license plate.
     Searches in vehicles, customers, and tickets collections.
-    Returns customer name, phone and email if found, None otherwise.
     """
     if not license_plate:
         return None
     
-    # Normalize plate format
     plate = license_plate.upper().replace(" ", "-")
     
     try:
@@ -195,7 +313,7 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
                 "email": ticket.get("customer_email")
             }
         
-        # 3. Search in customers collection directly (if they have a plate field)
+        # 3. Search in customers collection directly
         customer = await db.customers.find_one(
             {"$or": [
                 {"vehicle_plate": {"$regex": f"^{plate}$", "$options": "i"}},
@@ -222,27 +340,87 @@ async def process_telegram_message(
     username: Optional[str],
     first_name: str,
     last_name: Optional[str],
-    message_text: str
+    message_text: str,
+    photo_file_ids: Optional[List[str]] = None
 ) -> Tuple[bool, str]:
     """
-    Process incoming Telegram message:
-    1. Extract information using Gemini
-    2. Lookup customer by plate if found
-    3. Create intake request
-    4. Send confirmation to user
+    Process incoming Telegram message with optional photos:
+    1. Download and analyze photos if present
+    2. Extract information using Gemini
+    3. Lookup customer by plate if found
+    4. Create intake request
+    5. Send confirmation to user
     """
-    # Store Telegram username separately (NEVER as sender_contact)
     telegram_username = f"@{username}" if username else None
+    photo_file_ids = photo_file_ids or []
     
-    # Extract info with AI
-    extracted = await extract_info_with_gemini(message_text)
+    # Initialize extracted info
+    extracted = {
+        "license_plate": None,
+        "tire_size": None,
+        "service_type": None,
+        "urgency": "normal",
+        "summary": ""
+    }
     
-    # Try to lookup customer by license plate
+    image_descriptions = []
+    
+    # Process photos first
+    if photo_file_ids:
+        logger.info(f"[TELEGRAM] Processing {len(photo_file_ids)} photos")
+        
+        for i, file_id in enumerate(photo_file_ids[:3]):  # Max 3 photos
+            image_bytes = await download_telegram_file(file_id)
+            
+            if image_bytes:
+                image_info = await analyze_image_with_gemini(image_bytes)
+                
+                if image_info:
+                    # Merge extracted info (prefer first found values)
+                    if not extracted["license_plate"] and image_info.get("license_plate"):
+                        extracted["license_plate"] = image_info["license_plate"]
+                    if not extracted["tire_size"] and image_info.get("tire_size"):
+                        extracted["tire_size"] = image_info["tire_size"]
+                    
+                    # Collect descriptions
+                    if image_info.get("description"):
+                        desc = image_info["description"]
+                        if image_info.get("tire_brand"):
+                            desc += f" (Marca: {image_info['tire_brand']})"
+                        if image_info.get("tire_condition"):
+                            desc += f" (Estado: {image_info['tire_condition']})"
+                        image_descriptions.append(desc)
+            else:
+                logger.warning(f"[TELEGRAM] Could not download photo {i+1}")
+    
+    # Extract info from text
+    if message_text:
+        text_extracted = await extract_info_with_gemini(message_text)
+        
+        # Merge with photo info (text takes precedence if photo didn't find)
+        if not extracted["license_plate"]:
+            extracted["license_plate"] = text_extracted.get("license_plate")
+        if not extracted["tire_size"]:
+            extracted["tire_size"] = text_extracted.get("tire_size")
+        extracted["service_type"] = text_extracted.get("service_type")
+        extracted["urgency"] = text_extracted.get("urgency", "normal")
+        extracted["summary"] = text_extracted.get("summary", "")
+    
+    # Build combined description
+    combined_text = message_text or ""
+    if image_descriptions:
+        if combined_text:
+            combined_text += "\n\n📸 Análise das imagens:\n"
+        else:
+            combined_text = "📸 Análise das imagens:\n"
+        combined_text += "\n".join(f"- {desc}" for desc in image_descriptions)
+    
+    # Lookup customer by license plate
     customer_info = None
     if extracted.get("license_plate"):
         customer_info = await lookup_customer_by_plate(extracted["license_plate"])
     
-    # Determine sender_name: DB > Telegram name
+    # Determine sender info
     if customer_info and customer_info.get("name"):
         sender_name = customer_info["name"]
         logger.info(f"[TELEGRAM] Using customer name from DB: {sender_name}")
@@ -252,18 +430,13 @@ async def process_telegram_message(
             sender_name = f"{first_name} {last_name}"
         logger.info(f"[TELEGRAM] Using Telegram name: {sender_name}")
     
-    # Determine sender_contact (phone): DB > AI extracted > empty (NEVER username)
+    # Determine contact (phone only)
     sender_contact = ""
     if customer_info and customer_info.get("phone"):
         sender_contact = customer_info["phone"]
         logger.info(f"[TELEGRAM] Using phone from DB: {sender_contact}")
-    elif extracted.get("phone"):
-        sender_contact = extracted["phone"]
-        logger.info(f"[TELEGRAM] Using phone from AI extraction: {sender_contact}")
-    else:
-        logger.info(f"[TELEGRAM] No phone found, leaving sender_contact empty")
     
-    # Determine sender_email from DB lookup
+    # Determine email
     sender_email = None
     if customer_info and customer_info.get("email"):
         sender_email = customer_info["email"]
@@ -275,13 +448,13 @@ async def process_telegram_message(
             source="telegram",
             source_type=IntakeSourceType.BOT_TELEGRAM,
             sender_name=sender_name,
-            sender_contact=sender_contact,  # Phone only, never username
+            sender_contact=sender_contact,
             sender_email=sender_email,
-            telegram_username=telegram_username,  # Username stored separately
-            raw_text=message_text,
+            telegram_username=telegram_username,
+            raw_text=combined_text,
             license_plate=extracted.get("license_plate"),
             tire_size=extracted.get("tire_size"),
-            attachments=[]
+            attachments=[]  # Could store photo URLs here in the future
         )
         
         intake_id = intake.get("id", "")[:8]
@@ -297,21 +470,21 @@ Olá {first_name}, recebemos o seu pedido e vamos analisá-lo brevemente.
             confirmation += f"🚗 <b>Matrícula:</b> {extracted['license_plate']}\n"
         if extracted.get("tire_size"):
             confirmation += f"🔘 <b>Medida:</b> {extracted['tire_size']}\n"
+        if photo_file_ids:
+            confirmation += f"📸 <b>Fotos recebidas:</b> {len(photo_file_ids)}\n"
         if extracted.get("summary"):
             confirmation += f"\n📝 {extracted['summary']}\n"
         
         confirmation += "\nA nossa equipa irá contactá-lo em breve. Obrigado!"
         
-        # Send confirmation
         await send_telegram_message(chat_id, confirmation)
         
-        logger.info(f"[TELEGRAM] Created intake {intake_id} from user {sender_name}")
+        logger.info(f"[TELEGRAM] Created intake {intake_id} from user {sender_name} ({len(photo_file_ids)} photos)")
         return True, intake_id
         
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error creating intake: {e}")
+        logger.error(f"[TELEGRAM] Error creating intake: {e}", exc_info=True)
         
-        # Send error message to user
         error_msg = f"""⚠️ <b>Ocorreu um erro</b>
 
 Olá {first_name}, pedimos desculpa mas ocorreu um erro ao processar o seu pedido.

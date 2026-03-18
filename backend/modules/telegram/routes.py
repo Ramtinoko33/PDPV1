@@ -1,19 +1,94 @@
 """
-Telegram Module Routes
-API endpoints for Telegram bot webhook and management.
+Telegram Module Routes v3
+API endpoints for Telegram bot webhook with message buffering.
+Waits 15 seconds to collect multiple messages from the same user before processing.
 """
 import logging
 import os
-from fastapi import APIRouter, HTTPException, Depends, Request
-from typing import Optional
+import asyncio
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
+from typing import Optional, Dict, List
+from datetime import datetime, timezone
 
 from core.security import get_current_user
-from .models import TelegramUpdate, WebhookSetupRequest
+from .models import TelegramUpdate, WebhookSetupRequest, TelegramPhoto
 from . import service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+
+# Message buffer: chat_id -> {messages: [], photos: [], timer_task: asyncio.Task, last_update: datetime}
+message_buffer: Dict[int, dict] = {}
+BUFFER_WAIT_SECONDS = 15
+
+
+async def process_buffered_messages(chat_id: int):
+    """Process all buffered messages for a chat after the wait period."""
+    await asyncio.sleep(BUFFER_WAIT_SECONDS)
+    
+    if chat_id not in message_buffer:
+        return
+    
+    buffer = message_buffer.pop(chat_id)
+    messages = buffer.get("messages", [])
+    photos = buffer.get("photos", [])
+    user_info = buffer.get("user_info", {})
+    
+    if not messages and not photos:
+        return
+    
+    logger.info(f"[TELEGRAM] Processing buffer for chat {chat_id}: {len(messages)} texts, {len(photos)} photos")
+    
+    # Combine all text messages
+    combined_text = "\n".join(messages)
+    
+    # Process with service
+    try:
+        success, result = await service.process_telegram_message(
+            chat_id=chat_id,
+            user_id=user_info.get("user_id", 0),
+            username=user_info.get("username"),
+            first_name=user_info.get("first_name", "Cliente"),
+            last_name=user_info.get("last_name"),
+            message_text=combined_text,
+            photo_file_ids=photos
+        )
+        logger.info(f"[TELEGRAM] Buffer processed: success={success}, result={result}")
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error processing buffer: {e}")
+
+
+def add_to_buffer(chat_id: int, text: Optional[str], photo_file_id: Optional[str], user_info: dict):
+    """Add a message or photo to the buffer and reset the timer."""
+    if chat_id not in message_buffer:
+        message_buffer[chat_id] = {
+            "messages": [],
+            "photos": [],
+            "user_info": user_info,
+            "timer_task": None
+        }
+    
+    buffer = message_buffer[chat_id]
+    
+    # Cancel existing timer
+    if buffer["timer_task"] and not buffer["timer_task"].done():
+        buffer["timer_task"].cancel()
+    
+    # Add content
+    if text:
+        buffer["messages"].append(text)
+    if photo_file_id:
+        buffer["photos"].append(photo_file_id)
+    
+    # Update user info (in case it changed)
+    buffer["user_info"] = user_info
+    
+    # Start new timer
+    buffer["timer_task"] = asyncio.create_task(process_buffered_messages(chat_id))
+    
+    logger.info(f"[TELEGRAM] Added to buffer for chat {chat_id}: text={bool(text)}, photo={bool(photo_file_id)}, "
+                f"total_messages={len(buffer['messages'])}, total_photos={len(buffer['photos'])}")
 
 
 @router.post("/setup-webhook")
@@ -22,7 +97,6 @@ async def auto_setup_webhook(request: Request):
     Auto-configure Telegram webhook based on request host.
     PUBLIC endpoint for easy setup.
     """
-    # Get the host from the request
     host = request.headers.get("host", "")
     scheme = request.headers.get("x-forwarded-proto", "https")
     
@@ -44,14 +118,12 @@ async def auto_setup_webhook(request: Request):
 
 
 @router.post("/webhook")
-async def telegram_webhook(request: Request):
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Telegram webhook endpoint.
-    Receives updates from Telegram and processes messages.
-    This endpoint is PUBLIC (no auth) - called by Telegram servers.
+    Telegram webhook endpoint v3 with message buffering.
+    Waits 15 seconds to collect multiple messages before processing.
     """
     try:
-        # Parse the incoming update
         body = await request.json()
         logger.info(f"[TELEGRAM] Received webhook: {body}")
         
@@ -59,20 +131,33 @@ async def telegram_webhook(request: Request):
         
         if update.message:
             msg = update.message
+            user = msg.from_user
             
-            # Skip if no text and no caption
+            if not user:
+                logger.warning("[TELEGRAM] Message has no sender info")
+                return {"ok": True, "action": "skipped", "reason": "no_user"}
+            
+            # Get text (from text or caption)
             text = msg.text or msg.caption
-            if not text:
-                logger.info("[TELEGRAM] Message has no text, skipping")
-                return {"ok": True, "action": "skipped", "reason": "no_text"}
             
-            # Skip bot commands - they should NOT create pre-tickets
-            if text.startswith("/"):
-                logger.info(f"[TELEGRAM] Skipping bot command: {text.split()[0]}")
+            # Get photo file_id (use largest photo)
+            photo_file_id = None
+            if msg.photo and len(msg.photo) > 0:
+                # Photos come in multiple sizes, get the largest one
+                largest_photo = max(msg.photo, key=lambda p: p.file_size or 0)
+                photo_file_id = largest_photo.file_id
+                logger.info(f"[TELEGRAM] Photo received: {photo_file_id}")
+            
+            # Skip if no text and no photo
+            if not text and not photo_file_id:
+                logger.info("[TELEGRAM] Message has no text and no photo, skipping")
+                return {"ok": True, "action": "skipped", "reason": "no_content"}
+            
+            # Handle bot commands
+            if text and text.startswith("/"):
+                logger.info(f"[TELEGRAM] Bot command: {text.split()[0]}")
                 
-                # Handle /start command with welcome message
                 if text.lower().startswith("/start"):
-                    user = msg.from_user
                     first_name = user.first_name if user else "Cliente"
                     welcome_msg = f"""👋 <b>Bem-vindo aos Pneus D. Pedro V!</b>
 
@@ -84,6 +169,8 @@ Envie-me uma mensagem com:
 • A medida dos pneus (ex: 205/55 R16)
 • O que precisa (orçamento, marcação, etc.)
 
+📸 <b>Pode também enviar fotos</b> do pneu ou matrícula!
+
 Exemplo:
 <i>"Preciso de orçamento para 4 pneus 205/55 R16 para o carro AA-00-BB"</i>
 
@@ -92,34 +179,33 @@ A nossa equipa responderá brevemente! 🚗"""
                 
                 return {"ok": True, "action": "skipped", "reason": "bot_command"}
             
-            # Get user info
-            user = msg.from_user
-            if not user:
-                logger.warning("[TELEGRAM] Message has no sender info")
-                return {"ok": True, "action": "skipped", "reason": "no_user"}
+            # Prepare user info
+            user_info = {
+                "user_id": user.id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "last_name": user.last_name
+            }
             
-            # Process the message
-            success, result = await service.process_telegram_message(
+            # Add to buffer (this resets the 15-second timer)
+            add_to_buffer(
                 chat_id=msg.chat.id,
-                user_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                message_text=text
+                text=text,
+                photo_file_id=photo_file_id,
+                user_info=user_info
             )
             
             return {
                 "ok": True,
-                "action": "processed",
-                "success": success,
-                "intake_id": result if success else None
+                "action": "buffered",
+                "buffer_size": len(message_buffer.get(msg.chat.id, {}).get("messages", [])),
+                "photos_count": len(message_buffer.get(msg.chat.id, {}).get("photos", []))
             }
         
         return {"ok": True, "action": "skipped", "reason": "not_a_message"}
         
     except Exception as e:
-        logger.error(f"[TELEGRAM] Webhook error: {e}")
-        # Always return 200 to Telegram to avoid retries
+        logger.error(f"[TELEGRAM] Webhook error: {e}", exc_info=True)
         return {"ok": False, "error": str(e)}
 
 
@@ -131,7 +217,11 @@ async def get_telegram_status(current_user: dict = Depends(get_current_user)):
     return {
         "bot_configured": bool(service.get_bot_token()),
         "gemini_configured": bool(service.GEMINI_API_KEY),
-        "webhook": webhook_info
+        "webhook": webhook_info,
+        "buffer_info": {
+            "active_buffers": len(message_buffer),
+            "buffer_wait_seconds": BUFFER_WAIT_SECONDS
+        }
     }
 
 
@@ -140,10 +230,7 @@ async def setup_telegram_webhook(
     data: WebhookSetupRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Setup Telegram webhook URL.
-    Only admins can configure the webhook.
-    """
+    """Setup Telegram webhook URL. Admin only."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem configurar o webhook")
     
@@ -157,7 +244,7 @@ async def setup_telegram_webhook(
 
 @router.delete("/webhook")
 async def delete_telegram_webhook(current_user: dict = Depends(get_current_user)):
-    """Delete Telegram webhook."""
+    """Delete Telegram webhook. Admin only."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Apenas administradores podem remover o webhook")
     
@@ -171,11 +258,7 @@ async def delete_telegram_webhook(current_user: dict = Depends(get_current_user)
 
 @router.post("/test")
 async def test_telegram_message(current_user: dict = Depends(get_current_user)):
-    """
-    Test Telegram bot by sending a test message.
-    Uses the admin's Telegram ID if configured.
-    """
-    # For testing, we'll just verify the bot token is valid
+    """Test Telegram bot configuration."""
     webhook_info = await service.get_webhook_info()
     
     if "error" in webhook_info:
