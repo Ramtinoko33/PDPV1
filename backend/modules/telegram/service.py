@@ -1,24 +1,37 @@
 """
 Telegram Module Service v3
-Business logic for Telegram bot integration with image support.
+Business logic for Telegram bot integration with Emergent LLM Key.
+Supports: text analysis, image vision, and audio transcription.
 """
 import os
 import re
 import base64
 import httpx
 import logging
+import uuid
 from typing import Optional, Tuple, List
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from db import db
 from modules.intake.service import create_intake_request
 from modules.intake.models import IntakeSourceType
 
+# Import Emergent integrations
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+from emergentintegrations.llm.openai import OpenAISpeechToText
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot"
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+
+# LLM Configuration - using GPT-5.2 for best results
+LLM_PROVIDER = "openai"
+LLM_MODEL = "gpt-5.2"
 
 
 def get_bot_token() -> str:
@@ -63,7 +76,6 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
         return None
     
     try:
-        # Step 1: Get file path from Telegram
         get_file_url = f"{TELEGRAM_API_URL}{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
         
         async with httpx.AsyncClient() as client:
@@ -83,7 +95,6 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
                 logger.error("[TELEGRAM] No file_path in response")
                 return None
             
-            # Step 2: Download the file
             download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
             
             download_response = await client.get(download_url, timeout=30.0)
@@ -101,19 +112,27 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
         return None
 
 
-async def analyze_image_with_gemini(image_bytes: bytes) -> dict:
+async def analyze_image_with_llm(image_bytes: bytes) -> dict:
     """
-    Use Gemini Vision to analyze an image.
+    Use Emergent LLM (GPT-5.2 Vision) to analyze an image.
     Extracts: license plate, tire size, tire condition, brand.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("[TELEGRAM] Gemini API key not configured")
+    if not EMERGENT_LLM_KEY:
+        logger.warning("[TELEGRAM] EMERGENT_LLM_KEY not configured")
         return {}
     
-    # Convert image to base64
-    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-    
-    prompt = """Analisa esta imagem de um contexto automóvel/oficina.
+    try:
+        # Convert image to base64
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Create chat instance with vision model
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"telegram-vision-{uuid.uuid4().hex[:8]}",
+            system_message="És um assistente especializado em análise de imagens de veículos e pneus em Portugal. Responde sempre em JSON válido."
+        ).with_model(LLM_PROVIDER, LLM_MODEL)
+        
+        prompt = """Analisa esta imagem de um contexto automóvel/oficina.
 Extrai as seguintes informações se visíveis:
 
 1. Matrícula do veículo (formato português: AA-00-AA ou 00-AA-00)
@@ -123,68 +142,52 @@ Extrai as seguintes informações se visíveis:
 5. Descrição breve do que vês na imagem
 
 Responde APENAS em formato JSON válido:
-{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "tire_brand": "marca ou null", "tire_condition": "estado ou null", "description": "descrição breve"}
-"""
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                json={
-                    "contents": [{
-                        "parts": [
-                            {"text": prompt},
-                            {
-                                "inline_data": {
-                                    "mime_type": "image/jpeg",
-                                    "data": image_base64
-                                }
-                            }
-                        ]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 512
-                    }
-                },
-                timeout=30.0
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                result_text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                
-                # Parse JSON from response
-                import json
-                result_text = result_text.strip()
-                if result_text.startswith("```"):
-                    result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
-                    result_text = re.sub(r'\s*```$', '', result_text)
-                
-                extracted = json.loads(result_text)
-                logger.info(f"[TELEGRAM] Gemini Vision extracted: {extracted}")
-                return extracted
-            else:
-                logger.error(f"[TELEGRAM] Gemini Vision API error: {response.status_code} - {response.text}")
-                return {}
-                
+{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "tire_brand": "marca ou null", "tire_condition": "estado ou null", "description": "descrição breve"}"""
+        
+        # Create message with image attachment
+        image_content = ImageContent(image_base64=image_base64)
+        user_message = UserMessage(
+            text=prompt,
+            image_content=[image_content]
+        )
+        
+        # Send message and get response
+        response = await chat.send_message(user_message)
+        
+        # Parse JSON from response
+        import json
+        result_text = response.strip()
+        if result_text.startswith("```"):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        extracted = json.loads(result_text)
+        logger.info(f"[TELEGRAM] LLM Vision extracted: {extracted}")
+        return extracted
+        
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error calling Gemini Vision: {e}", exc_info=True)
+        logger.error(f"[TELEGRAM] Error calling LLM Vision: {e}", exc_info=True)
         return {}
 
 
-async def extract_info_with_gemini(text: str) -> dict:
+async def extract_info_with_llm(text: str) -> dict:
     """
-    Use Gemini to extract structured information from message text.
+    Use Emergent LLM (GPT-5.2) to extract structured information from message text.
     Extracts: license plate, tire size, service type, urgency.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("[TELEGRAM] Gemini API key not configured, using regex fallback")
+    if not EMERGENT_LLM_KEY:
+        logger.warning("[TELEGRAM] EMERGENT_LLM_KEY not configured, using regex fallback")
         return extract_info_with_regex(text)
     
-    prompt = f"""Analisa a seguinte mensagem de um cliente de uma oficina de pneus/mecânica em Portugal.
+    try:
+        # Create chat instance
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"telegram-text-{uuid.uuid4().hex[:8]}",
+            system_message="És um assistente especializado em extrair informações de mensagens de clientes de oficinas automóveis em Portugal. Responde sempre em JSON válido."
+        ).with_model(LLM_PROVIDER, LLM_MODEL)
+        
+        prompt = f"""Analisa a seguinte mensagem de um cliente de uma oficina de pneus/mecânica em Portugal.
 Extrai as seguintes informações se presentes:
 
 1. Matrícula do veículo (formato português: AA-00-AA ou 00-AA-00)
@@ -197,45 +200,69 @@ Mensagem do cliente:
 "{text}"
 
 Responde APENAS em formato JSON válido com estas chaves:
-{{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "service_type": "tipo ou null", "urgency": "urgente/normal/baixa", "summary": "resumo breve"}}
-"""
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+{{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "service_type": "tipo ou null", "urgency": "urgente/normal/baixa", "summary": "resumo breve"}}"""
+        
+        user_message = UserMessage(text=prompt)
+        response = await chat.send_message(user_message)
+        
+        # Parse JSON from response
+        import json
+        result_text = response.strip()
+        if result_text.startswith("```"):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        extracted = json.loads(result_text)
+        logger.info(f"[TELEGRAM] LLM extracted: {extracted}")
+        return extracted
+        
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error calling LLM: {e}")
+        return extract_info_with_regex(text)
+
+
+async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str = "ogg") -> Optional[str]:
+    """
+    Use OpenAI Whisper (via Emergent) to transcribe audio to text.
+    Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg
+    """
+    if not EMERGENT_LLM_KEY:
+        logger.warning("[TELEGRAM] EMERGENT_LLM_KEY not configured for audio transcription")
+        return None
     
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 256
-                    }
-                },
-                timeout=15.0
-            )
+        import tempfile
+        import os as os_module
+        
+        # Write audio to temp file (Whisper needs a file)
+        with tempfile.NamedTemporaryFile(suffix=f".{file_extension}", delete=False) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+        
+        try:
+            # Initialize Whisper
+            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
             
-            if response.status_code == 200:
-                data = response.json()
-                result_text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                
-                import json
-                result_text = result_text.strip()
-                if result_text.startswith("```"):
-                    result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
-                    result_text = re.sub(r'\s*```$', '', result_text)
-                
-                extracted = json.loads(result_text)
-                logger.info(f"[TELEGRAM] Gemini extracted: {extracted}")
-                return extracted
-            else:
-                logger.error(f"[TELEGRAM] Gemini API error: {response.status_code} - {response.text}")
-                return extract_info_with_regex(text)
-                
+            # Transcribe with Portuguese language hint
+            with open(temp_path, "rb") as audio_file:
+                response = await stt.transcribe(
+                    file=audio_file,
+                    model="whisper-1",
+                    response_format="json",
+                    language="pt"  # Portuguese
+                )
+            
+            transcribed_text = response.text
+            logger.info(f"[TELEGRAM] Whisper transcribed: {transcribed_text[:100]}...")
+            return transcribed_text
+            
+        finally:
+            # Clean up temp file
+            os_module.unlink(temp_path)
+            
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error calling Gemini: {e}")
-        return extract_info_with_regex(text)
+        logger.error(f"[TELEGRAM] Error transcribing audio: {e}", exc_info=True)
+        return None
 
 
 def extract_info_with_regex(text: str) -> dict:
@@ -341,15 +368,17 @@ async def process_telegram_message(
     first_name: str,
     last_name: Optional[str],
     message_text: str,
-    photo_file_ids: Optional[List[str]] = None
+    photo_file_ids: Optional[List[str]] = None,
+    voice_file_id: Optional[str] = None
 ) -> Tuple[bool, str]:
     """
-    Process incoming Telegram message with optional photos:
-    1. Download and analyze photos if present
-    2. Extract information using Gemini
-    3. Lookup customer by plate if found
-    4. Create intake request
-    5. Send confirmation to user
+    Process incoming Telegram message with optional photos and voice:
+    1. Transcribe voice message if present
+    2. Download and analyze photos if present
+    3. Extract information using LLM
+    4. Lookup customer by plate if found
+    5. Create intake request
+    6. Send confirmation to user
     """
     telegram_username = f"@{username}" if username else None
     photo_file_ids = photo_file_ids or []
@@ -364,8 +393,23 @@ async def process_telegram_message(
     }
     
     image_descriptions = []
+    combined_text = message_text or ""
     
-    # Process photos first
+    # Process voice message first
+    if voice_file_id:
+        logger.info(f"[TELEGRAM] Processing voice message")
+        voice_bytes = await download_telegram_file(voice_file_id)
+        
+        if voice_bytes:
+            transcribed = await transcribe_audio_with_whisper(voice_bytes, "ogg")
+            if transcribed:
+                if combined_text:
+                    combined_text += "\n\n🎤 Mensagem de voz:\n" + transcribed
+                else:
+                    combined_text = transcribed
+                logger.info(f"[TELEGRAM] Voice transcribed: {transcribed[:100]}...")
+    
+    # Process photos
     if photo_file_ids:
         logger.info(f"[TELEGRAM] Processing {len(photo_file_ids)} photos")
         
@@ -373,7 +417,7 @@ async def process_telegram_message(
             image_bytes = await download_telegram_file(file_id)
             
             if image_bytes:
-                image_info = await analyze_image_with_gemini(image_bytes)
+                image_info = await analyze_image_with_llm(image_bytes)
                 
                 if image_info:
                     # Merge extracted info (prefer first found values)
@@ -393,11 +437,19 @@ async def process_telegram_message(
             else:
                 logger.warning(f"[TELEGRAM] Could not download photo {i+1}")
     
-    # Extract info from text
-    if message_text:
-        text_extracted = await extract_info_with_gemini(message_text)
+    # Add image descriptions to combined text
+    if image_descriptions:
+        if combined_text:
+            combined_text += "\n\n📸 Análise das imagens:\n"
+        else:
+            combined_text = "📸 Análise das imagens:\n"
+        combined_text += "\n".join(f"- {desc}" for desc in image_descriptions)
+    
+    # Extract info from text (if we have any text to analyze)
+    if combined_text:
+        text_extracted = await extract_info_with_llm(combined_text)
         
-        # Merge with photo info (text takes precedence if photo didn't find)
+        # Merge with photo info (photo takes precedence for visual info)
         if not extracted["license_plate"]:
             extracted["license_plate"] = text_extracted.get("license_plate")
         if not extracted["tire_size"]:
@@ -405,15 +457,6 @@ async def process_telegram_message(
         extracted["service_type"] = text_extracted.get("service_type")
         extracted["urgency"] = text_extracted.get("urgency", "normal")
         extracted["summary"] = text_extracted.get("summary", "")
-    
-    # Build combined description
-    combined_text = message_text or ""
-    if image_descriptions:
-        if combined_text:
-            combined_text += "\n\n📸 Análise das imagens:\n"
-        else:
-            combined_text = "📸 Análise das imagens:\n"
-        combined_text += "\n".join(f"- {desc}" for desc in image_descriptions)
     
     # Lookup customer by license plate
     customer_info = None
@@ -454,7 +497,7 @@ async def process_telegram_message(
             raw_text=combined_text,
             license_plate=extracted.get("license_plate"),
             tire_size=extracted.get("tire_size"),
-            attachments=[]  # Could store photo URLs here in the future
+            attachments=[]
         )
         
         intake_id = intake.get("id", "")[:8]
@@ -472,6 +515,8 @@ Olá {first_name}, recebemos o seu pedido e vamos analisá-lo brevemente.
             confirmation += f"🔘 <b>Medida:</b> {extracted['tire_size']}\n"
         if photo_file_ids:
             confirmation += f"📸 <b>Fotos recebidas:</b> {len(photo_file_ids)}\n"
+        if voice_file_id:
+            confirmation += f"🎤 <b>Áudio transcrito:</b> Sim\n"
         if extracted.get("summary"):
             confirmation += f"\n📝 {extracted['summary']}\n"
         
@@ -479,7 +524,7 @@ Olá {first_name}, recebemos o seu pedido e vamos analisá-lo brevemente.
         
         await send_telegram_message(chat_id, confirmation)
         
-        logger.info(f"[TELEGRAM] Created intake {intake_id} from user {sender_name} ({len(photo_file_ids)} photos)")
+        logger.info(f"[TELEGRAM] Created intake {intake_id} from user {sender_name}")
         return True, intake_id
         
     except Exception as e:

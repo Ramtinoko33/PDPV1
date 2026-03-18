@@ -330,28 +330,32 @@ frontend/
 
 ---
 
-## Módulo Telegram - IMPLEMENTADO (14/03/2026)
+## Módulo Telegram v3 - ATUALIZADO (18/03/2026)
 
 ### Descrição
 Bot Telegram que recebe mensagens de clientes e cria automaticamente pré-tickets no sistema Intake.
+Agora usa **Emergent LLM Key** com GPT-5.2 para análise de texto e imagens.
 
 ### Funcionalidades
 1. **Webhook** - Recebe updates do Telegram em `/api/telegram/webhook`
-2. **Extração AI** - Usa Gemini para extrair matrícula, medida, tipo de serviço, urgência
-3. **Fallback Regex** - Se Gemini falhar, usa regex para extrair dados
-4. **Criação Automática** - Cria intake request com source_type `bot_telegram`
-5. **Confirmação** - Envia mensagem de confirmação ao utilizador
+2. **Sistema de Buffering (v3)** - Aguarda 15 segundos para coletar múltiplas mensagens antes de processar
+3. **Análise de Texto** - Usa GPT-5.2 (via Emergent LLM Key) para extrair matrícula, medida, tipo de serviço
+4. **Análise de Imagens (Vision)** - Usa GPT-5.2 Vision para analisar fotos de pneus e matrículas
+5. **Transcrição de Áudio** - Usa OpenAI Whisper para transcrever mensagens de voz
+6. **Fallback Regex** - Se LLM falhar, usa regex para extrair dados
+7. **Lookup de Cliente** - Procura cliente existente pela matrícula
+8. **Confirmação** - Envia mensagem de confirmação ao utilizador
 
 ### Endpoints
-- `POST /api/telegram/webhook` - Webhook público (sem auth)
-- `GET /api/telegram/status` - Status do bot e webhook
+- `POST /api/telegram/webhook` - Webhook público (sem auth) com buffering
+- `GET /api/telegram/status` - Status do bot, LLM e features
 - `POST /api/telegram/webhook/setup` - Configurar webhook (admin)
 - `DELETE /api/telegram/webhook` - Remover webhook (admin)
 
-### Configuração
+### Configuração (.env)
 ```
 TELEGRAM_BOT_TOKEN=xxx
-GEMINI_API_KEY=xxx
+EMERGENT_LLM_KEY=sk-emergent-xxx
 ```
 
 ### Webhook URL

@@ -44,6 +44,26 @@ class TelegramDocument(BaseModel):
     file_size: Optional[int] = None
 
 
+class TelegramVoice(BaseModel):
+    """Telegram voice message."""
+    file_id: str
+    file_unique_id: str
+    duration: int
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
+class TelegramAudio(BaseModel):
+    """Telegram audio file."""
+    file_id: str
+    file_unique_id: str
+    duration: int
+    performer: Optional[str] = None
+    title: Optional[str] = None
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
 class TelegramMessage(BaseModel):
     """Telegram message."""
     message_id: int
@@ -53,6 +73,8 @@ class TelegramMessage(BaseModel):
     text: Optional[str] = None
     photo: Optional[List[TelegramPhoto]] = None
     document: Optional[TelegramDocument] = None
+    voice: Optional[TelegramVoice] = None
+    audio: Optional[TelegramAudio] = None
     caption: Optional[str] = None
     
     class Config:
