@@ -93,6 +93,8 @@ async def create_intake_request(
         source_type=data.source_type,
         sender_name=data.sender_name,
         sender_contact=data.sender_contact,
+        sender_email=data.sender_email,
+        telegram_username=data.telegram_username,
         raw_text=data.raw_text,
         license_plate=data.license_plate,
         tire_size=data.tire_size,
@@ -187,7 +189,8 @@ async def convert_to_ticket(
     
     # Prepare ticket data using intake data or overrides
     customer_name = data.customer_name or intake["sender_name"]
-    customer_phone = data.customer_phone or intake["sender_contact"]
+    customer_phone = data.customer_phone or intake.get("sender_contact") or ""
+    customer_email = data.customer_email or intake.get("sender_email")
     vehicle_plate = data.vehicle_plate or intake.get("license_plate")
     description = data.description or intake["raw_text"]
     
@@ -219,9 +222,9 @@ async def convert_to_ticket(
         "description": description,
         "customer_name": customer_name,
         "customer_phone": customer_phone,
-        "customer_email": data.customer_email,
+        "customer_email": customer_email,
         "vehicle_plate": vehicle_plate,
-        "assigned_to_user_id": None,
+        "assigned_to_user_id": data.assigned_to,  # Support assignment on conversion
         "created_by_user_id": current_user["id"],
         "first_response_done": False,
         "sla_due": (now + timedelta(hours=2)).isoformat(),
@@ -230,7 +233,8 @@ async def convert_to_ticket(
         # Traceability - link back to intake
         "intake_request_id": intake_id,
         "intake_source": intake["source"],
-        "intake_source_type": intake.get("source_type", "manual")
+        "intake_source_type": intake.get("source_type", "manual"),
+        "telegram_username": intake.get("telegram_username")  # Keep telegram reference
     }
     
     await db.tickets.insert_one(ticket_doc)

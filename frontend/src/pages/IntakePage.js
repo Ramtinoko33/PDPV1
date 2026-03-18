@@ -112,9 +112,13 @@ const IntakePage = () => {
     customer_email: '',
     vehicle_plate: '',
     ticket_type: 'INFORMACAO',
-    description: ''
+    description: '',
+    assigned_to: ''
   });
   const [converting, setConverting] = useState(false);
+  
+  // Users for assignment dropdown
+  const [users, setUsers] = useState([]);
 
   // Check if module is enabled
   useEffect(() => {
@@ -182,6 +186,26 @@ const IntakePage = () => {
       fetchStats();
     }
   }, [moduleEnabled, fetchRequests, fetchStats]);
+
+  // Fetch users for assignment dropdown
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/users`, {
+        headers: getAuthHeaders()
+      });
+      // Filter to only show AGENT, SUPERVISOR, ADMIN
+      const assignableUsers = (response.data || []).filter(u => 
+        ['AGENT', 'SUPERVISOR', 'ADMIN'].includes(u.role)
+      );
+      setUsers(assignableUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  }, [getAuthHeaders]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -367,26 +391,33 @@ const IntakePage = () => {
     setConvertingRequest(request);
     setConvertData({
       customer_name: request.sender_name,
-      customer_phone: request.sender_contact,
-      customer_email: '',
+      customer_phone: request.sender_contact || '',  // Phone only, not telegram username
+      customer_email: request.sender_email || '',    // Pre-fill email from DB lookup
       vehicle_plate: request.license_plate || '',
       ticket_type: 'INFORMACAO',
-      description: request.raw_text
+      description: request.raw_text,
+      assigned_to: ''
     });
     setConvertDialog(true);
   };
 
   const handleConvertSubmit = async () => {
-    if (!convertData.customer_name.trim() || !convertData.customer_phone.trim()) {
-      toast.error('Nome e telefone são obrigatórios');
+    if (!convertData.customer_name.trim()) {
+      toast.error('Nome é obrigatório');
       return;
     }
 
     setConverting(true);
     try {
+      // Only include assigned_to if it has a value
+      const payload = { ...convertData };
+      if (!payload.assigned_to) {
+        delete payload.assigned_to;
+      }
+      
       const response = await axios.post(
         `${API_URL}/api/intake/${convertingRequest.id}/convert_to_ticket`,
-        convertData,
+        payload,
         { headers: getAuthHeaders() }
       );
       toast.success(`Ticket ${response.data.ticket_number} criado!`);
@@ -642,7 +673,17 @@ const IntakePage = () => {
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{request.sender_name}</TableCell>
-                      <TableCell className="font-mono text-sm">{request.sender_contact}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-mono text-sm">{request.sender_contact || '-'}</span>
+                          {request.telegram_username && (
+                            <span className="text-xs text-blue-500">{request.telegram_username}</span>
+                          )}
+                          {request.sender_email && (
+                            <span className="text-xs text-zinc-400">{request.sender_email}</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-mono text-sm">{request.license_plate || '-'}</TableCell>
                       <TableCell className="text-sm">{request.tire_size || '-'}</TableCell>
                       <TableCell className="max-w-[200px]">
@@ -1098,6 +1139,25 @@ const IntakePage = () => {
                   <SelectItem value="MARCACAO">Marcação</SelectItem>
                   <SelectItem value="INFORMACAO">Informação</SelectItem>
                   <SelectItem value="RECLAMACAO">Reclamação</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Atribuir a (opcional)</Label>
+              <Select
+                value={convertData.assigned_to || "none"}
+                onValueChange={(v) => setConvertData({...convertData, assigned_to: v === "none" ? "" : v})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecionar agente..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não atribuir</SelectItem>
+                  {users.map(user => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name} ({user.role})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

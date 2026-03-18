@@ -157,7 +157,7 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
     """
     Lookup customer information by license plate.
     Searches in vehicles, customers, and tickets collections.
-    Returns customer name if found, None otherwise.
+    Returns customer name, phone and email if found, None otherwise.
     """
     if not license_plate:
         return None
@@ -175,7 +175,7 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
         if vehicle and vehicle.get("customer_id"):
             customer = await db.customers.find_one(
                 {"id": vehicle["customer_id"]},
-                {"_id": 0, "name": 1, "phone": 1}
+                {"_id": 0, "name": 1, "phone": 1, "email": 1}
             )
             if customer:
                 logger.info(f"[TELEGRAM] Found customer via vehicle: {customer.get('name')}")
@@ -184,12 +184,16 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
         # 2. Search in tickets collection by vehicle_plate
         ticket = await db.tickets.find_one(
             {"vehicle_plate": {"$regex": f"^{plate}$", "$options": "i"}},
-            {"_id": 0, "customer_name": 1, "customer_phone": 1}
+            {"_id": 0, "customer_name": 1, "customer_phone": 1, "customer_email": 1}
         )
         
         if ticket and ticket.get("customer_name"):
             logger.info(f"[TELEGRAM] Found customer via ticket: {ticket.get('customer_name')}")
-            return {"name": ticket["customer_name"], "phone": ticket.get("customer_phone")}
+            return {
+                "name": ticket["customer_name"], 
+                "phone": ticket.get("customer_phone"),
+                "email": ticket.get("customer_email")
+            }
         
         # 3. Search in customers collection directly (if they have a plate field)
         customer = await db.customers.find_one(
@@ -197,7 +201,7 @@ async def lookup_customer_by_plate(license_plate: str) -> Optional[dict]:
                 {"vehicle_plate": {"$regex": f"^{plate}$", "$options": "i"}},
                 {"plates": {"$elemMatch": {"$regex": f"^{plate}$", "$options": "i"}}}
             ]},
-            {"_id": 0, "name": 1, "phone": 1}
+            {"_id": 0, "name": 1, "phone": 1, "email": 1}
         )
         
         if customer:
@@ -227,8 +231,8 @@ async def process_telegram_message(
     3. Create intake request
     4. Send confirmation to user
     """
-    # Build contact info from Telegram
-    sender_contact = f"@{username}" if username else f"tg:{user_id}"
+    # Store Telegram username separately (NEVER as sender_contact)
+    telegram_username = f"@{username}" if username else None
     
     # Extract info with AI
     extracted = await extract_info_with_gemini(message_text)
@@ -238,16 +242,32 @@ async def process_telegram_message(
     if extracted.get("license_plate"):
         customer_info = await lookup_customer_by_plate(extracted["license_plate"])
     
-    # Use customer name from DB if found, otherwise use Telegram name
+    # Determine sender_name: DB > Telegram name
     if customer_info and customer_info.get("name"):
         sender_name = customer_info["name"]
         logger.info(f"[TELEGRAM] Using customer name from DB: {sender_name}")
     else:
-        # Fallback to Telegram name
         sender_name = first_name
         if last_name:
             sender_name = f"{first_name} {last_name}"
         logger.info(f"[TELEGRAM] Using Telegram name: {sender_name}")
+    
+    # Determine sender_contact (phone): DB > AI extracted > empty (NEVER username)
+    sender_contact = ""
+    if customer_info and customer_info.get("phone"):
+        sender_contact = customer_info["phone"]
+        logger.info(f"[TELEGRAM] Using phone from DB: {sender_contact}")
+    elif extracted.get("phone"):
+        sender_contact = extracted["phone"]
+        logger.info(f"[TELEGRAM] Using phone from AI extraction: {sender_contact}")
+    else:
+        logger.info(f"[TELEGRAM] No phone found, leaving sender_contact empty")
+    
+    # Determine sender_email from DB lookup
+    sender_email = None
+    if customer_info and customer_info.get("email"):
+        sender_email = customer_info["email"]
+        logger.info(f"[TELEGRAM] Using email from DB: {sender_email}")
     
     # Create intake request
     try:
@@ -255,7 +275,9 @@ async def process_telegram_message(
             source="telegram",
             source_type=IntakeSourceType.BOT_TELEGRAM,
             sender_name=sender_name,
-            sender_contact=sender_contact,
+            sender_contact=sender_contact,  # Phone only, never username
+            sender_email=sender_email,
+            telegram_username=telegram_username,  # Username stored separately
             raw_text=message_text,
             license_plate=extracted.get("license_plate"),
             tire_size=extracted.get("tire_size"),

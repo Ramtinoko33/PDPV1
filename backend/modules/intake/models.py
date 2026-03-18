@@ -39,7 +39,9 @@ class IntakeRequestCreate(BaseModel):
     source: str  # telegram, whatsapp, email, web_form, telefone, manual
     source_type: IntakeSourceType = IntakeSourceType.MANUAL
     sender_name: str
-    sender_contact: str
+    sender_contact: str  # Phone number (NOT telegram username)
+    sender_email: Optional[str] = None
+    telegram_username: Optional[str] = None  # Telegram username stored separately
     raw_text: str
     license_plate: Optional[str] = None
     tire_size: Optional[str] = None
@@ -61,7 +63,9 @@ class IntakeRequestResponse(BaseModel):
     source: str
     source_type: IntakeSourceType = IntakeSourceType.MANUAL
     sender_name: str
-    sender_contact: str
+    sender_contact: str  # Phone number
+    sender_email: Optional[str] = None
+    telegram_username: Optional[str] = None
     raw_text: str
     license_plate: Optional[str] = None
     tire_size: Optional[str] = None
@@ -86,6 +90,7 @@ class ConvertToTicketRequest(BaseModel):
     vehicle_plate: Optional[str] = None  # Override license_plate
     ticket_type: str = "INFORMACAO"
     description: Optional[str] = None  # Override raw_text
+    assigned_to: Optional[str] = None  # User ID to assign ticket to
 
 
 class IntakeListResponse(BaseModel):

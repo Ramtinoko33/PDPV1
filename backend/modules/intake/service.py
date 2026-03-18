@@ -18,6 +18,8 @@ async def create_intake_request(
     sender_contact: str,
     raw_text: str,
     source_type: IntakeSourceType = IntakeSourceType.MANUAL,
+    sender_email: Optional[str] = None,
+    telegram_username: Optional[str] = None,
     license_plate: Optional[str] = None,
     tire_size: Optional[str] = None,
     attachments: list = None
@@ -31,7 +33,9 @@ async def create_intake_request(
         "source": source,
         "source_type": source_type.value if isinstance(source_type, IntakeSourceType) else source_type,
         "sender_name": sender_name,
-        "sender_contact": sender_contact,
+        "sender_contact": sender_contact,  # Phone number only
+        "sender_email": sender_email,
+        "telegram_username": telegram_username,  # Telegram username stored separately
         "raw_text": raw_text,
         "license_plate": license_plate,
         "tire_size": tire_size,
