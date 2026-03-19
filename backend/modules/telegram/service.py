@@ -5,10 +5,12 @@ Supports: text analysis, image vision, and audio transcription.
 """
 import os
 import re
+import json
 import base64
 import httpx
 import logging
 import uuid
+import tempfile
 from typing import Optional, Tuple, List
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -169,7 +171,6 @@ Responde APENAS em formato JSON válido:
         logger.info(f"[TELEGRAM] LLM Response received: {response[:200] if response else 'EMPTY'}...")
         
         # Parse JSON from response
-        import json
         result_text = response.strip()
         if result_text.startswith("```"):
             result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
@@ -224,7 +225,6 @@ Responde APENAS em formato JSON válido com estas chaves:
         response = await chat.send_message(user_message)
         
         # Parse JSON from response
-        import json
         result_text = response.strip()
         if result_text.startswith("```"):
             result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
@@ -251,7 +251,6 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     logger.info(f"[TELEGRAM] 🎤 Starting audio transcription with Whisper ({len(audio_bytes)} bytes, format: {file_extension})")
     
     try:
-        import tempfile
         import os as os_module
         
         # Write audio to temp file (Whisper needs a file)
