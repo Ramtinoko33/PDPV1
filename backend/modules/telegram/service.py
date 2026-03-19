@@ -77,38 +77,43 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
     
     try:
         get_file_url = f"{TELEGRAM_API_URL}{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+        logger.info(f"[TELEGRAM] Downloading file: {file_id[:20]}...")
         
         async with httpx.AsyncClient() as client:
             response = await client.get(get_file_url, timeout=10.0)
             
             if response.status_code != 200:
-                logger.error(f"[TELEGRAM] Failed to get file info: {response.text}")
+                logger.error(f"[TELEGRAM] Failed to get file info: HTTP {response.status_code} - {response.text}")
                 return None
             
             data = response.json()
+            logger.info(f"[TELEGRAM] getFile response: ok={data.get('ok')}")
+            
             if not data.get("ok"):
                 logger.error(f"[TELEGRAM] getFile failed: {data}")
                 return None
             
             file_path = data.get("result", {}).get("file_path")
+            file_size = data.get("result", {}).get("file_size", 0)
             if not file_path:
                 logger.error("[TELEGRAM] No file_path in response")
                 return None
             
+            logger.info(f"[TELEGRAM] File path: {file_path}, size: {file_size} bytes")
             download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
             
             download_response = await client.get(download_url, timeout=30.0)
             
             if download_response.status_code == 200:
                 file_bytes = download_response.content
-                logger.info(f"[TELEGRAM] Downloaded file: {len(file_bytes)} bytes")
+                logger.info(f"[TELEGRAM] ✅ Downloaded file successfully: {len(file_bytes)} bytes")
                 return file_bytes
             else:
-                logger.error(f"[TELEGRAM] Failed to download file: {download_response.status_code}")
+                logger.error(f"[TELEGRAM] ❌ Failed to download file: HTTP {download_response.status_code}")
                 return None
                 
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error downloading file: {e}", exc_info=True)
+        logger.error(f"[TELEGRAM] ❌ Error downloading file: {e}", exc_info=True)
         return None
 
 
@@ -118,12 +123,15 @@ async def analyze_image_with_llm(image_bytes: bytes) -> dict:
     Extracts: license plate, tire size, tire condition, brand.
     """
     if not EMERGENT_LLM_KEY:
-        logger.warning("[TELEGRAM] EMERGENT_LLM_KEY not configured")
+        logger.error("[TELEGRAM] ❌ EMERGENT_LLM_KEY not configured - cannot analyze image")
         return {}
+    
+    logger.info(f"[TELEGRAM] 🔍 Starting image analysis with GPT-5.2 Vision ({len(image_bytes)} bytes)")
     
     try:
         # Convert image to base64
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        logger.info(f"[TELEGRAM] Image converted to base64: {len(image_base64)} chars")
         
         # Create chat instance with vision model
         chat = LlmChat(
@@ -131,6 +139,8 @@ async def analyze_image_with_llm(image_bytes: bytes) -> dict:
             session_id=f"telegram-vision-{uuid.uuid4().hex[:8]}",
             system_message="És um assistente especializado em análise de imagens de veículos e pneus em Portugal. Responde sempre em JSON válido."
         ).with_model(LLM_PROVIDER, LLM_MODEL)
+        
+        logger.info(f"[TELEGRAM] LLM Chat created with model: {LLM_PROVIDER}/{LLM_MODEL}")
         
         prompt = """Analisa esta imagem de um contexto automóvel/oficina.
 Extrai as seguintes informações se visíveis:
@@ -151,8 +161,12 @@ Responde APENAS em formato JSON válido:
             image_content=[image_content]
         )
         
+        logger.info("[TELEGRAM] Sending image to LLM for analysis...")
+        
         # Send message and get response
         response = await chat.send_message(user_message)
+        
+        logger.info(f"[TELEGRAM] LLM Response received: {response[:200] if response else 'EMPTY'}...")
         
         # Parse JSON from response
         import json
@@ -162,11 +176,15 @@ Responde APENAS em formato JSON válido:
             result_text = re.sub(r'\s*```$', '', result_text)
         
         extracted = json.loads(result_text)
-        logger.info(f"[TELEGRAM] LLM Vision extracted: {extracted}")
+        logger.info(f"[TELEGRAM] ✅ LLM Vision extracted: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}, brand={extracted.get('tire_brand')}")
         return extracted
         
+    except json.JSONDecodeError as e:
+        logger.error(f"[TELEGRAM] ❌ Failed to parse LLM response as JSON: {e}")
+        logger.error(f"[TELEGRAM] Raw response was: {response[:500] if response else 'None'}")
+        return {}
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error calling LLM Vision: {e}", exc_info=True)
+        logger.error(f"[TELEGRAM] ❌ Error calling LLM Vision: {type(e).__name__}: {e}", exc_info=True)
         return {}
 
 
@@ -227,8 +245,10 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg
     """
     if not EMERGENT_LLM_KEY:
-        logger.warning("[TELEGRAM] EMERGENT_LLM_KEY not configured for audio transcription")
+        logger.error("[TELEGRAM] ❌ EMERGENT_LLM_KEY not configured for audio transcription")
         return None
+    
+    logger.info(f"[TELEGRAM] 🎤 Starting audio transcription with Whisper ({len(audio_bytes)} bytes, format: {file_extension})")
     
     try:
         import tempfile
@@ -239,9 +259,12 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
             temp_file.write(audio_bytes)
             temp_path = temp_file.name
         
+        logger.info(f"[TELEGRAM] Audio saved to temp file: {temp_path}")
+        
         try:
             # Initialize Whisper
             stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+            logger.info("[TELEGRAM] Whisper STT initialized, starting transcription...")
             
             # Transcribe with Portuguese language hint
             with open(temp_path, "rb") as audio_file:
@@ -253,15 +276,16 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
                 )
             
             transcribed_text = response.text
-            logger.info(f"[TELEGRAM] Whisper transcribed: {transcribed_text[:100]}...")
+            logger.info(f"[TELEGRAM] ✅ Whisper transcribed successfully: '{transcribed_text[:100]}...'")
             return transcribed_text
             
         finally:
             # Clean up temp file
             os_module.unlink(temp_path)
+            logger.info("[TELEGRAM] Temp audio file cleaned up")
             
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error transcribing audio: {e}", exc_info=True)
+        logger.error(f"[TELEGRAM] ❌ Error transcribing audio: {type(e).__name__}: {e}", exc_info=True)
         return None
 
 
@@ -380,6 +404,13 @@ async def process_telegram_message(
     5. Create intake request
     6. Send confirmation to user
     """
+    logger.info(f"[TELEGRAM] ========== PROCESSING MESSAGE ==========")
+    logger.info(f"[TELEGRAM] Chat: {chat_id}, User: {first_name} (@{username})")
+    logger.info(f"[TELEGRAM] Text: {message_text[:100] if message_text else 'None'}...")
+    logger.info(f"[TELEGRAM] Photos: {len(photo_file_ids) if photo_file_ids else 0}")
+    logger.info(f"[TELEGRAM] Voice: {'Yes' if voice_file_id else 'No'}")
+    logger.info(f"[TELEGRAM] EMERGENT_LLM_KEY configured: {bool(EMERGENT_LLM_KEY)}")
+    
     telegram_username = f"@{username}" if username else None
     photo_file_ids = photo_file_ids or []
     
@@ -397,34 +428,44 @@ async def process_telegram_message(
     
     # Process voice message first
     if voice_file_id:
-        logger.info(f"[TELEGRAM] Processing voice message")
+        logger.info(f"[TELEGRAM] 🎤 Processing voice message: {voice_file_id[:20]}...")
         voice_bytes = await download_telegram_file(voice_file_id)
         
         if voice_bytes:
+            logger.info(f"[TELEGRAM] Voice downloaded: {len(voice_bytes)} bytes, starting transcription...")
             transcribed = await transcribe_audio_with_whisper(voice_bytes, "ogg")
             if transcribed:
                 if combined_text:
                     combined_text += "\n\n🎤 Mensagem de voz:\n" + transcribed
                 else:
                     combined_text = transcribed
-                logger.info(f"[TELEGRAM] Voice transcribed: {transcribed[:100]}...")
+                logger.info(f"[TELEGRAM] ✅ Voice transcribed and added to text")
+            else:
+                logger.warning("[TELEGRAM] ⚠️ Voice transcription returned empty")
+        else:
+            logger.error("[TELEGRAM] ❌ Failed to download voice file")
     
     # Process photos
     if photo_file_ids:
-        logger.info(f"[TELEGRAM] Processing {len(photo_file_ids)} photos")
+        logger.info(f"[TELEGRAM] 📸 Processing {len(photo_file_ids)} photos...")
         
         for i, file_id in enumerate(photo_file_ids[:3]):  # Max 3 photos
+            logger.info(f"[TELEGRAM] Processing photo {i+1}/{min(len(photo_file_ids), 3)}: {file_id[:20]}...")
             image_bytes = await download_telegram_file(file_id)
             
             if image_bytes:
+                logger.info(f"[TELEGRAM] Photo {i+1} downloaded: {len(image_bytes)} bytes, analyzing with LLM...")
                 image_info = await analyze_image_with_llm(image_bytes)
                 
                 if image_info:
+                    logger.info(f"[TELEGRAM] Photo {i+1} analysis result: {image_info}")
                     # Merge extracted info (prefer first found values)
                     if not extracted["license_plate"] and image_info.get("license_plate"):
                         extracted["license_plate"] = image_info["license_plate"]
+                        logger.info(f"[TELEGRAM] ✅ Found license plate from photo: {extracted['license_plate']}")
                     if not extracted["tire_size"] and image_info.get("tire_size"):
                         extracted["tire_size"] = image_info["tire_size"]
+                        logger.info(f"[TELEGRAM] ✅ Found tire size from photo: {extracted['tire_size']}")
                     
                     # Collect descriptions
                     if image_info.get("description"):
@@ -434,11 +475,14 @@ async def process_telegram_message(
                         if image_info.get("tire_condition"):
                             desc += f" (Estado: {image_info['tire_condition']})"
                         image_descriptions.append(desc)
+                else:
+                    logger.warning(f"[TELEGRAM] ⚠️ Photo {i+1} analysis returned empty")
             else:
-                logger.warning(f"[TELEGRAM] Could not download photo {i+1}")
+                logger.error(f"[TELEGRAM] ❌ Could not download photo {i+1}")
     
     # Add image descriptions to combined text
     if image_descriptions:
+        logger.info(f"[TELEGRAM] Adding {len(image_descriptions)} image descriptions to text")
         if combined_text:
             combined_text += "\n\n📸 Análise das imagens:\n"
         else:
@@ -447,6 +491,7 @@ async def process_telegram_message(
     
     # Extract info from text (if we have any text to analyze)
     if combined_text:
+        logger.info(f"[TELEGRAM] Extracting info from combined text ({len(combined_text)} chars)...")
         text_extracted = await extract_info_with_llm(combined_text)
         
         # Merge with photo info (photo takes precedence for visual info)
@@ -458,9 +503,12 @@ async def process_telegram_message(
         extracted["urgency"] = text_extracted.get("urgency", "normal")
         extracted["summary"] = text_extracted.get("summary", "")
     
+    logger.info(f"[TELEGRAM] Final extracted data: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}")
+    
     # Lookup customer by license plate
     customer_info = None
     if extracted.get("license_plate"):
+        logger.info(f"[TELEGRAM] Looking up customer by plate: {extracted['license_plate']}")
         customer_info = await lookup_customer_by_plate(extracted["license_plate"])
     
     # Determine sender info
