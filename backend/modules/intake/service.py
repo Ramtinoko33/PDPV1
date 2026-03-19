@@ -22,20 +22,31 @@ async def create_intake_request(
     telegram_username: Optional[str] = None,
     license_plate: Optional[str] = None,
     tire_size: Optional[str] = None,
-    attachments: list = None
+    attachments: list = None,
+    # New analysis fields
+    analysis_status: str = "pending",
+    analysis_error: Optional[str] = None,
+    raw_vision_output: Optional[str] = None,
+    # Extra extracted data
+    customer_phone: Optional[str] = None,
+    vehicle_brand: Optional[str] = None,
+    vehicle_model: Optional[str] = None
 ) -> dict:
     """Create a new intake request."""
     now = datetime.now(timezone.utc).isoformat()
     intake_id = str(uuid.uuid4())
+    
+    # Use customer_phone if provided and sender_contact is empty
+    final_contact = sender_contact or customer_phone or ""
     
     doc = {
         "id": intake_id,
         "source": source,
         "source_type": source_type.value if isinstance(source_type, IntakeSourceType) else source_type,
         "sender_name": sender_name,
-        "sender_contact": sender_contact,  # Phone number only
+        "sender_contact": final_contact,
         "sender_email": sender_email,
-        "telegram_username": telegram_username,  # Telegram username stored separately
+        "telegram_username": telegram_username,
         "raw_text": raw_text,
         "license_plate": license_plate,
         "tire_size": tire_size,
@@ -50,7 +61,14 @@ async def create_intake_request(
         "converted_ticket_id": None,
         "converted_ticket_number": None,
         "converted_at": None,
-        "converted_by": None
+        "converted_by": None,
+        # Analysis tracking
+        "analysis_status": analysis_status,
+        "analysis_error": analysis_error,
+        "raw_vision_output": raw_vision_output,
+        # Extra vehicle data
+        "vehicle_brand": vehicle_brand,
+        "vehicle_model": vehicle_model
     }
     
     await db.intake_requests.insert_one(doc)

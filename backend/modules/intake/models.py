@@ -81,6 +81,13 @@ class IntakeRequestResponse(BaseModel):
     converted_ticket_number: Optional[str] = None
     converted_at: Optional[str] = None
     converted_by: Optional[str] = None
+    # Analysis tracking
+    analysis_status: Optional[str] = None
+    analysis_error: Optional[str] = None
+    raw_vision_output: Optional[str] = None
+    # Extra vehicle data
+    vehicle_brand: Optional[str] = None
+    vehicle_model: Optional[str] = None
 
 
 class ConvertToTicketRequest(BaseModel):

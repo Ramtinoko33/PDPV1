@@ -121,72 +121,81 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
 
 async def analyze_image_with_llm(image_bytes: bytes) -> dict:
     """
-    Use Emergent LLM (GPT-5.2 Vision) to analyze an image.
-    Extracts: license plate, tire size, tire condition, brand.
+    Analyze image using GPT-5.2 Vision via Emergent LLM Key.
+    Returns structured data extracted from the image.
     """
     if not EMERGENT_LLM_KEY:
-        logger.error("[TELEGRAM] ❌ EMERGENT_LLM_KEY not configured - cannot analyze image")
-        return {}
+        logger.error("[VISION] EMERGENT_LLM_KEY not configured")
+        return {"error": "LLM key not configured", "success": False}
     
-    logger.info(f"[TELEGRAM] 🔍 Starting image analysis with GPT-5.2 Vision ({len(image_bytes)} bytes)")
+    logger.info(f"[VISION] Analyzing image: {len(image_bytes)} bytes")
     
     try:
         # Convert image to base64
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-        logger.info(f"[TELEGRAM] Image converted to base64: {len(image_base64)} chars")
         
-        # Create chat instance with vision model
+        # Create chat instance
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
-            session_id=f"telegram-vision-{uuid.uuid4().hex[:8]}",
-            system_message="És um assistente especializado em análise de imagens de veículos e pneus em Portugal. Responde sempre em JSON válido."
+            session_id=f"vision-{uuid.uuid4().hex[:8]}",
+            system_message="Extrais dados de imagens. Responde APENAS com JSON válido, sem texto extra."
         ).with_model(LLM_PROVIDER, LLM_MODEL)
         
-        logger.info(f"[TELEGRAM] LLM Chat created with model: {LLM_PROVIDER}/{LLM_MODEL}")
-        
-        prompt = """Analisa esta imagem de um contexto automóvel/oficina.
-Extrai as seguintes informações se visíveis:
+        prompt = """Analisa esta imagem e extrai os dados visíveis.
+Devolve APENAS este JSON (sem markdown, sem texto extra):
+{
+  "customer_name": "",
+  "customer_phone": "",
+  "email": "",
+  "vehicle_brand": "",
+  "vehicle_model": "",
+  "license_plate": "",
+  "tire_size": "",
+  "quantity": "",
+  "subject": "",
+  "message": "",
+  "confidence": 0
+}
 
-1. Matrícula do veículo (formato português: AA-00-AA ou 00-AA-00)
-2. Medida de pneu (exemplo: 205/55 R16, 225/45R17) - procura no flanco do pneu
-3. Marca do pneu (Michelin, Continental, Pirelli, Bridgestone, etc.)
-4. Estado do pneu (bom, desgastado, danificado)
-5. Descrição breve do que vês na imagem
+Regras:
+- Se não conseguires ler um campo, deixa string vazia ""
+- confidence: 0-100 (quão certo estás da extração)
+- license_plate: formato português (AA-00-AA ou 00-AA-00)
+- tire_size: formato como 205/55 R16
+- NÃO inventes dados"""
 
-Responde APENAS em formato JSON válido:
-{"license_plate": "XX-00-XX ou null", "tire_size": "000/00 R00 ou null", "tire_brand": "marca ou null", "tire_condition": "estado ou null", "description": "descrição breve"}"""
-        
-        # Create message with image attachment
+        # Use file_contents with ImageContent (correct method per playbook)
         image_content = ImageContent(image_base64=image_base64)
         user_message = UserMessage(
             text=prompt,
-            image_content=[image_content]
+            file_contents=[image_content]
         )
         
-        logger.info("[TELEGRAM] Sending image to LLM for analysis...")
-        
-        # Send message and get response
+        # Send to LLM
         response = await chat.send_message(user_message)
         
-        logger.info(f"[TELEGRAM] LLM Response received: {response[:200] if response else 'EMPTY'}...")
+        logger.info(f"[VISION] Raw response: {response[:300] if response else 'EMPTY'}")
         
-        # Parse JSON from response
+        # Parse JSON
         result_text = response.strip()
+        # Remove markdown code blocks if present
         if result_text.startswith("```"):
             result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
             result_text = re.sub(r'\s*```$', '', result_text)
         
         extracted = json.loads(result_text)
-        logger.info(f"[TELEGRAM] ✅ LLM Vision extracted: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}, brand={extracted.get('tire_brand')}")
+        extracted["success"] = True
+        extracted["raw_response"] = response[:500]
+        
+        logger.info(f"[VISION] Extracted: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}, conf={extracted.get('confidence')}")
         return extracted
         
     except json.JSONDecodeError as e:
-        logger.error(f"[TELEGRAM] ❌ Failed to parse LLM response as JSON: {e}")
-        logger.error(f"[TELEGRAM] Raw response was: {response[:500] if response else 'None'}")
-        return {}
+        logger.error(f"[VISION] JSON parse error: {e}")
+        return {"error": f"JSON parse error: {e}", "success": False, "raw_response": response[:500] if 'response' in dir() else ""}
     except Exception as e:
-        logger.error(f"[TELEGRAM] ❌ Error calling LLM Vision: {type(e).__name__}: {e}", exc_info=True)
-        return {}
+        logger.error(f"[VISION] Error: {type(e).__name__}: {e}")
+        return {"error": f"{type(e).__name__}: {e}", "success": False}
 
 
 async def extract_info_with_llm(text: str) -> dict:
@@ -395,142 +404,90 @@ async def process_telegram_message(
     voice_file_id: Optional[str] = None
 ) -> Tuple[bool, str]:
     """
-    Process incoming Telegram message with optional photos and voice:
-    1. Transcribe voice message if present
-    2. Download and analyze photos if present
-    3. Extract information using LLM
-    4. Lookup customer by plate if found
-    5. Create intake request
-    6. Send confirmation to user
+    Process incoming Telegram message with optional photos and voice.
+    Creates an intake request with extracted data.
     """
-    logger.info(f"[TELEGRAM] ========== PROCESSING MESSAGE ==========")
-    logger.info(f"[TELEGRAM] Chat: {chat_id}, User: {first_name} (@{username})")
-    logger.info(f"[TELEGRAM] Text: {message_text[:100] if message_text else 'None'}...")
-    logger.info(f"[TELEGRAM] Photos: {len(photo_file_ids) if photo_file_ids else 0}")
-    logger.info(f"[TELEGRAM] Voice: {'Yes' if voice_file_id else 'No'}")
-    logger.info(f"[TELEGRAM] EMERGENT_LLM_KEY configured: {bool(EMERGENT_LLM_KEY)}")
+    logger.info(f"[TELEGRAM] Processing: chat={chat_id}, photos={len(photo_file_ids or [])}, voice={bool(voice_file_id)}")
     
     telegram_username = f"@{username}" if username else None
     photo_file_ids = photo_file_ids or []
-    
-    # Initialize extracted info
-    extracted = {
-        "license_plate": None,
-        "tire_size": None,
-        "service_type": None,
-        "urgency": "normal",
-        "summary": ""
-    }
-    
-    image_descriptions = []
     combined_text = message_text or ""
+    
+    # Analysis tracking
+    analysis_status = "pending"
+    analysis_error = None
+    raw_vision_output = None
+    
+    # Extracted data from images
+    vision_data = {}
     
     # Process voice message first
     if voice_file_id:
-        logger.info(f"[TELEGRAM] 🎤 Processing voice message: {voice_file_id[:20]}...")
         voice_bytes = await download_telegram_file(voice_file_id)
-        
         if voice_bytes:
-            logger.info(f"[TELEGRAM] Voice downloaded: {len(voice_bytes)} bytes, starting transcription...")
             transcribed = await transcribe_audio_with_whisper(voice_bytes, "ogg")
             if transcribed:
-                if combined_text:
-                    combined_text += "\n\n🎤 Mensagem de voz:\n" + transcribed
-                else:
-                    combined_text = transcribed
-                logger.info(f"[TELEGRAM] ✅ Voice transcribed and added to text")
-            else:
-                logger.warning("[TELEGRAM] ⚠️ Voice transcription returned empty")
-        else:
-            logger.error("[TELEGRAM] ❌ Failed to download voice file")
+                combined_text = (combined_text + "\n\n" + transcribed).strip() if combined_text else transcribed
+                logger.info(f"[TELEGRAM] Voice transcribed: {len(transcribed)} chars")
     
-    # Process photos
+    # Process photos - this is the key part
     if photo_file_ids:
-        logger.info(f"[TELEGRAM] 📸 Processing {len(photo_file_ids)} photos...")
+        logger.info(f"[TELEGRAM] Processing {len(photo_file_ids)} photo(s)")
         
-        for i, file_id in enumerate(photo_file_ids[:3]):  # Max 3 photos
-            logger.info(f"[TELEGRAM] Processing photo {i+1}/{min(len(photo_file_ids), 3)}: {file_id[:20]}...")
-            image_bytes = await download_telegram_file(file_id)
+        for i, file_id in enumerate(photo_file_ids[:3]):
+            logger.info(f"[VISION] Photo {i+1}: file_id={file_id[:20]}...")
             
-            if image_bytes:
-                logger.info(f"[TELEGRAM] Photo {i+1} downloaded: {len(image_bytes)} bytes, analyzing with LLM...")
-                image_info = await analyze_image_with_llm(image_bytes)
+            image_bytes = await download_telegram_file(file_id)
+            if not image_bytes:
+                analysis_error = f"Failed to download photo {i+1}"
+                logger.error(f"[VISION] {analysis_error}")
+                continue
+            
+            logger.info(f"[VISION] Photo {i+1}: downloaded {len(image_bytes)} bytes")
+            
+            # Analyze image
+            result = await analyze_image_with_llm(image_bytes)
+            
+            if result.get("success"):
+                analysis_status = "success"
+                raw_vision_output = result.get("raw_response", "")
                 
-                if image_info:
-                    logger.info(f"[TELEGRAM] Photo {i+1} analysis result: {image_info}")
-                    # Merge extracted info (prefer first found values)
-                    if not extracted["license_plate"] and image_info.get("license_plate"):
-                        extracted["license_plate"] = image_info["license_plate"]
-                        logger.info(f"[TELEGRAM] ✅ Found license plate from photo: {extracted['license_plate']}")
-                    if not extracted["tire_size"] and image_info.get("tire_size"):
-                        extracted["tire_size"] = image_info["tire_size"]
-                        logger.info(f"[TELEGRAM] ✅ Found tire size from photo: {extracted['tire_size']}")
-                    
-                    # Collect descriptions
-                    if image_info.get("description"):
-                        desc = image_info["description"]
-                        if image_info.get("tire_brand"):
-                            desc += f" (Marca: {image_info['tire_brand']})"
-                        if image_info.get("tire_condition"):
-                            desc += f" (Estado: {image_info['tire_condition']})"
-                        image_descriptions.append(desc)
-                else:
-                    logger.warning(f"[TELEGRAM] ⚠️ Photo {i+1} analysis returned empty")
+                # Merge data (first valid value wins)
+                for field in ["license_plate", "tire_size", "customer_name", "customer_phone", 
+                              "email", "vehicle_brand", "vehicle_model", "message", "quantity"]:
+                    if not vision_data.get(field) and result.get(field):
+                        vision_data[field] = result[field]
+                
+                logger.info(f"[VISION] Photo {i+1} extracted: plate={result.get('license_plate')}, tire={result.get('tire_size')}")
             else:
-                logger.error(f"[TELEGRAM] ❌ Could not download photo {i+1}")
+                analysis_status = "failed"
+                analysis_error = result.get("error", "Unknown error")
+                raw_vision_output = result.get("raw_response", "")
+                logger.error(f"[VISION] Photo {i+1} failed: {analysis_error}")
     
-    # Add image descriptions to combined text
-    if image_descriptions:
-        logger.info(f"[TELEGRAM] Adding {len(image_descriptions)} image descriptions to text")
-        if combined_text:
-            combined_text += "\n\n📸 Análise das imagens:\n"
-        else:
-            combined_text = "📸 Análise das imagens:\n"
-        combined_text += "\n".join(f"- {desc}" for desc in image_descriptions)
-    
-    # Extract info from text (if we have any text to analyze)
-    if combined_text:
-        logger.info(f"[TELEGRAM] Extracting info from combined text ({len(combined_text)} chars)...")
+    # Extract from text if we have any and no vision data yet
+    text_extracted = {}
+    if combined_text and not vision_data.get("license_plate"):
         text_extracted = await extract_info_with_llm(combined_text)
-        
-        # Merge with photo info (photo takes precedence for visual info)
-        if not extracted["license_plate"]:
-            extracted["license_plate"] = text_extracted.get("license_plate")
-        if not extracted["tire_size"]:
-            extracted["tire_size"] = text_extracted.get("tire_size")
-        extracted["service_type"] = text_extracted.get("service_type")
-        extracted["urgency"] = text_extracted.get("urgency", "normal")
-        extracted["summary"] = text_extracted.get("summary", "")
     
-    logger.info(f"[TELEGRAM] Final extracted data: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}")
+    # Build final message text
+    if vision_data.get("message"):
+        combined_text = (combined_text + "\n\n" + vision_data["message"]).strip() if combined_text else vision_data["message"]
     
     # Lookup customer by license plate
-    customer_info = None
-    if extracted.get("license_plate"):
-        logger.info(f"[TELEGRAM] Looking up customer by plate: {extracted['license_plate']}")
-        customer_info = await lookup_customer_by_plate(extracted["license_plate"])
+    license_plate = vision_data.get("license_plate") or text_extracted.get("license_plate")
+    customer_info = await lookup_customer_by_plate(license_plate) if license_plate else None
     
-    # Determine sender info
-    if customer_info and customer_info.get("name"):
-        sender_name = customer_info["name"]
-        logger.info(f"[TELEGRAM] Using customer name from DB: {sender_name}")
-    else:
-        sender_name = first_name
-        if last_name:
-            sender_name = f"{first_name} {last_name}"
-        logger.info(f"[TELEGRAM] Using Telegram name: {sender_name}")
+    # Determine final values
+    sender_name = vision_data.get("customer_name") or (customer_info or {}).get("name") or first_name
+    if last_name and sender_name == first_name:
+        sender_name = f"{first_name} {last_name}"
     
-    # Determine contact (phone only)
-    sender_contact = ""
-    if customer_info and customer_info.get("phone"):
-        sender_contact = customer_info["phone"]
-        logger.info(f"[TELEGRAM] Using phone from DB: {sender_contact}")
+    sender_contact = vision_data.get("customer_phone") or (customer_info or {}).get("phone") or ""
+    sender_email = vision_data.get("email") or (customer_info or {}).get("email")
+    tire_size = vision_data.get("tire_size") or text_extracted.get("tire_size")
     
-    # Determine email
-    sender_email = None
-    if customer_info and customer_info.get("email"):
-        sender_email = customer_info["email"]
-        logger.info(f"[TELEGRAM] Using email from DB: {sender_email}")
+    logger.info(f"[TELEGRAM] Final data: name={sender_name}, plate={license_plate}, tire={tire_size}, status={analysis_status}")
     
     # Create intake request
     try:
@@ -541,51 +498,46 @@ async def process_telegram_message(
             sender_contact=sender_contact,
             sender_email=sender_email,
             telegram_username=telegram_username,
-            raw_text=combined_text,
-            license_plate=extracted.get("license_plate"),
-            tire_size=extracted.get("tire_size"),
-            attachments=[]
+            raw_text=combined_text or "(sem texto)",
+            license_plate=license_plate,
+            tire_size=tire_size,
+            attachments=[],
+            # New fields
+            analysis_status=analysis_status,
+            analysis_error=analysis_error,
+            raw_vision_output=raw_vision_output,
+            customer_phone=vision_data.get("customer_phone"),
+            vehicle_brand=vision_data.get("vehicle_brand"),
+            vehicle_model=vision_data.get("vehicle_model")
         )
         
         intake_id = intake.get("id", "")[:8]
+        logger.info(f"[TELEGRAM] Created intake: {intake_id}")
         
-        # Build confirmation message
+        # Send confirmation
         confirmation = f"""✅ <b>Pedido recebido!</b>
 
-Olá {first_name}, recebemos o seu pedido e vamos analisá-lo brevemente.
+Olá {first_name}, recebemos o seu pedido.
 
-📋 <b>Referência:</b> #{intake_id}
-"""
-        if extracted.get("license_plate"):
-            confirmation += f"🚗 <b>Matrícula:</b> {extracted['license_plate']}\n"
-        if extracted.get("tire_size"):
-            confirmation += f"🔘 <b>Medida:</b> {extracted['tire_size']}\n"
-        if photo_file_ids:
-            confirmation += f"📸 <b>Fotos recebidas:</b> {len(photo_file_ids)}\n"
-        if voice_file_id:
-            confirmation += f"🎤 <b>Áudio transcrito:</b> Sim\n"
-        if extracted.get("summary"):
-            confirmation += f"\n📝 {extracted['summary']}\n"
+📋 <b>Referência:</b> #{intake_id}"""
         
-        confirmation += "\nA nossa equipa irá contactá-lo em breve. Obrigado!"
+        if license_plate:
+            confirmation += f"\n🚗 <b>Matrícula:</b> {license_plate}"
+        if tire_size:
+            confirmation += f"\n🔘 <b>Medida:</b> {tire_size}"
+        if photo_file_ids:
+            confirmation += f"\n📸 <b>Fotos:</b> {len(photo_file_ids)}"
+        if voice_file_id:
+            confirmation += f"\n🎤 <b>Áudio:</b> Transcrito"
+        
+        confirmation += "\n\nA nossa equipa irá contactá-lo em breve!"
         
         await send_telegram_message(chat_id, confirmation)
-        
-        logger.info(f"[TELEGRAM] Created intake {intake_id} from user {sender_name}")
         return True, intake_id
         
     except Exception as e:
-        logger.error(f"[TELEGRAM] Error creating intake: {e}", exc_info=True)
-        
-        error_msg = f"""⚠️ <b>Ocorreu um erro</b>
-
-Olá {first_name}, pedimos desculpa mas ocorreu um erro ao processar o seu pedido.
-
-Por favor, tente novamente ou contacte-nos através do telefone.
-
-Obrigado pela compreensão!"""
-        
-        await send_telegram_message(chat_id, error_msg)
+        logger.error(f"[TELEGRAM] Error creating intake: {e}")
+        await send_telegram_message(chat_id, f"⚠️ Erro ao processar pedido. Tente novamente.")
         return False, str(e)
 
 
