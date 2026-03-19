@@ -8,6 +8,18 @@ const NotificationContext = createContext(null);
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://');
 
+// Check if JWT token is expired
+function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // Check if token expires in less than 60 seconds
+    return payload.exp * 1000 < Date.now() + 60000;
+  } catch (e) {
+    return true;
+  }
+}
+
 // Convert VAPID key from base64 to Uint8Array
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -232,6 +244,12 @@ export const NotificationProvider = ({ children }) => {
   const connectWebSocket = useCallback(() => {
     if (!token || !user) return;
 
+    // Check if token is expired before connecting
+    if (isTokenExpired(token)) {
+      console.log('WebSocket: Token expired, skipping connection');
+      return;
+    }
+
     // Close existing connection
     if (wsRef.current) {
       wsRef.current.close();
@@ -278,11 +296,16 @@ export const NotificationProvider = ({ children }) => {
         console.log('WebSocket disconnected', event.code);
         wsRef.current = null;
         
-        // Reconnect after 5 seconds if not intentional close
-        if (event.code !== 1000 && token) {
+        // Only reconnect if:
+        // - Not intentional close (code !== 1000)
+        // - Token exists and is not expired
+        // - Not a 403 Forbidden (code 4403 or close reason)
+        if (event.code !== 1000 && event.code !== 4403 && token && !isTokenExpired(token)) {
           reconnectTimeoutRef.current = setTimeout(() => {
             connectWebSocket();
           }, 5000);
+        } else if (isTokenExpired(token)) {
+          console.log('WebSocket: Token expired, not reconnecting');
         }
       };
 
