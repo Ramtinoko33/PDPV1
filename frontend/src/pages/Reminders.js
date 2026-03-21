@@ -79,7 +79,8 @@ const Reminders = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
-      setUsers(response.data.filter(u => u.is_active));
+      // Filter only active users (default to true if is_active is not defined)
+      setUsers(response.data.filter(u => u.is_active !== false));
     } catch (error) {
       console.error('Error fetching users:', error);
     }

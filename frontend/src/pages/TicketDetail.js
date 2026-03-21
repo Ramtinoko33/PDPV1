@@ -668,7 +668,8 @@ const TicketDetail = () => {
     if (['ADMIN', 'SUPERVISOR'].includes(user?.role)) {
       try {
         const response = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
-        setUsers(response.data.filter(u => ['AGENT', 'SUPERVISOR'].includes(u.role)));
+        // Filter active users with AGENT or SUPERVISOR role
+        setUsers(response.data.filter(u => u.is_active !== false && ['AGENT', 'SUPERVISOR', 'ADMIN'].includes(u.role)));
       } catch (error) {
         console.error('Error fetching users:', error);
       }
