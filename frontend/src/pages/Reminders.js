@@ -239,20 +239,24 @@ const Reminders = () => {
                 </div>
                 <div>
                   <Label>Atribuir a</Label>
-                  <Select
-                    value={newReminder.assigned_to_user_id || "self"}
-                    onValueChange={(v) => setNewReminder({ ...newReminder, assigned_to_user_id: v === "self" ? "" : v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Eu próprio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="self">Eu próprio</SelectItem>
-                      {users.map(u => (
-                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {['ADMIN', 'SUPERVISOR'].includes(user?.role) ? (
+                    <Select
+                      value={newReminder.assigned_to_user_id || "self"}
+                      onValueChange={(v) => setNewReminder({ ...newReminder, assigned_to_user_id: v === "self" ? "" : v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Eu próprio" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">Eu próprio</SelectItem>
+                        {users.map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input value="Eu próprio" disabled className="bg-zinc-100" />
+                  )}
                 </div>
               </div>
               
