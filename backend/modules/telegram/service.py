@@ -11,6 +11,7 @@ import httpx
 import logging
 import uuid
 import tempfile
+import subprocess
 from typing import Optional, Tuple, List
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -274,8 +275,11 @@ Responde APENAS em formato JSON válido com estas chaves:
 async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str = "ogg") -> Optional[str]:
     """
     Use OpenAI Whisper (via Emergent) to transcribe audio to text.
-    Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg
+    Converts OGG to MP3 first since Whisper doesn't support OGG.
+    Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
     """
+    import subprocess
+    
     print(f"[WHISPER] Starting transcription: {len(audio_bytes)} bytes, format: {file_extension}")
     
     if not EMERGENT_LLM_KEY:
@@ -286,48 +290,74 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     print(f"[WHISPER] EMERGENT_LLM_KEY is set: {EMERGENT_LLM_KEY[:15]}...")
     logger.info(f"[TELEGRAM] 🎤 Starting audio transcription with Whisper ({len(audio_bytes)} bytes, format: {file_extension})")
     
+    ogg_path = None
+    mp3_path = None
+    
     try:
         import os as os_module
         
-        # Write audio to temp file (Whisper needs a file)
+        # Save original audio file
         with tempfile.NamedTemporaryFile(suffix=f".{file_extension}", delete=False) as temp_file:
             temp_file.write(audio_bytes)
-            temp_path = temp_file.name
+            ogg_path = temp_file.name
         
-        print(f"[WHISPER] Audio saved to temp file: {temp_path}")
-        logger.info(f"[TELEGRAM] Audio saved to temp file: {temp_path}")
+        print(f"[WHISPER] Audio saved to: {ogg_path}")
         
-        try:
-            # Initialize Whisper
-            print("[WHISPER] Initializing OpenAISpeechToText...")
-            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-            print("[WHISPER] Calling transcribe()...")
-            logger.info("[TELEGRAM] Whisper STT initialized, starting transcription...")
+        # Convert OGG to MP3 using ffmpeg (Whisper doesn't support OGG)
+        mp3_path = ogg_path.replace(f".{file_extension}", ".mp3")
+        print(f"[WHISPER] Converting to MP3: {mp3_path}")
+        
+        convert_result = subprocess.run(
+            ["ffmpeg", "-i", ogg_path, "-y", "-acodec", "libmp3lame", "-ab", "128k", mp3_path],
+            capture_output=True,
+            timeout=30
+        )
+        
+        if convert_result.returncode != 0:
+            print(f"[WHISPER] ERROR: ffmpeg conversion failed: {convert_result.stderr.decode()[:200]}")
+            logger.error(f"[TELEGRAM] ffmpeg conversion failed: {convert_result.stderr.decode()[:200]}")
+            return None
+        
+        # Check MP3 file size
+        mp3_size = os_module.path.getsize(mp3_path)
+        print(f"[WHISPER] MP3 created: {mp3_size} bytes")
+        
+        # Initialize Whisper
+        print("[WHISPER] Initializing OpenAISpeechToText...")
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        print("[WHISPER] Calling transcribe()...")
+        logger.info("[TELEGRAM] Whisper STT initialized, starting transcription...")
+        
+        # Transcribe with Portuguese language hint
+        with open(mp3_path, "rb") as audio_file:
+            response = await stt.transcribe(
+                file=audio_file,
+                model="whisper-1",
+                response_format="json",
+                language="pt"  # Portuguese
+            )
+        
+        transcribed_text = response.text
+        print(f"[WHISPER] SUCCESS: Transcribed text: '{transcribed_text}'")
+        logger.info(f"[TELEGRAM] ✅ Whisper transcribed successfully: '{transcribed_text[:100]}...'")
+        return transcribed_text
             
-            # Transcribe with Portuguese language hint
-            with open(temp_path, "rb") as audio_file:
-                response = await stt.transcribe(
-                    file=audio_file,
-                    model="whisper-1",
-                    response_format="json",
-                    language="pt"  # Portuguese
-                )
-            
-            transcribed_text = response.text
-            print(f"[WHISPER] SUCCESS: Transcribed text: '{transcribed_text[:100]}...'")
-            logger.info(f"[TELEGRAM] ✅ Whisper transcribed successfully: '{transcribed_text[:100]}...'")
-            return transcribed_text
-            
-        finally:
-            # Clean up temp file
-            os_module.unlink(temp_path)
-            print("[WHISPER] Temp file cleaned up")
-            logger.info("[TELEGRAM] Temp audio file cleaned up")
-            
+    except subprocess.TimeoutExpired:
+        print("[WHISPER] ERROR: ffmpeg conversion timed out")
+        logger.error("[TELEGRAM] ffmpeg conversion timed out")
+        return None
     except Exception as e:
         print(f"[WHISPER] ERROR: {type(e).__name__}: {e}")
         logger.error(f"[TELEGRAM] ❌ Error transcribing audio: {type(e).__name__}: {e}", exc_info=True)
         return None
+    finally:
+        # Cleanup temp files
+        import os as os_module
+        if ogg_path and os_module.path.exists(ogg_path):
+            os_module.unlink(ogg_path)
+        if mp3_path and os_module.path.exists(mp3_path):
+            os_module.unlink(mp3_path)
+        print("[WHISPER] Temp files cleaned up")
 
 
 def extract_info_with_regex(text: str) -> dict:

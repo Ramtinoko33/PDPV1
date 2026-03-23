@@ -128,3 +128,4 @@ py-vapid==1.9.4
 pywebpush==2.3.0
 resend>=2.0.0
 reportlab==4.4.10
+pydub==0.25.1
