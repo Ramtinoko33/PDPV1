@@ -74,33 +74,40 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
     Returns the file bytes or None on failure.
     """
     if not TELEGRAM_BOT_TOKEN:
+        print("[TELEGRAM] ERROR: Bot token not configured")
         logger.error("[TELEGRAM] Bot token not configured")
         return None
     
     try:
         get_file_url = f"{TELEGRAM_API_URL}{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+        print(f"[TELEGRAM] Downloading file: {file_id[:30]}...")
         logger.info(f"[TELEGRAM] Downloading file: {file_id[:20]}...")
         
         async with httpx.AsyncClient() as client:
             response = await client.get(get_file_url, timeout=10.0)
             
             if response.status_code != 200:
+                print(f"[TELEGRAM] ERROR: getFile failed with HTTP {response.status_code}")
                 logger.error(f"[TELEGRAM] Failed to get file info: HTTP {response.status_code} - {response.text}")
                 return None
             
             data = response.json()
+            print(f"[TELEGRAM] getFile response: ok={data.get('ok')}, file_path={data.get('result', {}).get('file_path')}")
             logger.info(f"[TELEGRAM] getFile response: ok={data.get('ok')}")
             
             if not data.get("ok"):
+                print(f"[TELEGRAM] ERROR: getFile not ok: {data}")
                 logger.error(f"[TELEGRAM] getFile failed: {data}")
                 return None
             
             file_path = data.get("result", {}).get("file_path")
             file_size = data.get("result", {}).get("file_size", 0)
             if not file_path:
+                print("[TELEGRAM] ERROR: No file_path in response")
                 logger.error("[TELEGRAM] No file_path in response")
                 return None
             
+            print(f"[TELEGRAM] File path: {file_path}, size: {file_size} bytes")
             logger.info(f"[TELEGRAM] File path: {file_path}, size: {file_size} bytes")
             download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
             
@@ -108,9 +115,11 @@ async def download_telegram_file(file_id: str) -> Optional[bytes]:
             
             if download_response.status_code == 200:
                 file_bytes = download_response.content
+                print(f"[TELEGRAM] SUCCESS: Downloaded file: {len(file_bytes)} bytes")
                 logger.info(f"[TELEGRAM] ✅ Downloaded file successfully: {len(file_bytes)} bytes")
                 return file_bytes
             else:
+                print(f"[TELEGRAM] ERROR: Failed to download file: HTTP {download_response.status_code}")
                 logger.error(f"[TELEGRAM] ❌ Failed to download file: HTTP {download_response.status_code}")
                 return None
                 
@@ -124,17 +133,23 @@ async def analyze_image_with_llm(image_bytes: bytes) -> dict:
     Analyze image using GPT-5.2 Vision via Emergent LLM Key.
     Returns structured data extracted from the image.
     """
+    print(f"[VISION] Starting image analysis: {len(image_bytes)} bytes")
+    
     if not EMERGENT_LLM_KEY:
+        print("[VISION] ERROR: EMERGENT_LLM_KEY not configured")
         logger.error("[VISION] EMERGENT_LLM_KEY not configured")
         return {"error": "LLM key not configured", "success": False}
     
+    print(f"[VISION] EMERGENT_LLM_KEY is set: {EMERGENT_LLM_KEY[:15]}...")
     logger.info(f"[VISION] Analyzing image: {len(image_bytes)} bytes")
     
     try:
         # Convert image to base64
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        print(f"[VISION] Image converted to base64: {len(image_base64)} chars")
         
         # Create chat instance
+        print(f"[VISION] Creating LlmChat with model: {LLM_PROVIDER}/{LLM_MODEL}")
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"vision-{uuid.uuid4().hex[:8]}",
@@ -165,6 +180,7 @@ Regras:
 - NÃO inventes dados"""
 
         # Use file_contents with ImageContent (correct method per playbook)
+        print("[VISION] Creating UserMessage with ImageContent...")
         image_content = ImageContent(image_base64=image_base64)
         user_message = UserMessage(
             text=prompt,
@@ -172,8 +188,11 @@ Regras:
         )
         
         # Send to LLM
+        print("[VISION] Sending to LLM...")
         response = await chat.send_message(user_message)
         
+        print(f"[VISION] LLM Response: {response[:300] if response else 'EMPTY'}")
+        print(f"[VISION] LLM Response: {response[:300] if response else 'EMPTY'}")
         logger.info(f"[VISION] Raw response: {response[:300] if response else 'EMPTY'}")
         
         # Parse JSON
@@ -183,17 +202,21 @@ Regras:
             result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
             result_text = re.sub(r'\s*```$', '', result_text)
         
+        print(f"[VISION] Parsing JSON: {result_text[:200]}")
         extracted = json.loads(result_text)
         extracted["success"] = True
         extracted["raw_response"] = response[:500]
         
+        print(f"[VISION] SUCCESS: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}, conf={extracted.get('confidence')}")
         logger.info(f"[VISION] Extracted: plate={extracted.get('license_plate')}, tire={extracted.get('tire_size')}, conf={extracted.get('confidence')}")
         return extracted
         
     except json.JSONDecodeError as e:
+        print(f"[VISION] ERROR: JSON parse error: {e}")
         logger.error(f"[VISION] JSON parse error: {e}")
         return {"error": f"JSON parse error: {e}", "success": False, "raw_response": response[:500] if 'response' in dir() else ""}
     except Exception as e:
+        print(f"[VISION] ERROR: {type(e).__name__}: {e}")
         logger.error(f"[VISION] Error: {type(e).__name__}: {e}")
         return {"error": f"{type(e).__name__}: {e}", "success": False}
 
@@ -253,10 +276,14 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     Use OpenAI Whisper (via Emergent) to transcribe audio to text.
     Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg
     """
+    print(f"[WHISPER] Starting transcription: {len(audio_bytes)} bytes, format: {file_extension}")
+    
     if not EMERGENT_LLM_KEY:
+        print("[WHISPER] ERROR: EMERGENT_LLM_KEY not configured")
         logger.error("[TELEGRAM] ❌ EMERGENT_LLM_KEY not configured for audio transcription")
         return None
     
+    print(f"[WHISPER] EMERGENT_LLM_KEY is set: {EMERGENT_LLM_KEY[:15]}...")
     logger.info(f"[TELEGRAM] 🎤 Starting audio transcription with Whisper ({len(audio_bytes)} bytes, format: {file_extension})")
     
     try:
@@ -267,11 +294,14 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
             temp_file.write(audio_bytes)
             temp_path = temp_file.name
         
+        print(f"[WHISPER] Audio saved to temp file: {temp_path}")
         logger.info(f"[TELEGRAM] Audio saved to temp file: {temp_path}")
         
         try:
             # Initialize Whisper
+            print("[WHISPER] Initializing OpenAISpeechToText...")
             stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+            print("[WHISPER] Calling transcribe()...")
             logger.info("[TELEGRAM] Whisper STT initialized, starting transcription...")
             
             # Transcribe with Portuguese language hint
@@ -284,15 +314,18 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
                 )
             
             transcribed_text = response.text
+            print(f"[WHISPER] SUCCESS: Transcribed text: '{transcribed_text[:100]}...'")
             logger.info(f"[TELEGRAM] ✅ Whisper transcribed successfully: '{transcribed_text[:100]}...'")
             return transcribed_text
             
         finally:
             # Clean up temp file
             os_module.unlink(temp_path)
+            print("[WHISPER] Temp file cleaned up")
             logger.info("[TELEGRAM] Temp audio file cleaned up")
             
     except Exception as e:
+        print(f"[WHISPER] ERROR: {type(e).__name__}: {e}")
         logger.error(f"[TELEGRAM] ❌ Error transcribing audio: {type(e).__name__}: {e}", exc_info=True)
         return None
 

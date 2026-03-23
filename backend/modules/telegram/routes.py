@@ -151,15 +151,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             if msg.photo and len(msg.photo) > 0:
                 largest_photo = max(msg.photo, key=lambda p: p.file_size or 0)
                 photo_file_id = largest_photo.file_id
+                print(f"[TELEGRAM] Photo received, file_id: {photo_file_id[:30]}..., size: {largest_photo.file_size}")
                 logger.info(f"[TELEGRAM] Photo received: {photo_file_id}")
             
             # Get voice/audio file_id
             voice_file_id = None
             if msg.voice:
                 voice_file_id = msg.voice.file_id
+                print(f"[TELEGRAM] Voice message received, file_id: {voice_file_id[:30]}..., duration: {msg.voice.duration}s")
                 logger.info(f"[TELEGRAM] Voice message received: {voice_file_id}")
             elif msg.audio:
                 voice_file_id = msg.audio.file_id
+                print(f"[TELEGRAM] Audio file received, file_id: {voice_file_id[:30]}..., duration: {msg.audio.duration}s")
                 logger.info(f"[TELEGRAM] Audio file received: {voice_file_id}")
             
             # Skip if no content at all
