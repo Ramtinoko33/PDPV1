@@ -1359,7 +1359,7 @@ async def download_attachment(attachment_id: str, current_user: dict = Depends(g
     
     file_path = UPLOAD_DIR / attachment["filename"]
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor")
+        raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor. Os ficheiros podem ter sido perdidos após um deployment. Por favor, carregue o ficheiro novamente.")
     
     return FileResponse(
         path=str(file_path),
@@ -3553,7 +3553,10 @@ async def download_attachment_public(token: str, attachment_id: str):
     
     file_path = UPLOAD_DIR / attachment["filename"]
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor")
+        # File doesn't exist on disk - redirect to dynamic PDF generation
+        # This handles cases where files were lost between deployments
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/api/public/quote/{token}/pdf", status_code=302)
     
     return FileResponse(
         path=str(file_path),
