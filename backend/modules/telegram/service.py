@@ -12,6 +12,7 @@ import logging
 import uuid
 import tempfile
 import subprocess
+import shutil
 from typing import Optional, Tuple, List
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -275,10 +276,11 @@ Responde APENAS em formato JSON válido com estas chaves:
 async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str = "ogg") -> Optional[str]:
     """
     Use OpenAI Whisper (via Emergent) to transcribe audio to text.
-    Converts OGG to MP3 first since Whisper doesn't support OGG.
+    Converts OGG to a supported format if needed.
     Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
     """
     import subprocess
+    import shutil
     
     print(f"[WHISPER] Starting transcription: {len(audio_bytes)} bytes, format: {file_extension}")
     
@@ -292,6 +294,7 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     
     ogg_path = None
     mp3_path = None
+    final_path = None
     
     try:
         import os as os_module
@@ -303,24 +306,43 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
         
         print(f"[WHISPER] Audio saved to: {ogg_path}")
         
-        # Convert OGG to MP3 using ffmpeg (Whisper doesn't support OGG)
-        mp3_path = ogg_path.replace(f".{file_extension}", ".mp3")
-        print(f"[WHISPER] Converting to MP3: {mp3_path}")
+        # Check if ffmpeg is available for conversion
+        ffmpeg_available = shutil.which("ffmpeg") is not None
+        print(f"[WHISPER] ffmpeg available: {ffmpeg_available}")
         
-        convert_result = subprocess.run(
-            ["ffmpeg", "-i", ogg_path, "-y", "-acodec", "libmp3lame", "-ab", "128k", mp3_path],
-            capture_output=True,
-            timeout=30
-        )
-        
-        if convert_result.returncode != 0:
-            print(f"[WHISPER] ERROR: ffmpeg conversion failed: {convert_result.stderr.decode()[:200]}")
-            logger.error(f"[TELEGRAM] ffmpeg conversion failed: {convert_result.stderr.decode()[:200]}")
-            return None
-        
-        # Check MP3 file size
-        mp3_size = os_module.path.getsize(mp3_path)
-        print(f"[WHISPER] MP3 created: {mp3_size} bytes")
+        if file_extension.lower() == "ogg" and ffmpeg_available:
+            # Convert OGG to MP3 using ffmpeg (Whisper doesn't support OGG)
+            mp3_path = ogg_path.replace(f".{file_extension}", ".mp3")
+            print(f"[WHISPER] Converting to MP3: {mp3_path}")
+            
+            convert_result = subprocess.run(
+                ["ffmpeg", "-i", ogg_path, "-y", "-acodec", "libmp3lame", "-ab", "128k", mp3_path],
+                capture_output=True,
+                timeout=30
+            )
+            
+            if convert_result.returncode == 0:
+                final_path = mp3_path
+                mp3_size = os_module.path.getsize(mp3_path)
+                print(f"[WHISPER] MP3 created: {mp3_size} bytes")
+            else:
+                print(f"[WHISPER] WARNING: ffmpeg conversion failed, trying webm rename")
+                # Fallback: OGG is actually Opus in OGG container, try as webm
+                final_path = ogg_path.replace(".ogg", ".webm")
+                os_module.rename(ogg_path, final_path)
+                ogg_path = None  # Don't try to delete original
+                print(f"[WHISPER] Renamed to webm: {final_path}")
+        elif file_extension.lower() == "ogg":
+            # No ffmpeg - try renaming to webm (OGG Opus is similar to webm)
+            print("[WHISPER] No ffmpeg available, trying webm format")
+            final_path = ogg_path.replace(".ogg", ".webm")
+            os_module.rename(ogg_path, final_path)
+            ogg_path = None  # Don't try to delete original
+            print(f"[WHISPER] Renamed to webm: {final_path}")
+        else:
+            # Already a supported format
+            final_path = ogg_path
+            ogg_path = None  # Don't delete, we're using it
         
         # Initialize Whisper
         print("[WHISPER] Initializing OpenAISpeechToText...")
@@ -329,7 +351,7 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
         logger.info("[TELEGRAM] Whisper STT initialized, starting transcription...")
         
         # Transcribe with Portuguese language hint
-        with open(mp3_path, "rb") as audio_file:
+        with open(final_path, "rb") as audio_file:
             response = await stt.transcribe(
                 file=audio_file,
                 model="whisper-1",
@@ -353,10 +375,12 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     finally:
         # Cleanup temp files
         import os as os_module
-        if ogg_path and os_module.path.exists(ogg_path):
-            os_module.unlink(ogg_path)
-        if mp3_path and os_module.path.exists(mp3_path):
-            os_module.unlink(mp3_path)
+        for path in [ogg_path, mp3_path, final_path]:
+            if path and os_module.path.exists(path):
+                try:
+                    os_module.unlink(path)
+                except:
+                    pass
         print("[WHISPER] Temp files cleaned up")
 
 
