@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import NotificationCenter from './NotificationCenter';
+import axios from 'axios';
 import { 
   LayoutDashboard, 
   Ticket, 
@@ -23,11 +24,35 @@ import {
   Send
 } from 'lucide-react';
 
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
 const Layout = ({ children }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, getAuthHeaders } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingIntakeCount, setPendingIntakeCount] = useState(0);
+
+  // Fetch pending intake count for badge
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      if (!user || !['ADMIN', 'SUPERVISOR'].includes(user.role)) return;
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/intake/pending-count`, {
+          headers: getAuthHeaders()
+        });
+        setPendingIntakeCount(response.data.count || 0);
+      } catch (error) {
+        console.error('Error fetching pending intake count:', error);
+      }
+    };
+
+    fetchPendingCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, getAuthHeaders]);
 
   // Note: Removed auto-refresh that was causing data loss when typing
   // Notifications are now handled via NotificationContext polling
@@ -60,7 +85,8 @@ const Layout = ({ children }) => {
       path: '/intake', 
       label: 'Pré-Tickets', 
       icon: ClipboardList,
-      roles: ['ADMIN', 'SUPERVISOR']
+      roles: ['ADMIN', 'SUPERVISOR'],
+      badge: 'intake'
     },
     { 
       path: '/tickets/archived', 
@@ -158,6 +184,7 @@ const Layout = ({ children }) => {
               {filteredNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
+                const badgeCount = item.badge === 'intake' ? pendingIntakeCount : 0;
                 return (
                   <Link
                     key={item.path}
@@ -166,7 +193,7 @@ const Layout = ({ children }) => {
                     data-testid={`nav-${item.path.replace(/\//g, '-').slice(1) || 'dashboard'}`}
                     className={`
                       flex items-center gap-3 px-4 py-3 rounded-lg
-                      font-medium transition-all
+                      font-medium transition-all relative
                       ${isActive 
                         ? 'bg-orange-600 text-white shadow-lg' 
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -175,7 +202,12 @@ const Layout = ({ children }) => {
                   >
                     <Icon className="h-5 w-5" />
                     <span>{item.label}</span>
-                    {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                    {badgeCount > 0 && (
+                      <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                    {isActive && !badgeCount && <ChevronRight className="h-4 w-4 ml-auto" />}
                   </Link>
                 );
               })}

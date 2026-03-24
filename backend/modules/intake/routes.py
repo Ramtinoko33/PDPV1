@@ -27,6 +27,13 @@ from . import service
 router = APIRouter(prefix="/intake", tags=["intake"])
 
 
+@router.get("/pending-count")
+async def get_pending_count(current_user: dict = Depends(get_current_user)):
+    """Get count of pending intake requests for sidebar badge."""
+    count = await db.intake_requests.count_documents({"status": "PENDING"})
+    return {"count": count}
+
+
 @router.get("/stats")
 async def get_intake_stats(
     current_user: dict = Depends(get_current_user)
