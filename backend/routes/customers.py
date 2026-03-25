@@ -71,58 +71,108 @@ async def list_customers(
 @router.get("/search")
 async def search_customers(
     current_user: dict = Depends(get_current_user),
-    q: str = ""
+    q: str = "",
+    plate: str = "",
+    phone: str = "",
+    name: str = ""
 ):
-    """Search customers by phone, plate or name for auto-complete."""
-    if len(q) < 2:
+    """
+    Search customers by phone, plate or name for auto-complete.
+    Also searches in past tickets for matches.
+    Returns multiple matches if found - frontend should let user choose.
+    """
+    # Use specific field if provided, otherwise use general query
+    search_plate = plate.strip().upper() if plate else ""
+    search_phone = phone.strip() if phone else ""
+    search_name = name.strip() if name else ""
+    general_query = q.strip() if q else ""
+    
+    # Need at least 2 chars to search
+    if not any([len(search_plate) >= 2, len(search_phone) >= 2, len(search_name) >= 2, len(general_query) >= 2]):
         return []
     
     customer_ids_found = set()
     customers_data = {}
     
-    # Search by phone
-    customers_by_phone = await db.customers.find(
-        {"phones": {"$regex": q, "$options": "i"}},
-        {"_id": 0}
-    ).limit(10).to_list(10)
-    
-    for c in customers_by_phone:
-        if c["id"] not in customer_ids_found:
-            customer_ids_found.add(c["id"])
-            customers_data[c["id"]] = c
-    
-    # Search by plate
-    vehicles_by_plate = await db.vehicles.find(
-        {"plate": {"$regex": q, "$options": "i"}},
-        {"_id": 0}
-    ).limit(10).to_list(10)
-    
-    plate_customer_ids = [v["customer_id"] for v in vehicles_by_plate if v["customer_id"] not in customer_ids_found]
-    if plate_customer_ids:
-        customers_from_plates = await db.customers.find(
-            {"id": {"$in": plate_customer_ids}},
+    # 1. Search in customers collection by phone
+    if search_phone or general_query:
+        phone_query = search_phone or general_query
+        customers_by_phone = await db.customers.find(
+            {"phones": {"$regex": phone_query, "$options": "i"}},
             {"_id": 0}
-        ).to_list(10)
-        for c in customers_from_plates:
+        ).limit(15).to_list(15)
+        
+        for c in customers_by_phone:
             if c["id"] not in customer_ids_found:
                 customer_ids_found.add(c["id"])
                 customers_data[c["id"]] = c
     
-    # Search by name
-    customers_by_name = await db.customers.find(
-        {"name": {"$regex": q, "$options": "i"}},
-        {"_id": 0}
-    ).limit(10).to_list(10)
+    # 2. Search in vehicles collection by plate
+    if search_plate or general_query:
+        plate_query = search_plate or general_query
+        vehicles_by_plate = await db.vehicles.find(
+            {"plate": {"$regex": plate_query, "$options": "i"}},
+            {"_id": 0}
+        ).limit(15).to_list(15)
+        
+        plate_customer_ids = [v["customer_id"] for v in vehicles_by_plate if v["customer_id"] not in customer_ids_found]
+        if plate_customer_ids:
+            customers_from_plates = await db.customers.find(
+                {"id": {"$in": plate_customer_ids}},
+                {"_id": 0}
+            ).to_list(15)
+            for c in customers_from_plates:
+                if c["id"] not in customer_ids_found:
+                    customer_ids_found.add(c["id"])
+                    customers_data[c["id"]] = c
     
-    for c in customers_by_name:
-        if c["id"] not in customer_ids_found:
-            customer_ids_found.add(c["id"])
-            customers_data[c["id"]] = c
+    # 3. Search in customers collection by name
+    if search_name or general_query:
+        name_query = search_name or general_query
+        customers_by_name = await db.customers.find(
+            {"name": {"$regex": name_query, "$options": "i"}},
+            {"_id": 0}
+        ).limit(15).to_list(15)
+        
+        for c in customers_by_name:
+            if c["id"] not in customer_ids_found:
+                customer_ids_found.add(c["id"])
+                customers_data[c["id"]] = c
     
-    # Batch fetch all vehicles
-    if customer_ids_found:
+    # 4. Search in past tickets by plate, phone, or email
+    ticket_query_conditions = []
+    if search_plate or general_query:
+        ticket_query_conditions.append({"vehicle_plate": {"$regex": search_plate or general_query, "$options": "i"}})
+    if search_phone or general_query:
+        ticket_query_conditions.append({"customer_phone": {"$regex": search_phone or general_query, "$options": "i"}})
+    if search_name or general_query:
+        ticket_query_conditions.append({"customer_name": {"$regex": search_name or general_query, "$options": "i"}})
+    
+    if ticket_query_conditions:
+        tickets = await db.tickets.find(
+            {"$or": ticket_query_conditions},
+            {"_id": 0, "customer_name": 1, "customer_phone": 1, "customer_email": 1, "vehicle_plate": 1}
+        ).sort("created_at", -1).limit(20).to_list(20)
+        
+        # Create virtual customer entries from tickets that don't match existing customers
+        for t in tickets:
+            # Generate a unique key for deduplication
+            ticket_key = f"ticket_{t.get('customer_phone', '')}_{t.get('vehicle_plate', '')}"
+            if ticket_key not in customers_data and t.get("customer_name"):
+                customers_data[ticket_key] = {
+                    "id": ticket_key,
+                    "name": t.get("customer_name", ""),
+                    "phones": [t["customer_phone"]] if t.get("customer_phone") else [],
+                    "emails": [t["customer_email"]] if t.get("customer_email") else [],
+                    "from_ticket": True,
+                    "_plate": t.get("vehicle_plate")  # Temporary for building result
+                }
+    
+    # Batch fetch all vehicles for found customers
+    real_customer_ids = [cid for cid in customer_ids_found]
+    if real_customer_ids:
         all_vehicles = await db.vehicles.find(
-            {"customer_id": {"$in": list(customer_ids_found)}},
+            {"customer_id": {"$in": real_customer_ids}},
             {"_id": 0}
         ).to_list(500)
         
@@ -137,14 +187,40 @@ async def search_customers(
     
     # Build results
     results = []
+    seen_combinations = set()
+    
     for cid, c in customers_data.items():
+        # Get phone and email (first available)
+        phone = c.get("phones", [])[0] if c.get("phones") else ""
+        email = c.get("emails", [])[0] if c.get("emails") else ""
+        name = c.get("name", "")
+        
+        # Get plates
+        if c.get("from_ticket"):
+            plates = [c.get("_plate")] if c.get("_plate") else []
+        else:
+            plates = [v["plate"] for v in vehicles_by_customer.get(cid, [])]
+        
+        # Deduplicate by name+phone combination
+        combo_key = f"{name}_{phone}"
+        if combo_key in seen_combinations:
+            continue
+        seen_combinations.add(combo_key)
+        
         results.append({
-            "id": c["id"],
-            "name": c["name"],
+            "id": cid,
+            "name": name,
+            "phone": phone,
+            "email": email,
             "phones": c.get("phones", []),
             "emails": c.get("emails", []),
-            "vehicles": vehicles_by_customer.get(cid, [])
+            "plates": plates,
+            "display": f"{name}" + (f" - {phone}" if phone else "") + (f" - {email}" if email else "") + (f" - {', '.join(plates)}" if plates else ""),
+            "from_ticket": c.get("from_ticket", False)
         })
+    
+    # Sort by name
+    results.sort(key=lambda x: x["name"].lower())
     
     return results[:15]
 

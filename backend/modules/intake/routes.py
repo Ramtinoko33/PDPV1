@@ -204,6 +204,20 @@ async def convert_to_ticket(
     vehicle_plate = data.vehicle_plate or intake.get("license_plate")
     description = data.description or intake["raw_text"]
     
+    # Append tire_size and vehicle_info to description if available
+    extra_info = []
+    if intake.get("tire_size"):
+        extra_info.append(f"Medida: {intake['tire_size']}")
+    if intake.get("vehicle_brand") or intake.get("vehicle_model"):
+        vehicle_info = " ".join(filter(None, [intake.get("vehicle_brand"), intake.get("vehicle_model")]))
+        if vehicle_info:
+            extra_info.append(f"Veículo: {vehicle_info}")
+    
+    if extra_info and description:
+        description = f"{description} | {' | '.join(extra_info)}"
+    elif extra_info:
+        description = " | ".join(extra_info)
+    
     # Auto-create customer and vehicle if plate provided
     customer_id, vehicle_id, was_created = await find_or_create_customer_vehicle(
         license_plate=vehicle_plate,

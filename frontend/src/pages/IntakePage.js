@@ -117,6 +117,12 @@ const IntakePage = () => {
   });
   const [converting, setConverting] = useState(false);
   
+  // Customer search for convert modal
+  const [customerSearchResults, setCustomerSearchResults] = useState([]);
+  const [searchingCustomer, setSearchingCustomer] = useState(false);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const searchTimeoutRef = React.useRef(null);
+  
   // Users for assignment dropdown
   const [users, setUsers] = useState([]);
 
@@ -398,7 +404,87 @@ const IntakePage = () => {
       description: request.raw_text,
       assigned_to: ''
     });
+    setCustomerSearchResults([]);
+    setShowCustomerDropdown(false);
     setConvertDialog(true);
+    
+    // Auto-search by plate if available
+    if (request.license_plate) {
+      searchCustomerByField('plate', request.license_plate);
+    }
+  };
+
+  // Search customer by specific field with debounce
+  const searchCustomerByField = async (field, value) => {
+    if (!value || value.length < 2) {
+      setCustomerSearchResults([]);
+      setShowCustomerDropdown(false);
+      return;
+    }
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Debounce 500ms
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearchingCustomer(true);
+      try {
+        const params = new URLSearchParams();
+        params.append(field, value);
+        
+        const response = await axios.get(
+          `${API_URL}/api/customers/search?${params.toString()}`,
+          { headers: getAuthHeaders() }
+        );
+        
+        const results = response.data || [];
+        setCustomerSearchResults(results);
+        
+        if (results.length === 1) {
+          // Auto-fill if only one match
+          selectCustomer(results[0]);
+          setShowCustomerDropdown(false);
+        } else if (results.length > 1) {
+          // Show dropdown for multiple matches
+          setShowCustomerDropdown(true);
+        } else {
+          setShowCustomerDropdown(false);
+        }
+      } catch (error) {
+        console.error('Error searching customer:', error);
+      } finally {
+        setSearchingCustomer(false);
+      }
+    }, 500);
+  };
+
+  // Select a customer from search results
+  const selectCustomer = (customer) => {
+    setConvertData(prev => ({
+      ...prev,
+      customer_name: customer.name || prev.customer_name,
+      customer_phone: customer.phone || prev.customer_phone,
+      customer_email: customer.email || prev.customer_email,
+      vehicle_plate: customer.plates?.[0] || prev.vehicle_plate
+    }));
+    setShowCustomerDropdown(false);
+    setCustomerSearchResults([]);
+  };
+
+  // Handle field change with customer search
+  const handleConvertFieldChange = (field, value) => {
+    setConvertData(prev => ({ ...prev, [field]: value }));
+    
+    // Trigger search based on field
+    if (field === 'vehicle_plate') {
+      searchCustomerByField('plate', value);
+    } else if (field === 'customer_phone') {
+      searchCustomerByField('phone', value);
+    } else if (field === 'customer_name') {
+      searchCustomerByField('name', value);
+    }
   };
 
   const handleConvertSubmit = async () => {
@@ -1092,19 +1178,49 @@ const IntakePage = () => {
                 <span className="text-amber-600 ml-2">({convertingRequest.review_notes.length} nota(s))</span>
               )}
             </div>
+            
+            {/* Customer search dropdown */}
+            {showCustomerDropdown && customerSearchResults.length > 1 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <Label className="text-blue-700 text-sm font-medium mb-2 block">
+                  {customerSearchResults.length} clientes encontrados - selecione:
+                </Label>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {customerSearchResults.map((c, idx) => (
+                    <button
+                      key={c.id || idx}
+                      onClick={() => selectCustomer(c)}
+                      className="w-full text-left p-2 text-sm bg-white hover:bg-blue-100 rounded border border-blue-100 transition-colors"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      {c.phone && <span className="text-zinc-500"> - {c.phone}</span>}
+                      {c.email && <span className="text-zinc-400"> - {c.email}</span>}
+                      {c.plates?.length > 0 && (
+                        <span className="text-zinc-400"> - {c.plates.join(', ')}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div className="relative">
                 <Label>Nome do Cliente *</Label>
                 <Input
                   value={convertData.customer_name}
-                  onChange={(e) => setConvertData({...convertData, customer_name: e.target.value})}
+                  onChange={(e) => handleConvertFieldChange('customer_name', e.target.value)}
+                  className={searchingCustomer ? 'pr-8' : ''}
                 />
+                {searchingCustomer && (
+                  <RefreshCw className="absolute right-2 top-8 h-4 w-4 animate-spin text-zinc-400" />
+                )}
               </div>
-              <div>
-                <Label>Telefone *</Label>
+              <div className="relative">
+                <Label>Telefone</Label>
                 <Input
                   value={convertData.customer_phone}
-                  onChange={(e) => setConvertData({...convertData, customer_phone: e.target.value})}
+                  onChange={(e) => handleConvertFieldChange('customer_phone', e.target.value)}
                 />
               </div>
             </div>
@@ -1116,11 +1232,11 @@ const IntakePage = () => {
                   onChange={(e) => setConvertData({...convertData, customer_email: e.target.value})}
                 />
               </div>
-              <div>
+              <div className="relative">
                 <Label>Matrícula</Label>
                 <Input
                   value={convertData.vehicle_plate}
-                  onChange={(e) => setConvertData({...convertData, vehicle_plate: e.target.value.toUpperCase()})}
+                  onChange={(e) => handleConvertFieldChange('vehicle_plate', e.target.value.toUpperCase())}
                 />
               </div>
             </div>
