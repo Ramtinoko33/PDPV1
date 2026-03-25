@@ -2460,16 +2460,24 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
                 )
                 logger.info(f"Web push sent to user {user_id}")
             except WebPushException as e:
+                # Get response status code safely
+                status_code = getattr(e.response, 'status_code', None) if e.response else None
+                
                 # If subscription is expired/invalid (400, 404, 410), remove it silently
-                if e.response and e.response.status_code in [400, 404, 410]:
+                if status_code in [400, 404, 410]:
                     await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
-                    logger.debug(f"Removed expired subscription for user {user_id}")
-                elif e.response is None:
+                    # Don't log warnings for expected expiration - just debug
+                    logger.debug(f"Removed invalid/expired subscription for user {user_id} (HTTP {status_code})")
+                elif e.response is None or status_code is None:
                     # No response means connection failed - subscription is likely invalid
                     await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
                     logger.debug(f"Removed unreachable subscription for user {user_id}")
                 else:
-                    logger.warning(f"Web push failed for user {user_id}: {e.response.status_code}")
+                    # Only log warning for unexpected status codes (5xx, etc.)
+                    if status_code and status_code >= 500:
+                        logger.warning(f"Web push server error for user {user_id}: HTTP {status_code}")
+                    else:
+                        logger.debug(f"Web push failed for user {user_id}: HTTP {status_code}")
             except ValueError as e:
                 # VAPID key format error - log and skip silently
                 logger.warning(f"VAPID key format error, web push disabled: {e}")
