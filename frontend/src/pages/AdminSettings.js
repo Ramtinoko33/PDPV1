@@ -54,8 +54,28 @@ const AdminSettings = () => {
   const [statusForm, setStatusForm] = useState({ code: '', label: '', color: '#3b82f6', is_final: false, is_auto: false });
   const [savingStatus, setSavingStatus] = useState(false);
   
-  // SLA Config State
+  // SLA Config State - Updated with business hours and per-type SLAs
   const [slaConfig, setSlaConfig] = useState({
+    // Business Hours
+    monday: { start: '08:30', end: '18:30', closed: false },
+    tuesday: { start: '08:30', end: '18:30', closed: false },
+    wednesday: { start: '08:30', end: '18:30', closed: false },
+    thursday: { start: '08:30', end: '18:30', closed: false },
+    friday: { start: '08:30', end: '18:30', closed: false },
+    saturday: { start: '08:30', end: '13:00', closed: false },
+    sunday: { start: '08:30', end: '13:00', closed: true },
+    // SLA per ticket type (hours)
+    sla_orcamento_mecanica: 8,
+    sla_orcamento_pneus: 8,
+    sla_informacao: 2,
+    sla_reclamacao: 2,
+    sla_marcacao: 3,
+    sla_interno: 8,
+    sla_default: 2,
+    // Toggles
+    use_business_hours: true,
+    pause_on_aguarda_cliente: true,
+    // Legacy
     first_response_hours: 2,
     quote_response_hours: 24,
     enabled: true
@@ -603,86 +623,311 @@ const AdminSettings = () => {
 
         {/* SLA Tab */}
         <TabsContent value="sla">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuração SLA</CardTitle>
-              <CardDescription>Defina os tempos de resposta esperados</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadingSla ? (
-                <div className="flex justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="sla-enabled"
-                      checked={slaConfig.enabled}
-                      onChange={(e) => setSlaConfig({ ...slaConfig, enabled: e.target.checked })}
-                      className="w-4 h-4 rounded border-amber-400 text-orange-600 focus:ring-orange-500"
-                    />
-                    <Label htmlFor="sla-enabled" className="font-medium text-amber-800">
-                      Ativar verificação automática de SLA
-                    </Label>
+          <div className="space-y-4">
+            {/* Business Hours Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Horário de Funcionamento
+                </CardTitle>
+                <CardDescription>Configure o horário útil para cálculo de SLA</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingSla ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
                   </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Days Grid */}
+                    <div className="grid gap-3">
+                      {[
+                        { key: 'monday', label: 'Segunda-feira' },
+                        { key: 'tuesday', label: 'Terça-feira' },
+                        { key: 'wednesday', label: 'Quarta-feira' },
+                        { key: 'thursday', label: 'Quinta-feira' },
+                        { key: 'friday', label: 'Sexta-feira' },
+                        { key: 'saturday', label: 'Sábado' },
+                        { key: 'sunday', label: 'Domingo' }
+                      ].map(day => (
+                        <div key={day.key} className="flex items-center gap-4 p-3 bg-zinc-50 rounded-lg">
+                          <div className="w-32 font-medium text-slate-700">{day.label}</div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={!slaConfig[day.key]?.closed}
+                              onChange={(e) => setSlaConfig({
+                                ...slaConfig,
+                                [day.key]: { ...slaConfig[day.key], closed: !e.target.checked }
+                              })}
+                              className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <span className="text-sm text-zinc-500 w-16">
+                              {slaConfig[day.key]?.closed ? 'Fechado' : 'Aberto'}
+                            </span>
+                          </div>
+                          {!slaConfig[day.key]?.closed && (
+                            <>
+                              <Input
+                                type="time"
+                                value={slaConfig[day.key]?.start || '08:30'}
+                                onChange={(e) => setSlaConfig({
+                                  ...slaConfig,
+                                  [day.key]: { ...slaConfig[day.key], start: e.target.value }
+                                })}
+                                className="w-28"
+                              />
+                              <span className="text-zinc-400">—</span>
+                              <Input
+                                type="time"
+                                value={slaConfig[day.key]?.end || '18:30'}
+                                onChange={(e) => setSlaConfig({
+                                  ...slaConfig,
+                                  [day.key]: { ...slaConfig[day.key], end: e.target.value }
+                                })}
+                                className="w-28"
+                              />
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="first-response">Tempo para 1ª Resposta (horas)</Label>
-                      <Input
-                        id="first-response"
-                        type="number"
-                        min="1"
-                        max="168"
-                        value={slaConfig.first_response_hours}
-                        onChange={(e) => setSlaConfig({ ...slaConfig, first_response_hours: parseInt(e.target.value) || 2 })}
-                        className="w-full"
-                        data-testid="sla-first-response-input"
-                      />
-                      <p className="text-xs text-zinc-500">
-                        Tempo máximo até a primeira resposta ao cliente
-                      </p>
+            {/* SLA per Type Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Tag className="h-5 w-5" />
+                  SLA por Tipo de Ticket
+                </CardTitle>
+                <CardDescription>Tempo máximo de resposta em horas úteis para cada tipo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingSla ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-orcamento-mecanica">Orçamento Mecânica</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-orcamento-mecanica"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_orcamento_mecanica}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_orcamento_mecanica: parseInt(e.target.value) || 8 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-orcamento-pneus">Orçamento Pneus</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-orcamento-pneus"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_orcamento_pneus}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_orcamento_pneus: parseInt(e.target.value) || 8 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-informacao">Pedido de Informação</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-informacao"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_informacao}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_informacao: parseInt(e.target.value) || 2 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-reclamacao">Reclamação</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-reclamacao"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_reclamacao}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_reclamacao: parseInt(e.target.value) || 2 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-marcacao">Marcação</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-marcacao"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_marcacao}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_marcacao: parseInt(e.target.value) || 3 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-interno">Interno</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-interno"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_interno}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_interno: parseInt(e.target.value) || 8 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="quote-response">Tempo para Envio de Orçamento (horas)</Label>
-                      <Input
-                        id="quote-response"
-                        type="number"
-                        min="1"
-                        max="168"
-                        value={slaConfig.quote_response_hours}
-                        onChange={(e) => setSlaConfig({ ...slaConfig, quote_response_hours: parseInt(e.target.value) || 24 })}
-                        className="w-full"
-                        data-testid="sla-quote-response-input"
-                      />
-                      <p className="text-xs text-zinc-500">
-                        Tempo máximo para enviar orçamento após solicitação
-                      </p>
+                    {/* Default SLA */}
+                    <div className="pt-4 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="sla-default" className="text-amber-700 font-medium">SLA Default (Fallback)</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="sla-default"
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={slaConfig.sla_default}
+                            onChange={(e) => setSlaConfig({ ...slaConfig, sla_default: parseInt(e.target.value) || 2 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-zinc-500">horas</span>
+                        </div>
+                        <p className="text-xs text-zinc-500">
+                          Usado quando o tipo de ticket não tem SLA específico definido
+                        </p>
+                      </div>
                     </div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
 
-                  <div className="flex justify-end pt-4 border-t">
-                    <Button 
-                      onClick={saveSlaConfig} 
-                      disabled={savingSla}
-                      className="bg-orange-600 hover:bg-orange-700"
-                      data-testid="save-sla-btn"
-                    >
-                      {savingSla ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      ) : (
-                        <Save className="h-4 w-4 mr-2" />
-                      )}
-                      Guardar Configuração
-                    </Button>
+            {/* Options Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5" />
+                  Opções de Cálculo
+                </CardTitle>
+                <CardDescription>Configure como o SLA é calculado</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingSla ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Main Toggle */}
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="sla-enabled"
+                        checked={slaConfig.enabled}
+                        onChange={(e) => setSlaConfig({ ...slaConfig, enabled: e.target.checked })}
+                        className="w-4 h-4 rounded border-amber-400 text-orange-600 focus:ring-orange-500"
+                      />
+                      <Label htmlFor="sla-enabled" className="font-medium text-amber-800">
+                        Ativar verificação automática de SLA
+                      </Label>
+                    </div>
+
+                    {/* Option Toggles */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
+                        <input
+                          type="checkbox"
+                          id="use-business-hours"
+                          checked={slaConfig.use_business_hours}
+                          onChange={(e) => setSlaConfig({ ...slaConfig, use_business_hours: e.target.checked })}
+                          className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <div>
+                          <Label htmlFor="use-business-hours" className="font-medium text-slate-700">
+                            Contar apenas em horário útil
+                          </Label>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            O tempo fora do horário de funcionamento não conta para o SLA
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
+                        <input
+                          type="checkbox"
+                          id="pause-aguarda-cliente"
+                          checked={slaConfig.pause_on_aguarda_cliente}
+                          onChange={(e) => setSlaConfig({ ...slaConfig, pause_on_aguarda_cliente: e.target.checked })}
+                          className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <div>
+                          <Label htmlFor="pause-aguarda-cliente" className="font-medium text-slate-700">
+                            Pausar SLA em "Aguarda Cliente"
+                          </Label>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            O cronómetro pausa quando o ticket está à espera do cliente
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end pt-4 border-t">
+                      <Button 
+                        onClick={saveSlaConfig} 
+                        disabled={savingSla}
+                        className="bg-orange-600 hover:bg-orange-700"
+                        data-testid="save-sla-btn"
+                      >
+                        {savingSla ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        Guardar Configuração
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Email Tab */}

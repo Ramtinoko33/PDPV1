@@ -20,18 +20,30 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Histórico completo de mudanças de status
 
 ### 3. SLA Avançado ✅ (ATUALIZADO 25/03/2026)
-- **Business Hours (Horas Úteis):**
+- **Página de Configuração Admin (Nova UI):**
+  - **Horário de Funcionamento**: Config por dia da semana (hora início/fim, toggle fechado)
+  - **SLA por Tipo de Ticket**: Campos editáveis para cada tipo em horas
+  - **SLA Default (Fallback)**: Valor usado quando tipo não tem SLA específico
+  - **Opções de Cálculo**:
+    - Toggle: Contar apenas em horário útil
+    - Toggle: Pausar SLA em "Aguarda Cliente"
+    - Toggle: Ativar verificação automática de SLA
+- **Backend:**
+  - Config persistida em `db.settings` (type: "sla_config")
+  - Config carregada no startup e recarregada ao guardar
+  - Valores usados pelo `compute_sla_due()` para cálculo real
+- **Business Hours (Defaults):**
   - Seg-Sex: 08:30 - 18:30 (10 horas)
   - Sábado: 08:30 - 13:00 (4.5 horas)
   - Domingo: Fechado
-- **SLAs por Tipo de Ticket:**
+- **SLAs por Tipo de Ticket (Defaults):**
   - ORCAMENTO_PNEUS: 8 horas úteis
   - ORCAMENTO_MECANICA: 8 horas úteis
   - INFORMACAO: 2 horas úteis
   - RECLAMACAO: 2 horas úteis
   - MARCACAO: 3 horas úteis
   - INTERNO: 8 horas úteis
-- **Pausa/Retoma de SLA:**
+- **Pausa/Retoma de SLA (se ativado):**
   - Pausa automática quando status = `AGUARDA_CLIENTE`
   - Retoma automática quando status volta para `EM_TRATAMENTO`, `ACEITE_LINK` ou `ABERTO`
   - SLA Due é recalculado adicionando o tempo pausado
@@ -43,7 +55,7 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
   - `sla_breached_at` - Quando a violação ocorreu
   - `sla_target_minutes` - Minutos alvo baseado no tipo
   - `sla_policy_key` - Identificador da política (ex: SLA_ORCAMENTO_PNEUS_480min)
-- **Tickets Criados Fora de Horas:**
+- **Tickets Criados Fora de Horas (se business hours ativado):**
   - Se criado ao domingo, SLA começa segunda às 08:30
   - Se criado após 18:30, SLA começa no dia seguinte às 08:30
 - **Notas de Sistema:**

@@ -167,7 +167,7 @@ def generate_ticket_number():
 
 # ============== SLA BUSINESS HOURS CONFIGURATION ==============
 # Business hours configuration (Portugal timezone - Europe/Lisbon)
-# For simplicity, we calculate in UTC and apply business rules
+# Default values - can be overridden by database config
 BUSINESS_HOURS = {
     0: (time(8, 30), time(18, 30)),   # Monday
     1: (time(8, 30), time(18, 30)),   # Tuesday
@@ -178,7 +178,7 @@ BUSINESS_HOURS = {
     6: None,                           # Sunday (closed)
 }
 
-# SLA targets in business minutes per ticket type
+# SLA targets in business minutes per ticket type - default values
 SLA_TARGETS_MINUTES = {
     "ORCAMENTO_PNEUS": 480,      # 8 hours = 480 minutes
     "ORCAMENTO_MECANICA": 480,   # 8 hours = 480 minutes
@@ -188,8 +188,72 @@ SLA_TARGETS_MINUTES = {
     "INTERNO": 480,              # 8 hours (default for internal)
 }
 
+# SLA options - default values
+SLA_DEFAULT_MINUTES = 120  # 2 hours fallback
+SLA_USE_BUSINESS_HOURS = True
+SLA_PAUSE_ON_AGUARDA_CLIENTE = True
+
 # Holidays list (empty for now, to be configured later)
 HOLIDAYS: list[date] = []
+
+def parse_time_string(time_str: str) -> time:
+    """Parse a time string like '08:30' into a time object."""
+    try:
+        parts = time_str.split(':')
+        return time(int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        return time(8, 30)  # Default fallback
+
+async def load_sla_config_from_db():
+    """Load SLA configuration from database and update global variables."""
+    global BUSINESS_HOURS, SLA_TARGETS_MINUTES, SLA_DEFAULT_MINUTES, SLA_USE_BUSINESS_HOURS, SLA_PAUSE_ON_AGUARDA_CLIENTE
+    
+    try:
+        config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
+        if not config:
+            return  # Use defaults
+        
+        # Update business hours
+        day_mapping = {
+            'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+            'friday': 4, 'saturday': 5, 'sunday': 6
+        }
+        
+        for day_name, day_num in day_mapping.items():
+            day_config = config.get(day_name)
+            if day_config:
+                if day_config.get('closed', False):
+                    BUSINESS_HOURS[day_num] = None
+                else:
+                    start = parse_time_string(day_config.get('start', '08:30'))
+                    end = parse_time_string(day_config.get('end', '18:30'))
+                    BUSINESS_HOURS[day_num] = (start, end)
+        
+        # Update SLA targets (convert hours to minutes)
+        if 'sla_orcamento_mecanica' in config:
+            SLA_TARGETS_MINUTES['ORCAMENTO_MECANICA'] = config['sla_orcamento_mecanica'] * 60
+        if 'sla_orcamento_pneus' in config:
+            SLA_TARGETS_MINUTES['ORCAMENTO_PNEUS'] = config['sla_orcamento_pneus'] * 60
+        if 'sla_informacao' in config:
+            SLA_TARGETS_MINUTES['INFORMACAO'] = config['sla_informacao'] * 60
+        if 'sla_reclamacao' in config:
+            SLA_TARGETS_MINUTES['RECLAMACAO'] = config['sla_reclamacao'] * 60
+        if 'sla_marcacao' in config:
+            SLA_TARGETS_MINUTES['MARCACAO'] = config['sla_marcacao'] * 60
+        if 'sla_interno' in config:
+            SLA_TARGETS_MINUTES['INTERNO'] = config['sla_interno'] * 60
+        if 'sla_default' in config:
+            SLA_DEFAULT_MINUTES = config['sla_default'] * 60
+        
+        # Update options
+        if 'use_business_hours' in config:
+            SLA_USE_BUSINESS_HOURS = config['use_business_hours']
+        if 'pause_on_aguarda_cliente' in config:
+            SLA_PAUSE_ON_AGUARDA_CLIENTE = config['pause_on_aguarda_cliente']
+            
+        logger.info(f"SLA config loaded from database: business_hours={SLA_USE_BUSINESS_HOURS}, pause_aguarda={SLA_PAUSE_ON_AGUARDA_CLIENTE}")
+    except Exception as e:
+        logger.error(f"Error loading SLA config: {e}")
 
 def is_business_day(d: date) -> bool:
     """Check if a date is a business day (not weekend, not holiday)."""
@@ -366,14 +430,21 @@ def compute_sla_due(ticket_type: str = "INFORMACAO", created_at: datetime = None
     """
     Returns (SLA due datetime, target_minutes, policy_key) based on ticket type and business hours.
     If created_at is outside business hours, SLA starts at next business period.
+    Uses SLA_DEFAULT_MINUTES as fallback if ticket type not found.
     """
     if created_at is None:
         created_at = datetime.now(timezone.utc)
     
-    target_minutes = SLA_TARGETS_MINUTES.get(ticket_type, 120)  # Default 2 hours
+    # Get target minutes from config, use global default as fallback
+    target_minutes = SLA_TARGETS_MINUTES.get(ticket_type, SLA_DEFAULT_MINUTES)
     policy_key = f"SLA_{ticket_type}_{target_minutes}min"
     
-    sla_due = add_business_minutes(created_at, target_minutes)
+    # Check if business hours mode is enabled
+    if SLA_USE_BUSINESS_HOURS:
+        sla_due = add_business_minutes(created_at, target_minutes)
+    else:
+        # Simple calculation - just add minutes directly
+        sla_due = created_at + timedelta(minutes=target_minutes)
     
     return sla_due, target_minutes, policy_key
 
@@ -844,92 +915,94 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         now = datetime.now(timezone.utc)
         new_status = ticket_data.status
         
-        # Define statuses that pause SLA (clock stops when waiting for customer)
-        sla_pause_statuses = [TicketStatus.AGUARDA_CLIENTE.value]
-        # Define statuses that resume SLA (clock restarts when back in treatment)
-        sla_resume_statuses = [
-            TicketStatus.EM_TRATAMENTO.value,
-            TicketStatus.ACEITE_LINK.value,
-            TicketStatus.ABERTO.value,
-        ]
-        # Define final statuses (SLA tracking ends)
-        sla_final_statuses = [
-            TicketStatus.FECHADO.value,
-            TicketStatus.REJEITADO_LINK.value,
-            TicketStatus.AGENDADO.value,
-        ]
-        
-        # Check if we need to PAUSE SLA
-        if new_status in sla_pause_statuses and old_status not in sla_pause_statuses:
-            # Only pause if not already paused and SLA not completed
-            if not ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
-                sla_pause_update = {
-                    "sla_paused_at": now.isoformat()
-                }
-                await db.tickets.update_one({"id": ticket_id}, {"$set": sla_pause_update})
-                
-                # Add system note about SLA pause
-                pause_note = {
-                    "id": str(uuid.uuid4()),
-                    "ticket_id": ticket_id,
-                    "created_at": now.isoformat(),
-                    "created_by_user_id": user["id"],
-                    "body": "⏸️ SLA pausado - aguarda resposta do cliente",
-                    "is_system": True
-                }
-                await db.notes.insert_one(pause_note)
-        
-        # Check if we need to RESUME SLA
-        elif new_status in sla_resume_statuses and old_status in sla_pause_statuses:
-            # Resume SLA if it was paused
-            if ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
-                try:
-                    pause_start = datetime.fromisoformat(ticket["sla_paused_at"].replace("Z", "+00:00"))
-                    # Calculate business minutes during pause period
-                    paused_business_minutes = calculate_business_minutes_between(pause_start, now)
-                    
-                    # Accumulate paused minutes and clear pause timestamp
-                    current_paused_minutes = ticket.get("sla_paused_minutes", 0)
-                    new_paused_total = current_paused_minutes + paused_business_minutes
-                    
-                    # Recalculate SLA due by extending it by the paused time
-                    old_sla_due_str = ticket.get("sla_due")
-                    if old_sla_due_str:
-                        old_sla_due = datetime.fromisoformat(old_sla_due_str.replace("Z", "+00:00"))
-                        # Add the paused business minutes to the SLA due
-                        new_sla_due = add_business_minutes(old_sla_due, paused_business_minutes)
-                    else:
-                        # Fallback: recalculate from now
-                        target_minutes = ticket.get("sla_target_minutes", 120)
-                        elapsed = calculate_sla_elapsed_minutes(ticket)
-                        remaining = max(0, target_minutes - elapsed)
-                        new_sla_due = add_business_minutes(now, remaining)
-                    
-                    sla_resume_update = {
-                        "sla_paused_at": None,
-                        "sla_paused_minutes": new_paused_total,
-                        "sla_due": new_sla_due.isoformat()
+        # Check if SLA pause on AGUARDA_CLIENTE is enabled
+        if SLA_PAUSE_ON_AGUARDA_CLIENTE:
+            # Define statuses that pause SLA (clock stops when waiting for customer)
+            sla_pause_statuses = [TicketStatus.AGUARDA_CLIENTE.value]
+            # Define statuses that resume SLA (clock restarts when back in treatment)
+            sla_resume_statuses = [
+                TicketStatus.EM_TRATAMENTO.value,
+                TicketStatus.ACEITE_LINK.value,
+                TicketStatus.ABERTO.value,
+            ]
+            # Define final statuses (SLA tracking ends)
+            sla_final_statuses = [
+                TicketStatus.FECHADO.value,
+                TicketStatus.REJEITADO_LINK.value,
+                TicketStatus.AGENDADO.value,
+            ]
+            
+            # Check if we need to PAUSE SLA
+            if new_status in sla_pause_statuses and old_status not in sla_pause_statuses:
+                # Only pause if not already paused and SLA not completed
+                if not ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
+                    sla_pause_update = {
+                        "sla_paused_at": now.isoformat()
                     }
-                    await db.tickets.update_one({"id": ticket_id}, {"$set": sla_resume_update})
+                    await db.tickets.update_one({"id": ticket_id}, {"$set": sla_pause_update})
                     
-                    # Add system note about SLA resume
-                    resume_note = {
+                    # Add system note about SLA pause
+                    pause_note = {
                         "id": str(uuid.uuid4()),
                         "ticket_id": ticket_id,
                         "created_at": now.isoformat(),
                         "created_by_user_id": user["id"],
-                        "body": f"▶️ SLA retomado - pausa de {paused_business_minutes} minutos úteis",
+                        "body": "⏸️ SLA pausado - aguarda resposta do cliente",
                         "is_system": True
                     }
-                    await db.notes.insert_one(resume_note)
-                except (ValueError, TypeError) as e:
-                    logger.error(f"Error resuming SLA for ticket {ticket_id}: {e}")
-        
-        # Check if SLA tracking should stop (final status)
-        if new_status in sla_final_statuses:
-            # Clear any active pause state
-            if ticket.get("sla_paused_at"):
-                await db.tickets.update_one({"id": ticket_id}, {"$set": {"sla_paused_at": None}})
+                    await db.notes.insert_one(pause_note)
+            
+            # Check if we need to RESUME SLA
+            elif new_status in sla_resume_statuses and old_status in sla_pause_statuses:
+                # Resume SLA if it was paused
+                if ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
+                    try:
+                        pause_start = datetime.fromisoformat(ticket["sla_paused_at"].replace("Z", "+00:00"))
+                        # Calculate business minutes during pause period
+                        paused_business_minutes = calculate_business_minutes_between(pause_start, now)
+                        
+                        # Accumulate paused minutes and clear pause timestamp
+                        current_paused_minutes = ticket.get("sla_paused_minutes", 0)
+                        new_paused_total = current_paused_minutes + paused_business_minutes
+                        
+                        # Recalculate SLA due by extending it by the paused time
+                        old_sla_due_str = ticket.get("sla_due")
+                        if old_sla_due_str:
+                            old_sla_due = datetime.fromisoformat(old_sla_due_str.replace("Z", "+00:00"))
+                            # Add the paused business minutes to the SLA due
+                            new_sla_due = add_business_minutes(old_sla_due, paused_business_minutes)
+                        else:
+                            # Fallback: recalculate from now
+                            target_minutes = ticket.get("sla_target_minutes", 120)
+                            elapsed = calculate_sla_elapsed_minutes(ticket)
+                            remaining = max(0, target_minutes - elapsed)
+                            new_sla_due = add_business_minutes(now, remaining)
+                        
+                        sla_resume_update = {
+                            "sla_paused_at": None,
+                            "sla_paused_minutes": new_paused_total,
+                            "sla_due": new_sla_due.isoformat()
+                        }
+                        await db.tickets.update_one({"id": ticket_id}, {"$set": sla_resume_update})
+                        
+                        # Add system note about SLA resume
+                        resume_note = {
+                            "id": str(uuid.uuid4()),
+                            "ticket_id": ticket_id,
+                            "created_at": now.isoformat(),
+                            "created_by_user_id": user["id"],
+                            "body": f"▶️ SLA retomado - pausa de {paused_business_minutes} minutos úteis",
+                            "is_system": True
+                        }
+                        await db.notes.insert_one(resume_note)
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Error resuming SLA for ticket {ticket_id}: {e}")
+            
+            # Check if SLA tracking should stop (final status)
+            if new_status in sla_final_statuses:
+                # Clear any active pause state
+                if ticket.get("sla_paused_at"):
+                    await db.tickets.update_one({"id": ticket_id}, {"$set": {"sla_paused_at": None}})
         # ============== END SLA PAUSE/RESUME LOGIC ==============
     
     if ticket_data.assigned_to_user_id is not None and ticket_data.assigned_to_user_id != old_assigned:
@@ -2621,15 +2694,101 @@ async def delete_ticket_status(status_id: str, current_user: dict = Depends(get_
     return {"message": "Estado eliminado"}
 
 # ============== ADMIN SETTINGS - SLA CONFIG ==============
+class BusinessHoursConfig(BaseModel):
+    """Business hours for a single day"""
+    start: str = "08:30"  # HH:MM format
+    end: str = "18:30"    # HH:MM format
+    closed: bool = False
+
 class SlaConfigUpdate(BaseModel):
+    # Business Hours
+    monday: Optional[BusinessHoursConfig] = None
+    tuesday: Optional[BusinessHoursConfig] = None
+    wednesday: Optional[BusinessHoursConfig] = None
+    thursday: Optional[BusinessHoursConfig] = None
+    friday: Optional[BusinessHoursConfig] = None
+    saturday: Optional[BusinessHoursConfig] = None
+    sunday: Optional[BusinessHoursConfig] = None
+    
+    # SLA per ticket type (in hours)
+    sla_orcamento_mecanica: Optional[int] = None
+    sla_orcamento_pneus: Optional[int] = None
+    sla_informacao: Optional[int] = None
+    sla_reclamacao: Optional[int] = None
+    sla_marcacao: Optional[int] = None
+    sla_interno: Optional[int] = None
+    sla_default: Optional[int] = None  # fallback
+    
+    # Legacy fields (for backwards compatibility)
     first_response_hours: Optional[int] = None
     quote_response_hours: Optional[int] = None
     enabled: Optional[bool] = None
+    
+    # New toggles
+    use_business_hours: Optional[bool] = None  # count only in business hours
+    pause_on_aguarda_cliente: Optional[bool] = None  # pause SLA when waiting for client
 
 class SlaConfigResponse(BaseModel):
+    # Business Hours
+    monday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="18:30", closed=False)
+    tuesday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="18:30", closed=False)
+    wednesday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="18:30", closed=False)
+    thursday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="18:30", closed=False)
+    friday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="18:30", closed=False)
+    saturday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="13:00", closed=False)
+    sunday: BusinessHoursConfig = BusinessHoursConfig(start="08:30", end="13:00", closed=True)
+    
+    # SLA per ticket type (in hours)
+    sla_orcamento_mecanica: int = 8
+    sla_orcamento_pneus: int = 8
+    sla_informacao: int = 2
+    sla_reclamacao: int = 2
+    sla_marcacao: int = 3
+    sla_interno: int = 8
+    sla_default: int = 2  # fallback
+    
+    # Legacy fields
     first_response_hours: int = 2
     quote_response_hours: int = 24
     enabled: bool = True
+    
+    # New toggles
+    use_business_hours: bool = True
+    pause_on_aguarda_cliente: bool = True
+
+def build_sla_config_response(config: dict) -> SlaConfigResponse:
+    """Build SLA config response from database document"""
+    def get_day_config(config: dict, day: str, default_start: str, default_end: str, default_closed: bool) -> BusinessHoursConfig:
+        day_data = config.get(day, {})
+        if isinstance(day_data, dict):
+            return BusinessHoursConfig(
+                start=day_data.get("start", default_start),
+                end=day_data.get("end", default_end),
+                closed=day_data.get("closed", default_closed)
+            )
+        return BusinessHoursConfig(start=default_start, end=default_end, closed=default_closed)
+    
+    return SlaConfigResponse(
+        monday=get_day_config(config, "monday", "08:30", "18:30", False),
+        tuesday=get_day_config(config, "tuesday", "08:30", "18:30", False),
+        wednesday=get_day_config(config, "wednesday", "08:30", "18:30", False),
+        thursday=get_day_config(config, "thursday", "08:30", "18:30", False),
+        friday=get_day_config(config, "friday", "08:30", "18:30", False),
+        saturday=get_day_config(config, "saturday", "08:30", "13:00", False),
+        sunday=get_day_config(config, "sunday", "08:30", "13:00", True),
+        sla_orcamento_mecanica=config.get("sla_orcamento_mecanica", 8),
+        sla_orcamento_pneus=config.get("sla_orcamento_pneus", 8),
+        sla_informacao=config.get("sla_informacao", 2),
+        sla_reclamacao=config.get("sla_reclamacao", 2),
+        sla_marcacao=config.get("sla_marcacao", 3),
+        sla_interno=config.get("sla_interno", 8),
+        sla_default=config.get("sla_default", 2),
+        first_response_hours=config.get("first_response_hours", 2),
+        quote_response_hours=config.get("quote_response_hours", 24),
+        enabled=config.get("enabled", True),
+        use_business_hours=config.get("use_business_hours", True),
+        pause_on_aguarda_cliente=config.get("pause_on_aguarda_cliente", True)
+    )
 
 @api_router.get("/admin/sla-config", response_model=SlaConfigResponse)
 async def get_sla_config(current_user: dict = Depends(get_current_user)):
@@ -2641,11 +2800,7 @@ async def get_sla_config(current_user: dict = Depends(get_current_user)):
     if not config:
         return SlaConfigResponse()
     
-    return SlaConfigResponse(
-        first_response_hours=config.get("first_response_hours", 2),
-        quote_response_hours=config.get("quote_response_hours", 24),
-        enabled=config.get("enabled", True)
-    )
+    return build_sla_config_response(config)
 
 @api_router.put("/admin/sla-config", response_model=SlaConfigResponse)
 async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = Depends(get_current_user)):
@@ -2656,6 +2811,30 @@ async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = D
     existing = await db.settings.find_one({"type": "sla_config"})
     
     update_doc = {"type": "sla_config", "updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    # Business hours
+    for day in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
+        day_config = getattr(config_data, day, None)
+        if day_config is not None:
+            update_doc[day] = day_config.model_dump()
+    
+    # SLA per type
+    if config_data.sla_orcamento_mecanica is not None:
+        update_doc["sla_orcamento_mecanica"] = config_data.sla_orcamento_mecanica
+    if config_data.sla_orcamento_pneus is not None:
+        update_doc["sla_orcamento_pneus"] = config_data.sla_orcamento_pneus
+    if config_data.sla_informacao is not None:
+        update_doc["sla_informacao"] = config_data.sla_informacao
+    if config_data.sla_reclamacao is not None:
+        update_doc["sla_reclamacao"] = config_data.sla_reclamacao
+    if config_data.sla_marcacao is not None:
+        update_doc["sla_marcacao"] = config_data.sla_marcacao
+    if config_data.sla_interno is not None:
+        update_doc["sla_interno"] = config_data.sla_interno
+    if config_data.sla_default is not None:
+        update_doc["sla_default"] = config_data.sla_default
+    
+    # Legacy fields
     if config_data.first_response_hours is not None:
         update_doc["first_response_hours"] = config_data.first_response_hours
     if config_data.quote_response_hours is not None:
@@ -2663,20 +2842,22 @@ async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = D
     if config_data.enabled is not None:
         update_doc["enabled"] = config_data.enabled
     
+    # New toggles
+    if config_data.use_business_hours is not None:
+        update_doc["use_business_hours"] = config_data.use_business_hours
+    if config_data.pause_on_aguarda_cliente is not None:
+        update_doc["pause_on_aguarda_cliente"] = config_data.pause_on_aguarda_cliente
+    
     if existing:
         await db.settings.update_one({"type": "sla_config"}, {"$set": update_doc})
     else:
-        update_doc["first_response_hours"] = config_data.first_response_hours or 2
-        update_doc["quote_response_hours"] = config_data.quote_response_hours or 24
-        update_doc["enabled"] = config_data.enabled if config_data.enabled is not None else True
         await db.settings.insert_one(update_doc)
     
+    # Reload configuration into global variables
+    await load_sla_config_from_db()
+    
     config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
-    return SlaConfigResponse(
-        first_response_hours=config.get("first_response_hours", 2),
-        quote_response_hours=config.get("quote_response_hours", 24),
-        enabled=config.get("enabled", True)
-    )
+    return build_sla_config_response(config)
 
 # ============== ADMIN SETTINGS - EMAIL CONFIG ==============
 class EmailConfigUpdate(BaseModel):
@@ -4477,6 +4658,10 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on application startup"""
+    # Load SLA configuration from database
+    await load_sla_config_from_db()
+    logger.info("[STARTUP] SLA configuration loaded from database")
+    
     # Create TTL index for login attempts cleanup (30 days)
     try:
         await db.auth_login_attempts.create_index(
