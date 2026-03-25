@@ -105,6 +105,15 @@ class TicketResponse(BaseModel):
     last_public_message_at: Optional[str] = None
     first_response_done: bool = False
     sla_due: Optional[str] = None
+    # New SLA fields
+    sla_started_at: Optional[str] = None       # When SLA clock started (business hours)
+    sla_paused_at: Optional[str] = None        # When SLA was paused (e.g., AGUARDA_CLIENTE)
+    sla_paused_minutes: int = 0                # Total accumulated paused minutes
+    sla_breached: bool = False                 # True if SLA was breached
+    sla_breached_at: Optional[str] = None      # When breach occurred
+    sla_target_minutes: Optional[int] = None   # Target minutes based on ticket type
+    sla_policy_key: Optional[str] = None       # Policy identifier (e.g., SLA_ORCAMENTO_480min)
+    # End new SLA fields
     quote_sent: bool = False
     quote_value: Optional[float] = None
     quote_response_status: Optional[str] = None

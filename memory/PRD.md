@@ -19,10 +19,37 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
 - Status: ABERTO, EM_TRATAMENTO, AGUARDA_CLIENTE, FECHADO
 - Histórico completo de mudanças de status
 
-### 3. SLA Simples ✅
-- Campo `sla_due` (2h após criação)
-- Job de background a cada 15 minutos
-- Indicador visual "OK" / "Atrasado"
+### 3. SLA Avançado ✅ (ATUALIZADO 25/03/2026)
+- **Business Hours (Horas Úteis):**
+  - Seg-Sex: 08:30 - 18:30 (10 horas)
+  - Sábado: 08:30 - 13:00 (4.5 horas)
+  - Domingo: Fechado
+- **SLAs por Tipo de Ticket:**
+  - ORCAMENTO_PNEUS: 8 horas úteis
+  - ORCAMENTO_MECANICA: 8 horas úteis
+  - INFORMACAO: 2 horas úteis
+  - RECLAMACAO: 2 horas úteis
+  - MARCACAO: 3 horas úteis
+  - INTERNO: 8 horas úteis
+- **Pausa/Retoma de SLA:**
+  - Pausa automática quando status = `AGUARDA_CLIENTE`
+  - Retoma automática quando status volta para `EM_TRATAMENTO`, `ACEITE_LINK` ou `ABERTO`
+  - SLA Due é recalculado adicionando o tempo pausado
+- **Novos Campos no Ticket:**
+  - `sla_started_at` - Quando o SLA começou a contar
+  - `sla_paused_at` - Quando o SLA foi pausado
+  - `sla_paused_minutes` - Total de minutos úteis pausados
+  - `sla_breached` - Se o SLA foi violado
+  - `sla_breached_at` - Quando a violação ocorreu
+  - `sla_target_minutes` - Minutos alvo baseado no tipo
+  - `sla_policy_key` - Identificador da política (ex: SLA_ORCAMENTO_PNEUS_480min)
+- **Tickets Criados Fora de Horas:**
+  - Se criado ao domingo, SLA começa segunda às 08:30
+  - Se criado após 18:30, SLA começa no dia seguinte às 08:30
+- **Notas de Sistema:**
+  - "⏸️ SLA pausado - aguarda resposta do cliente"
+  - "▶️ SLA retomado - pausa de X minutos úteis"
+- **Testes:** 12/12 testes unitários passaram em `/app/backend/tests/test_sla_logic.py`
 
 ### 4. Email com SMTP ✅ (ATUALIZADO 21/02/2026)
 - Configuração completa SMTP via UI admin

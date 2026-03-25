@@ -9,10 +9,11 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Set, Any
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date, time
 from passlib.context import CryptContext
 import jwt
 from enum import Enum
+from typing import Tuple
 import shutil
 import asyncio
 import json
@@ -164,8 +165,220 @@ def generate_ticket_number():
     now = datetime.now(timezone.utc)
     return f"TK{now.strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
 
-def compute_sla_due() -> datetime:
-    """Returns SLA due date - 2 hours from now by default"""
+# ============== SLA BUSINESS HOURS CONFIGURATION ==============
+# Business hours configuration (Portugal timezone - Europe/Lisbon)
+# For simplicity, we calculate in UTC and apply business rules
+BUSINESS_HOURS = {
+    0: (time(8, 30), time(18, 30)),   # Monday
+    1: (time(8, 30), time(18, 30)),   # Tuesday
+    2: (time(8, 30), time(18, 30)),   # Wednesday
+    3: (time(8, 30), time(18, 30)),   # Thursday
+    4: (time(8, 30), time(18, 30)),   # Friday
+    5: (time(8, 30), time(13, 0)),    # Saturday
+    6: None,                           # Sunday (closed)
+}
+
+# SLA targets in business minutes per ticket type
+SLA_TARGETS_MINUTES = {
+    "ORCAMENTO_PNEUS": 480,      # 8 hours = 480 minutes
+    "ORCAMENTO_MECANICA": 480,   # 8 hours = 480 minutes
+    "INFORMACAO": 120,           # 2 hours = 120 minutes
+    "RECLAMACAO": 120,           # 2 hours = 120 minutes
+    "MARCACAO": 180,             # 3 hours = 180 minutes
+    "INTERNO": 480,              # 8 hours (default for internal)
+}
+
+# Holidays list (empty for now, to be configured later)
+HOLIDAYS: list[date] = []
+
+def is_business_day(d: date) -> bool:
+    """Check if a date is a business day (not weekend, not holiday)."""
+    if d in HOLIDAYS:
+        return False
+    weekday = d.weekday()
+    return BUSINESS_HOURS.get(weekday) is not None
+
+def get_business_hours_for_day(d: date) -> Tuple[time, time] | None:
+    """Get business hours (start, end) for a given date. Returns None if closed."""
+    if d in HOLIDAYS:
+        return None
+    return BUSINESS_HOURS.get(d.weekday())
+
+def get_business_minutes_in_day(d: date, start_time: time = None, end_time: time = None) -> int:
+    """
+    Calculate business minutes available in a day.
+    If start_time is provided, start counting from that time.
+    If end_time is provided, stop counting at that time.
+    """
+    hours = get_business_hours_for_day(d)
+    if not hours:
+        return 0
+    
+    biz_start, biz_end = hours
+    
+    # Effective start is max of business start and provided start
+    effective_start = biz_start
+    if start_time:
+        effective_start = max(biz_start, start_time)
+    
+    # Effective end is min of business end and provided end
+    effective_end = biz_end
+    if end_time:
+        effective_end = min(biz_end, end_time)
+    
+    # If effective start >= effective end, no business time available
+    if effective_start >= effective_end:
+        return 0
+    
+    # Calculate minutes
+    start_minutes = effective_start.hour * 60 + effective_start.minute
+    end_minutes = effective_end.hour * 60 + effective_end.minute
+    
+    return end_minutes - start_minutes
+
+def add_business_minutes(start_dt: datetime, minutes_to_add: int) -> datetime:
+    """
+    Add business minutes to a datetime and return the resulting datetime.
+    If start_dt is outside business hours, it advances to the next business period.
+    """
+    if minutes_to_add <= 0:
+        return start_dt
+    
+    current_dt = start_dt
+    remaining_minutes = minutes_to_add
+    
+    # Maximum iterations to prevent infinite loop (e.g., 365 days)
+    max_iterations = 365
+    iterations = 0
+    
+    while remaining_minutes > 0 and iterations < max_iterations:
+        iterations += 1
+        current_date = current_dt.date()
+        current_time = current_dt.time()
+        
+        hours = get_business_hours_for_day(current_date)
+        
+        if not hours:
+            # Not a business day, move to next day at midnight
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        
+        biz_start, biz_end = hours
+        
+        # If current time is before business start, move to business start
+        if current_time < biz_start:
+            current_dt = datetime.combine(current_date, biz_start, tzinfo=current_dt.tzinfo)
+            current_time = biz_start
+        
+        # If current time is after business end, move to next day
+        if current_time >= biz_end:
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        
+        # Calculate available minutes until end of business day
+        current_minutes = current_time.hour * 60 + current_time.minute
+        end_minutes = biz_end.hour * 60 + biz_end.minute
+        available_minutes = end_minutes - current_minutes
+        
+        if remaining_minutes <= available_minutes:
+            # Can finish within this day
+            final_minutes = current_minutes + remaining_minutes
+            final_hour = final_minutes // 60
+            final_minute = final_minutes % 60
+            return datetime.combine(current_date, time(final_hour, final_minute), tzinfo=current_dt.tzinfo)
+        else:
+            # Use all available minutes and move to next day
+            remaining_minutes -= available_minutes
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+    
+    # Fallback if max iterations reached
+    return current_dt
+
+def calculate_business_minutes_between(start_dt: datetime, end_dt: datetime) -> int:
+    """
+    Calculate the number of business minutes between two datetimes.
+    Used to calculate elapsed SLA time.
+    """
+    if end_dt <= start_dt:
+        return 0
+    
+    total_minutes = 0
+    current_dt = start_dt
+    
+    # Maximum iterations to prevent infinite loop
+    max_iterations = 365
+    iterations = 0
+    
+    while current_dt < end_dt and iterations < max_iterations:
+        iterations += 1
+        current_date = current_dt.date()
+        current_time = current_dt.time()
+        
+        hours = get_business_hours_for_day(current_date)
+        
+        if not hours:
+            # Not a business day, move to next day
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        
+        biz_start, biz_end = hours
+        
+        # If current time is before business start, move to business start
+        if current_time < biz_start:
+            current_dt = datetime.combine(current_date, biz_start, tzinfo=current_dt.tzinfo)
+            current_time = biz_start
+        
+        # If current time is after business end, move to next day
+        if current_time >= biz_end:
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        
+        # Determine how far we can go today
+        if end_dt.date() == current_date:
+            # End is on the same day
+            end_time_today = min(end_dt.time(), biz_end)
+        else:
+            # End is on a future day, count until business end
+            end_time_today = biz_end
+        
+        # If end_time_today is before current time (shouldn't happen normally), skip
+        if end_time_today <= current_time:
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        
+        # Calculate minutes in this segment
+        current_minutes = current_time.hour * 60 + current_time.minute
+        end_minutes_today = end_time_today.hour * 60 + end_time_today.minute
+        segment_minutes = end_minutes_today - current_minutes
+        total_minutes += segment_minutes
+        
+        # Move to end of this segment
+        if end_dt.date() == current_date and end_dt.time() <= biz_end:
+            # We've reached the end
+            break
+        else:
+            # Move to next day
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+    
+    return total_minutes
+
+def compute_sla_due(ticket_type: str = "INFORMACAO", created_at: datetime = None) -> Tuple[datetime, int, str]:
+    """
+    Returns (SLA due datetime, target_minutes, policy_key) based on ticket type and business hours.
+    If created_at is outside business hours, SLA starts at next business period.
+    """
+    if created_at is None:
+        created_at = datetime.now(timezone.utc)
+    
+    target_minutes = SLA_TARGETS_MINUTES.get(ticket_type, 120)  # Default 2 hours
+    policy_key = f"SLA_{ticket_type}_{target_minutes}min"
+    
+    sla_due = add_business_minutes(created_at, target_minutes)
+    
+    return sla_due, target_minutes, policy_key
+
+def compute_sla_due_simple() -> datetime:
+    """Legacy function for backwards compatibility - returns 2 hours from now (simple calculation)."""
     now = datetime.now(timezone.utc)
     return now + timedelta(hours=2)
 
@@ -173,16 +386,74 @@ def compute_sla_due() -> datetime:
 # Auth dependency (get_current_user) is imported from core.security
 
 def check_ticket_overdue(ticket: dict) -> bool:
-    """Check if ticket is overdue based on SLA due date and first response status"""
+    """
+    Check if ticket is overdue based on SLA due date and first response status.
+    Takes into account:
+    - Ticket status (closed tickets are never overdue)
+    - First response done flag
+    - SLA breached flag (if already marked as breached)
+    - SLA pause state
+    """
     now = datetime.now(timezone.utc)
-    # Only check SLA if ticket is not closed and hasn't received first response
+    
+    # Closed tickets are never considered overdue
     if ticket.get("status") == TicketStatus.FECHADO.value:
         return False
-    if ticket.get("sla_due") and not ticket.get("first_response_done"):
-        sla_due = datetime.fromisoformat(ticket["sla_due"].replace("Z", "+00:00"))
-        if now > sla_due:
-            return True
+    
+    # If SLA already breached, return True
+    if ticket.get("sla_breached"):
+        return True
+    
+    # If first response already done, not overdue
+    if ticket.get("first_response_done"):
+        return False
+    
+    # If SLA is currently paused, not overdue (clock is stopped)
+    if ticket.get("sla_paused_at"):
+        return False
+    
+    # Check if current time exceeds SLA due
+    if ticket.get("sla_due"):
+        try:
+            sla_due = datetime.fromisoformat(ticket["sla_due"].replace("Z", "+00:00"))
+            if now > sla_due:
+                return True
+        except (ValueError, TypeError):
+            pass
+    
     return False
+
+def calculate_sla_elapsed_minutes(ticket: dict) -> int:
+    """
+    Calculate total elapsed business minutes for SLA tracking.
+    Takes into account pause periods.
+    """
+    created_at_str = ticket.get("sla_started_at") or ticket.get("created_at")
+    if not created_at_str:
+        return 0
+    
+    try:
+        sla_start = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return 0
+    
+    # Get paused time accumulated
+    paused_minutes = ticket.get("sla_paused_minutes", 0)
+    
+    # If currently paused, calculate only up to pause start
+    if ticket.get("sla_paused_at"):
+        try:
+            pause_start = datetime.fromisoformat(ticket["sla_paused_at"].replace("Z", "+00:00"))
+            elapsed = calculate_business_minutes_between(sla_start, pause_start)
+            return elapsed - paused_minutes
+        except (ValueError, TypeError):
+            pass
+    
+    # Calculate elapsed from start to now
+    now = datetime.now(timezone.utc)
+    elapsed = calculate_business_minutes_between(sla_start, now)
+    
+    return max(0, elapsed - paused_minutes)
 
 async def log_status_change(ticket_id: str, old_status: Optional[str], new_status: str, user_id: str):
     """Log a status change to the ticket_status_history collection"""
@@ -219,7 +490,11 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     ticket_id = str(uuid.uuid4())
     ticket_number = generate_ticket_number()
     
-    sla_due = compute_sla_due()
+    # Calculate SLA based on ticket type and business hours
+    sla_due, sla_target_minutes, sla_policy_key = compute_sla_due(
+        ticket_type=ticket_data.type.value,
+        created_at=now
+    )
     
     # Set status to EM_TRATAMENTO if assigned to someone, otherwise ABERTO
     initial_status = TicketStatus.EM_TRATAMENTO.value if ticket_data.assigned_to_user_id else TicketStatus.ABERTO.value
@@ -259,6 +534,15 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
         "last_public_message_at": None,
         "first_response_done": False,
         "sla_due": sla_due.isoformat(),
+        # New SLA fields
+        "sla_started_at": now.isoformat(),
+        "sla_paused_at": None,
+        "sla_paused_minutes": 0,
+        "sla_breached": False,
+        "sla_breached_at": None,
+        "sla_target_minutes": sla_target_minutes,
+        "sla_policy_key": sla_policy_key,
+        # End new SLA fields
         "quote_sent": False,
         "quote_value": None,
         "quote_locked_at": None,
@@ -555,6 +839,98 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
             "is_system": True
         }
         await db.notes.insert_one(note_doc)
+        
+        # ============== SLA PAUSE/RESUME LOGIC ==============
+        now = datetime.now(timezone.utc)
+        new_status = ticket_data.status
+        
+        # Define statuses that pause SLA (clock stops when waiting for customer)
+        sla_pause_statuses = [TicketStatus.AGUARDA_CLIENTE.value]
+        # Define statuses that resume SLA (clock restarts when back in treatment)
+        sla_resume_statuses = [
+            TicketStatus.EM_TRATAMENTO.value,
+            TicketStatus.ACEITE_LINK.value,
+            TicketStatus.ABERTO.value,
+        ]
+        # Define final statuses (SLA tracking ends)
+        sla_final_statuses = [
+            TicketStatus.FECHADO.value,
+            TicketStatus.REJEITADO_LINK.value,
+            TicketStatus.AGENDADO.value,
+        ]
+        
+        # Check if we need to PAUSE SLA
+        if new_status in sla_pause_statuses and old_status not in sla_pause_statuses:
+            # Only pause if not already paused and SLA not completed
+            if not ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
+                sla_pause_update = {
+                    "sla_paused_at": now.isoformat()
+                }
+                await db.tickets.update_one({"id": ticket_id}, {"$set": sla_pause_update})
+                
+                # Add system note about SLA pause
+                pause_note = {
+                    "id": str(uuid.uuid4()),
+                    "ticket_id": ticket_id,
+                    "created_at": now.isoformat(),
+                    "created_by_user_id": user["id"],
+                    "body": "⏸️ SLA pausado - aguarda resposta do cliente",
+                    "is_system": True
+                }
+                await db.notes.insert_one(pause_note)
+        
+        # Check if we need to RESUME SLA
+        elif new_status in sla_resume_statuses and old_status in sla_pause_statuses:
+            # Resume SLA if it was paused
+            if ticket.get("sla_paused_at") and not ticket.get("first_response_done"):
+                try:
+                    pause_start = datetime.fromisoformat(ticket["sla_paused_at"].replace("Z", "+00:00"))
+                    # Calculate business minutes during pause period
+                    paused_business_minutes = calculate_business_minutes_between(pause_start, now)
+                    
+                    # Accumulate paused minutes and clear pause timestamp
+                    current_paused_minutes = ticket.get("sla_paused_minutes", 0)
+                    new_paused_total = current_paused_minutes + paused_business_minutes
+                    
+                    # Recalculate SLA due by extending it by the paused time
+                    old_sla_due_str = ticket.get("sla_due")
+                    if old_sla_due_str:
+                        old_sla_due = datetime.fromisoformat(old_sla_due_str.replace("Z", "+00:00"))
+                        # Add the paused business minutes to the SLA due
+                        new_sla_due = add_business_minutes(old_sla_due, paused_business_minutes)
+                    else:
+                        # Fallback: recalculate from now
+                        target_minutes = ticket.get("sla_target_minutes", 120)
+                        elapsed = calculate_sla_elapsed_minutes(ticket)
+                        remaining = max(0, target_minutes - elapsed)
+                        new_sla_due = add_business_minutes(now, remaining)
+                    
+                    sla_resume_update = {
+                        "sla_paused_at": None,
+                        "sla_paused_minutes": new_paused_total,
+                        "sla_due": new_sla_due.isoformat()
+                    }
+                    await db.tickets.update_one({"id": ticket_id}, {"$set": sla_resume_update})
+                    
+                    # Add system note about SLA resume
+                    resume_note = {
+                        "id": str(uuid.uuid4()),
+                        "ticket_id": ticket_id,
+                        "created_at": now.isoformat(),
+                        "created_by_user_id": user["id"],
+                        "body": f"▶️ SLA retomado - pausa de {paused_business_minutes} minutos úteis",
+                        "is_system": True
+                    }
+                    await db.notes.insert_one(resume_note)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error resuming SLA for ticket {ticket_id}: {e}")
+        
+        # Check if SLA tracking should stop (final status)
+        if new_status in sla_final_statuses:
+            # Clear any active pause state
+            if ticket.get("sla_paused_at"):
+                await db.tickets.update_one({"id": ticket_id}, {"$set": {"sla_paused_at": None}})
+        # ============== END SLA PAUSE/RESUME LOGIC ==============
     
     if ticket_data.assigned_to_user_id is not None and ticket_data.assigned_to_user_id != old_assigned:
         assigned_name = "Ninguém"
@@ -1474,7 +1850,12 @@ async def whatsapp_webhook(data: WhatsAppWebhook):
         # Create new ticket
         ticket_id = str(uuid.uuid4())
         ticket_number = generate_ticket_number()
-        sla_due = compute_sla_due()
+        
+        # Calculate SLA based on ticket type (INFORMACAO default) and business hours
+        sla_due, sla_target_minutes, sla_policy_key = compute_sla_due(
+            ticket_type=TicketType.INFORMACAO.value,
+            created_at=now
+        )
         
         ticket_doc = {
             "id": ticket_id,
@@ -1494,6 +1875,15 @@ async def whatsapp_webhook(data: WhatsAppWebhook):
             "last_public_message_at": now.isoformat(),
             "first_response_done": False,
             "sla_due": sla_due.isoformat(),
+            # New SLA fields
+            "sla_started_at": now.isoformat(),
+            "sla_paused_at": None,
+            "sla_paused_minutes": 0,
+            "sla_breached": False,
+            "sla_breached_at": None,
+            "sla_target_minutes": sla_target_minutes,
+            "sla_policy_key": sla_policy_key,
+            # End new SLA fields
             "quote_sent": False,
             "quote_value": None,
             "created_by_user_id": None,
@@ -1544,7 +1934,12 @@ async def telegram_webhook(data: TelegramWebhook):
     
     ticket_id = str(uuid.uuid4())
     ticket_number = generate_ticket_number()
-    sla_due = compute_sla_due()
+    
+    # Calculate SLA based on ticket type (INTERNO) and business hours
+    sla_due, sla_target_minutes, sla_policy_key = compute_sla_due(
+        ticket_type=TicketType.INTERNO.value,
+        created_at=now
+    )
     
     ticket_doc = {
         "id": ticket_id,
@@ -1564,6 +1959,15 @@ async def telegram_webhook(data: TelegramWebhook):
         "last_public_message_at": None,
         "first_response_done": False,
         "sla_due": sla_due.isoformat(),
+        # New SLA fields
+        "sla_started_at": now.isoformat(),
+        "sla_paused_at": None,
+        "sla_paused_minutes": 0,
+        "sla_breached": False,
+        "sla_breached_at": None,
+        "sla_target_minutes": sla_target_minutes,
+        "sla_policy_key": sla_policy_key,
+        # End new SLA fields
         "quote_sent": False,
         "quote_value": None,
         "created_by_user_id": None,

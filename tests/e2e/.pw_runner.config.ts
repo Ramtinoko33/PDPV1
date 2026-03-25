@@ -11,7 +11,7 @@ export default defineConfig({
     ['json', { outputFile: '/root/.emergent/automation_output/20260309_172750/results.json' }],
   ],
   use: {
-    baseURL: 'https://service-station-6.preview.emergentagent.com',
+    baseURL: 'https://vehicle-ticket-hub.preview.emergentagent.com',
     screenshot: 'only-on-failure',
     trace: 'off',
     headless: true,

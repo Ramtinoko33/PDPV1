@@ -4,8 +4,8 @@ API endpoints for intake requests.
 Only loaded if module is enabled in config/modules.json
 """
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from datetime import datetime, timezone, timedelta, date, time
+from typing import Optional, List, Tuple
 from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +25,77 @@ from .models import (
 from . import service
 
 router = APIRouter(prefix="/intake", tags=["intake"])
+
+# ============== SLA BUSINESS HOURS (duplicated from server.py for module isolation) ==============
+BUSINESS_HOURS = {
+    0: (time(8, 30), time(18, 30)),   # Monday
+    1: (time(8, 30), time(18, 30)),   # Tuesday
+    2: (time(8, 30), time(18, 30)),   # Wednesday
+    3: (time(8, 30), time(18, 30)),   # Thursday
+    4: (time(8, 30), time(18, 30)),   # Friday
+    5: (time(8, 30), time(13, 0)),    # Saturday
+    6: None,                           # Sunday (closed)
+}
+
+SLA_TARGETS_MINUTES = {
+    "ORCAMENTO_PNEUS": 480,      # 8 hours
+    "ORCAMENTO_MECANICA": 480,   # 8 hours
+    "INFORMACAO": 120,           # 2 hours
+    "RECLAMACAO": 120,           # 2 hours
+    "MARCACAO": 180,             # 3 hours
+    "INTERNO": 480,              # 8 hours
+}
+
+HOLIDAYS: list[date] = []
+
+def get_business_hours_for_day(d: date) -> Tuple[time, time] | None:
+    if d in HOLIDAYS:
+        return None
+    return BUSINESS_HOURS.get(d.weekday())
+
+def add_business_minutes(start_dt: datetime, minutes_to_add: int) -> datetime:
+    if minutes_to_add <= 0:
+        return start_dt
+    current_dt = start_dt
+    remaining_minutes = minutes_to_add
+    max_iterations = 365
+    iterations = 0
+    while remaining_minutes > 0 and iterations < max_iterations:
+        iterations += 1
+        current_date = current_dt.date()
+        current_time = current_dt.time()
+        hours = get_business_hours_for_day(current_date)
+        if not hours:
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        biz_start, biz_end = hours
+        if current_time < biz_start:
+            current_dt = datetime.combine(current_date, biz_start, tzinfo=current_dt.tzinfo)
+            current_time = biz_start
+        if current_time >= biz_end:
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+            continue
+        current_minutes = current_time.hour * 60 + current_time.minute
+        end_minutes = biz_end.hour * 60 + biz_end.minute
+        available_minutes = end_minutes - current_minutes
+        if remaining_minutes <= available_minutes:
+            final_minutes = current_minutes + remaining_minutes
+            final_hour = final_minutes // 60
+            final_minute = final_minutes % 60
+            return datetime.combine(current_date, time(final_hour, final_minute), tzinfo=current_dt.tzinfo)
+        else:
+            remaining_minutes -= available_minutes
+            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
+    return current_dt
+
+def compute_sla_due(ticket_type: str = "INFORMACAO", created_at: datetime = None) -> Tuple[datetime, int, str]:
+    if created_at is None:
+        created_at = datetime.now(timezone.utc)
+    target_minutes = SLA_TARGETS_MINUTES.get(ticket_type, 120)
+    policy_key = f"SLA_{ticket_type}_{target_minutes}min"
+    sla_due = add_business_minutes(created_at, target_minutes)
+    return sla_due, target_minutes, policy_key
+# ============== END SLA BUSINESS HOURS ==============
 
 
 @router.get("/pending-count")
@@ -259,6 +330,12 @@ async def convert_to_ticket(
     # Set status based on assignment
     initial_status = "EM_TRATAMENTO" if data.assigned_to else "ABERTO"
     
+    # Calculate SLA based on ticket type and business hours
+    sla_due, sla_target_minutes, sla_policy_key = compute_sla_due(
+        ticket_type=data.ticket_type,
+        created_at=now
+    )
+    
     ticket_doc = {
         "id": ticket_id,
         "ticket_number": ticket_number,
@@ -280,7 +357,16 @@ async def convert_to_ticket(
         "customer_id": customer_id,          # Link to auto-created customer
         "vehicle_id": vehicle_id,            # Link to auto-created vehicle
         "first_response_done": False,
-        "sla_due": (now + timedelta(hours=2)).isoformat(),
+        "sla_due": sla_due.isoformat(),
+        # New SLA fields
+        "sla_started_at": now.isoformat(),
+        "sla_paused_at": None,
+        "sla_paused_minutes": 0,
+        "sla_breached": False,
+        "sla_breached_at": None,
+        "sla_target_minutes": sla_target_minutes,
+        "sla_policy_key": sla_policy_key,
+        # End new SLA fields
         "quote_sent": False,
         "quote_value": None,
         # Traceability - link back to intake

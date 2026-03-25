@@ -8,7 +8,7 @@ import os
 import uuid
 from datetime import datetime
 
-BASE_URL = os.environ.get('API_BASE_URL', 'https://service-station-6.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('API_BASE_URL', 'https://vehicle-ticket-hub.preview.emergentagent.com').rstrip('/')
 
 
 @pytest.fixture(scope="module")
