@@ -1903,8 +1903,12 @@ async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = 
                 if e.response and e.response.status_code in [400, 404, 410]:
                     await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
                     logger.debug(f"Removed expired subscription for user {user_id}")
+                elif e.response is None:
+                    # No response means connection failed - subscription is likely invalid
+                    await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+                    logger.debug(f"Removed unreachable subscription for user {user_id}")
                 else:
-                    logger.warning(f"Web push failed for user {user_id}: {e.response.status_code if e.response else 'unknown'}")
+                    logger.warning(f"Web push failed for user {user_id}: {e.response.status_code}")
             except ValueError as e:
                 # VAPID key format error - log and skip silently
                 logger.warning(f"VAPID key format error, web push disabled: {e}")
