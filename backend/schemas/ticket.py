@@ -235,6 +235,7 @@ class AttachmentResponse(BaseModel):
     uploaded_at: str
     uploaded_by_user_id: Optional[str] = None
     uploaded_by_name: Optional[str] = None
+    storage_path: Optional[str] = None  # Object storage path for persistent storage
 
 
 class DashboardStats(BaseModel):

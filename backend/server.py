@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Header, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -63,9 +63,59 @@ EMAIL_FROM = os.environ.get('EMAIL_FROM', 'onboarding@resend.dev')
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
-# File storage
+# File storage - Local (temporary) and Object Storage (persistent)
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Object Storage configuration
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+APP_NAME = "pdpv-tickets"  # Prefix all paths to avoid bucket collisions
+_storage_key = None  # Module-level, set once and reused globally
+
+def init_storage():
+    """Initialize object storage - call once at startup."""
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    if not EMERGENT_KEY:
+        return None
+    try:
+        import requests as req
+        resp = req.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        resp.raise_for_status()
+        _storage_key = resp.json()["storage_key"]
+        return _storage_key
+    except Exception as e:
+        logger.error(f"Failed to initialize object storage: {e}")
+        return None
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    """Upload file to object storage."""
+    key = init_storage()
+    if not key:
+        raise Exception("Object storage not initialized")
+    import requests as req
+    resp = req.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+def get_object(path: str) -> tuple:
+    """Download file from object storage."""
+    key = init_storage()
+    if not key:
+        raise Exception("Object storage not initialized")
+    import requests as req
+    resp = req.get(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key}, timeout=60
+    )
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 # Frontend URL for email links
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
@@ -1751,16 +1801,31 @@ async def upload_attachment(ticket_id: str, file: UploadFile = File(...), curren
     if user["role"] == UserRole.INTERNAL_CREATOR.value:
         raise HTTPException(status_code=403, detail="Sem permissão")
     
-    # Save file
+    # Read file content
+    content = await file.read()
+    file_size = len(content)
+    
+    # Generate unique filename
     attachment_id = str(uuid.uuid4())
     file_ext = Path(file.filename).suffix
     stored_filename = f"{attachment_id}{file_ext}"
-    file_path = UPLOAD_DIR / stored_filename
+    content_type = file.content_type or "application/octet-stream"
     
+    # Try to upload to object storage first (persistent)
+    storage_path = None
+    try:
+        if init_storage():
+            storage_path = f"{APP_NAME}/attachments/{ticket_id}/{stored_filename}"
+            put_object(storage_path, content, content_type)
+            logger.info(f"File uploaded to object storage: {storage_path}")
+    except Exception as e:
+        logger.warning(f"Object storage upload failed, using local storage: {e}")
+        storage_path = None
+    
+    # Also save locally for quick access (cache)
+    file_path = UPLOAD_DIR / stored_filename
     with open(file_path, "wb") as f:
-        content = await file.read()
         f.write(content)
-        file_size = len(content)
     
     now = datetime.now(timezone.utc)
     attachment_doc = {
@@ -1768,10 +1833,11 @@ async def upload_attachment(ticket_id: str, file: UploadFile = File(...), curren
         "ticket_id": ticket_id,
         "filename": stored_filename,
         "original_filename": file.filename,
-        "file_type": file.content_type or "application/octet-stream",
+        "file_type": content_type,
         "file_size": file_size,
         "uploaded_at": now.isoformat(),
-        "uploaded_by_user_id": user["id"]
+        "uploaded_by_user_id": user["id"],
+        "storage_path": storage_path  # Object storage path (if available)
     }
     await db.attachments.insert_one(attachment_doc)
     
@@ -1807,14 +1873,32 @@ async def download_attachment(attachment_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404, detail="Ficheiro não encontrado")
     
     file_path = UPLOAD_DIR / attachment["filename"]
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor. Os ficheiros podem ter sido perdidos após um deployment. Por favor, carregue o ficheiro novamente.")
     
-    return FileResponse(
-        path=str(file_path),
-        filename=attachment["original_filename"],
-        media_type=attachment["file_type"]
-    )
+    # Try local file first
+    if file_path.exists():
+        return FileResponse(
+            path=str(file_path),
+            filename=attachment["original_filename"],
+            media_type=attachment["file_type"]
+        )
+    
+    # Try object storage
+    storage_path = attachment.get("storage_path")
+    if storage_path:
+        try:
+            content, content_type = get_object(storage_path)
+            # Cache locally for future requests
+            with open(file_path, "wb") as f:
+                f.write(content)
+            return Response(
+                content=content,
+                media_type=attachment.get("file_type", content_type),
+                headers={"Content-Disposition": f'attachment; filename="{attachment["original_filename"]}"'}
+            )
+        except Exception as e:
+            logger.error(f"Failed to download from object storage: {e}")
+    
+    raise HTTPException(status_code=404, detail="Ficheiro não encontrado no servidor. Os ficheiros podem ter sido perdidos após um deployment. Por favor, carregue o ficheiro novamente.")
 
 # ============== DASHBOARD ==============
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
@@ -4301,17 +4385,34 @@ async def download_attachment_public(token: str, attachment_id: str):
         raise HTTPException(status_code=404, detail="Ficheiro não encontrado")
     
     file_path = UPLOAD_DIR / attachment["filename"]
-    if not file_path.exists():
-        # File doesn't exist on disk - redirect to dynamic PDF generation
-        # This handles cases where files were lost between deployments
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=f"/api/public/quote/{token}/pdf", status_code=302)
     
-    return FileResponse(
-        path=str(file_path),
-        filename=attachment["original_filename"],
-        media_type=attachment.get("file_type", "application/pdf")
-    )
+    # Try local file first
+    if file_path.exists():
+        return FileResponse(
+            path=str(file_path),
+            filename=attachment["original_filename"],
+            media_type=attachment.get("file_type", "application/pdf")
+        )
+    
+    # Try object storage
+    storage_path = attachment.get("storage_path")
+    if storage_path:
+        try:
+            content, content_type = get_object(storage_path)
+            # Cache locally for future requests
+            with open(file_path, "wb") as f:
+                f.write(content)
+            return Response(
+                content=content,
+                media_type=attachment.get("file_type", content_type),
+                headers={"Content-Disposition": f'attachment; filename="{attachment["original_filename"]}"'}
+            )
+        except Exception as e:
+            logger.error(f"Failed to download from object storage: {e}")
+    
+    # Fallback: redirect to dynamic PDF generation
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/api/public/quote/{token}/pdf", status_code=302)
 
 @api_router.get("/public/quote/{token}/pdf")
 async def generate_quote_pdf(token: str):
@@ -4818,6 +4919,13 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on application startup"""
+    # Initialize object storage
+    storage_key = init_storage()
+    if storage_key:
+        logger.info("[STARTUP] Object storage initialized successfully")
+    else:
+        logger.warning("[STARTUP] Object storage not available - using local storage only")
+    
     # Load SLA configuration from database
     await load_sla_config_from_db()
     logger.info("[STARTUP] SLA configuration loaded from database")
