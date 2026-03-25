@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
 import { Checkbox } from '../components/ui/checkbox';
+import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { 
   CheckCircle, 
@@ -20,10 +21,22 @@ import {
   Phone,
   Mail,
   FileDown,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+// Rejection reasons
+const REJECTION_REASONS = [
+  { code: 'preco_alto', label: 'Preço alto' },
+  { code: 'vai_pedir_outra_opiniao', label: 'Vai pedir outra opinião/orçamento' },
+  { code: 'resolveu_noutro_local', label: 'Já resolveu noutro local' },
+  { code: 'nao_quer_avancar', label: 'Não quer avançar para já' },
+  { code: 'nao_entendeu', label: 'Não entendeu o orçamento' },
+  { code: 'quer_falar_primeiro', label: 'Quer falar com a oficina primeiro' },
+  { code: 'outro', label: 'Outro' }
+];
 
 const QuoteResponse = () => {
   const { token } = useParams();
@@ -38,6 +51,11 @@ const QuoteResponse = () => {
   const [comments, setComments] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState([]);
+  
+  // Rejection reason state
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [rejectionReasonCode, setRejectionReasonCode] = useState('');
+  const [rejectionReasonNote, setRejectionReasonNote] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -87,7 +105,51 @@ const QuoteResponse = () => {
       .reduce((sum, o) => sum + o.amount, 0);
   };
 
+  const handleRejectClick = () => {
+    // Show rejection reason modal instead of submitting directly
+    setShowRejectionModal(true);
+  };
+
+  const confirmRejection = async () => {
+    // Validate rejection reason
+    if (!rejectionReasonCode) {
+      toast.error('Selecione um motivo de rejeição');
+      return;
+    }
+    if (rejectionReasonCode === 'outro' && !rejectionReasonNote.trim()) {
+      toast.error('Para "Outro" motivo, a observação é obrigatória');
+      return;
+    }
+    
+    setSubmitting(true);
+    setResponse('REJECTED');
+    try {
+      const selectedReason = REJECTION_REASONS.find(r => r.code === rejectionReasonCode);
+      await axios.post(`${API_URL}/api/public/quote/${token}/respond`, {
+        status: 'REJECTED',
+        comments,
+        accepted_option_ids: [],
+        rejection_reason_code: rejectionReasonCode,
+        rejection_reason_label: selectedReason?.label || rejectionReasonCode,
+        rejection_reason_note: rejectionReasonNote || null
+      });
+      setSubmitted(true);
+      setShowRejectionModal(false);
+      toast.success('Orçamento recusado');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erro ao submeter resposta');
+      setResponse(null);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submitResponse = async (status) => {
+    if (status === 'REJECTED') {
+      handleRejectClick();
+      return;
+    }
+    
     if (status === 'ACCEPTED' && selectedOptions.length === 0 && quote.quote_options?.length > 0) {
       toast.error('Selecione pelo menos uma opção');
       return;
@@ -102,7 +164,7 @@ const QuoteResponse = () => {
         accepted_option_ids: status === 'ACCEPTED' ? selectedOptions : []
       });
       setSubmitted(true);
-      toast.success(status === 'ACCEPTED' ? 'Orçamento aceite!' : 'Orçamento recusado');
+      toast.success('Orçamento aceite!');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Erro ao submeter resposta');
       setResponse(null);
@@ -544,6 +606,101 @@ const QuoteResponse = () => {
           </p>
         </div>
       </footer>
+
+      {/* Rejection Reason Modal */}
+      {showRejectionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-100 rounded-full">
+                  <MessageSquare className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900">Confirmar Rejeição</h3>
+                  <p className="text-sm text-zinc-500">Antes de concluir, pode indicar o motivo da rejeição?</p>
+                </div>
+              </div>
+              
+              <p className="text-sm text-zinc-600 mb-4">
+                A sua resposta ajuda-nos a melhorar os nossos serviços.
+              </p>
+
+              {/* Rejection Reasons */}
+              <div className="space-y-2 mb-4">
+                {REJECTION_REASONS.map((reason) => (
+                  <label 
+                    key={reason.code}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      rejectionReasonCode === reason.code 
+                        ? 'border-red-500 bg-red-50' 
+                        : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                    }`}
+                    data-testid={`rejection-reason-${reason.code}`}
+                  >
+                    <input
+                      type="radio"
+                      name="rejectionReason"
+                      value={reason.code}
+                      checked={rejectionReasonCode === reason.code}
+                      onChange={(e) => setRejectionReasonCode(e.target.value)}
+                      className="w-4 h-4 text-red-600 border-zinc-300 focus:ring-red-500"
+                    />
+                    <span className="text-sm text-zinc-700">{reason.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              {/* Additional Note */}
+              <div className="mb-4">
+                <Label htmlFor="rejection-note" className="text-sm text-zinc-600 mb-2 block">
+                  Observação adicional {rejectionReasonCode === 'outro' && <span className="text-red-500">*</span>}
+                </Label>
+                <Textarea
+                  id="rejection-note"
+                  placeholder={rejectionReasonCode === 'outro' 
+                    ? "Por favor, descreva o motivo..." 
+                    : "Observação opcional..."
+                  }
+                  value={rejectionReasonNote}
+                  onChange={(e) => setRejectionReasonNote(e.target.value)}
+                  className="min-h-[80px]"
+                  data-testid="rejection-note-input"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowRejectionModal(false);
+                    setRejectionReasonCode('');
+                    setRejectionReasonNote('');
+                  }}
+                  disabled={submitting}
+                >
+                  Voltar
+                </Button>
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  onClick={confirmRejection}
+                  disabled={submitting || !rejectionReasonCode}
+                  data-testid="confirm-rejection-btn"
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <XCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Confirmar Rejeição
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

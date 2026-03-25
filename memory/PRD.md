@@ -63,7 +63,35 @@ Sistema de gestão de tickets para oficina de veículos (PDPV - Pneus de Pedro V
   - "▶️ SLA retomado - pausa de X minutos úteis"
 - **Testes:** 12/12 testes unitários passaram em `/app/backend/tests/test_sla_logic.py`
 
-### 4. Email com SMTP ✅ (ATUALIZADO 21/02/2026)
+### 4. Orçamentos com Motivo de Rejeição ✅ (NOVO 25/03/2026)
+- **Modal de Rejeição no Link do Cliente (QuoteResponse.js):**
+  - Ao clicar "Recusar Tudo", abre modal com motivos estruturados
+  - 7 motivos pré-definidos:
+    - preco_alto: "Preço alto"
+    - vai_pedir_outra_opiniao: "Vai pedir outra opinião/orçamento"
+    - resolveu_noutro_local: "Já resolveu noutro local"
+    - nao_quer_avancar: "Não quer avançar para já"
+    - nao_entendeu: "Não entendeu o orçamento"
+    - quer_falar_primeiro: "Quer falar com a oficina primeiro"
+    - outro: "Outro" (observação obrigatória)
+  - Campo de observação adicional (opcional/obrigatório para "outro")
+- **Dados Guardados no Ticket:**
+  - `rejection_reason_code`: Código do motivo
+  - `rejection_reason_label`: Label legível
+  - `rejection_reason_note`: Observação adicional
+  - `rejected_at`: Data/hora da rejeição
+  - `rejected_via`: "link" ou outro
+- **Visualização no TicketDetail.js:**
+  - Card "Motivo da Rejeição" com motivo, observação e data
+  - Só aparece se ticket foi rejeitado com motivo
+- **Endpoint de Relatório (GET /api/admin/reports/rejection-reasons):**
+  - Total de rejeições, contagem com/sem motivo
+  - Breakdown por motivo, tipo de ticket e utilizador
+  - Filtros: start_date, end_date, ticket_type, assigned_to
+- **Validação Backend:** Código deve ser válido; "outro" requer observação
+- **Compatibilidade:** Tickets antigos sem motivo continuam a funcionar
+
+### 5. Email com SMTP ✅ (ATUALIZADO 21/02/2026)
 - Configuração completa SMTP via UI admin
 - Campos: servidor, porta, username, senha, SSL/TLS
 - Envio automático de email com link de orçamento

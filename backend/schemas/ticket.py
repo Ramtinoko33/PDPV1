@@ -129,6 +129,12 @@ class TicketResponse(BaseModel):
     archived_at: Optional[str] = None
     archived_by: Optional[str] = None
     creator_can_edit: bool = False
+    # Rejection reason fields
+    rejection_reason_code: Optional[str] = None
+    rejection_reason_label: Optional[str] = None
+    rejection_reason_note: Optional[str] = None
+    rejected_at: Optional[str] = None
+    rejected_via: Optional[str] = None
     # Intake traceability
     intake_request_id: Optional[str] = None
     intake_source: Optional[str] = None

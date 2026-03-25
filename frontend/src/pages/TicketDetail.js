@@ -45,7 +45,8 @@ import {
   Bell,
   Calendar,
   Reply,
-  RefreshCcw
+  RefreshCcw,
+  AlertCircle
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -1822,6 +1823,31 @@ Qualquer dúvida estamos disponíveis.`;
                             Total aceite: <strong>{ticket.accepted_total.toFixed(2)}€</strong>
                             {ticket.accepted_count && ` (${ticket.accepted_count} de ${quoteOptions.length} opções)`}
                           </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Rejection Reason Details */}
+                  {ticket.quote_response_status === 'REJECTED' && ticket.rejection_reason_code && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-2" data-testid="rejection-reason-card">
+                      <h4 className="font-medium text-red-800 flex items-center gap-2 mb-2">
+                        <AlertCircle className="h-4 w-4" />
+                        Motivo da Rejeição
+                      </h4>
+                      <div className="space-y-1 text-sm">
+                        <p className="text-red-700">
+                          <span className="font-medium">Motivo:</span> {ticket.rejection_reason_label || ticket.rejection_reason_code}
+                        </p>
+                        {ticket.rejection_reason_note && (
+                          <p className="text-red-600">
+                            <span className="font-medium">Observação:</span> {ticket.rejection_reason_note}
+                          </p>
+                        )}
+                        {ticket.rejected_at && (
+                          <p className="text-red-500 text-xs mt-2">
+                            Rejeitado em {formatDate(ticket.rejected_at)} via {ticket.rejected_via === 'link' ? 'link do cliente' : ticket.rejected_via}
+                          </p>
                         )}
                       </div>
                     </div>

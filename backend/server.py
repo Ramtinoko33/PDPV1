@@ -3471,6 +3471,122 @@ async def analyze_tire_sizes(
         keywords=keywords
     )
 
+# ============== REJECTION REASONS REPORT ==============
+class RejectionReasonCount(BaseModel):
+    code: str
+    label: str
+    count: int
+    percentage: float
+
+class RejectionReportResponse(BaseModel):
+    period: dict
+    total_rejected: int
+    with_reason: int
+    without_reason: int
+    by_reason: List[RejectionReasonCount]
+    by_ticket_type: List[dict]
+    by_assigned_user: List[dict]
+
+@api_router.get("/admin/reports/rejection-reasons", response_model=RejectionReportResponse)
+async def get_rejection_reasons_report(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    ticket_type: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get rejection reasons report for analytics - ADMIN/SUPERVISOR only"""
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    # Build query for rejected tickets
+    query = {
+        "status": TicketStatus.REJEITADO_LINK.value,
+        "archived_at": None
+    }
+    
+    if start_date:
+        query["created_at"] = {"$gte": start_date}
+    if end_date:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = end_date
+        else:
+            query["created_at"] = {"$lte": end_date}
+    if ticket_type:
+        query["type"] = ticket_type
+    if assigned_to:
+        query["assigned_to_user_id"] = assigned_to
+    
+    # Fetch rejected tickets
+    tickets = await db.tickets.find(query, {
+        "_id": 0, 
+        "rejection_reason_code": 1, 
+        "rejection_reason_label": 1,
+        "type": 1,
+        "assigned_to_user_id": 1,
+        "assigned_to_name": 1
+    }).to_list(10000)
+    
+    total_rejected = len(tickets)
+    with_reason = sum(1 for t in tickets if t.get("rejection_reason_code"))
+    without_reason = total_rejected - with_reason
+    
+    # Count by reason
+    reason_counts = {}
+    for t in tickets:
+        code = t.get("rejection_reason_code", "sem_motivo")
+        label = t.get("rejection_reason_label") or REJECTION_REASON_CODES.get(code, "Sem motivo registado")
+        if code not in reason_counts:
+            reason_counts[code] = {"code": code, "label": label, "count": 0}
+        reason_counts[code]["count"] += 1
+    
+    by_reason = []
+    for code, data in sorted(reason_counts.items(), key=lambda x: x[1]["count"], reverse=True):
+        percentage = (data["count"] / total_rejected * 100) if total_rejected > 0 else 0
+        by_reason.append(RejectionReasonCount(
+            code=data["code"],
+            label=data["label"],
+            count=data["count"],
+            percentage=round(percentage, 1)
+        ))
+    
+    # Count by ticket type
+    type_counts = {}
+    for t in tickets:
+        ticket_type_val = t.get("type", "DESCONHECIDO")
+        if ticket_type_val not in type_counts:
+            type_counts[ticket_type_val] = 0
+        type_counts[ticket_type_val] += 1
+    
+    by_ticket_type = [
+        {"type": k, "count": v, "percentage": round(v / total_rejected * 100, 1) if total_rejected > 0 else 0}
+        for k, v in sorted(type_counts.items(), key=lambda x: x[1], reverse=True)
+    ]
+    
+    # Count by assigned user
+    user_counts = {}
+    for t in tickets:
+        user_id = t.get("assigned_to_user_id") or "nao_atribuido"
+        user_name = t.get("assigned_to_name") or "Não atribuído"
+        if user_id not in user_counts:
+            user_counts[user_id] = {"user_id": user_id, "user_name": user_name, "count": 0}
+        user_counts[user_id]["count"] += 1
+    
+    by_assigned_user = [
+        {**data, "percentage": round(data["count"] / total_rejected * 100, 1) if total_rejected > 0 else 0}
+        for data in sorted(user_counts.values(), key=lambda x: x["count"], reverse=True)
+    ]
+    
+    return RejectionReportResponse(
+        period={"start": start_date, "end": end_date},
+        total_rejected=total_rejected,
+        with_reason=with_reason,
+        without_reason=without_reason,
+        by_reason=by_reason,
+        by_ticket_type=by_ticket_type,
+        by_assigned_user=by_assigned_user
+    )
+
 # ============== EMAIL TEST ==============
 class TestEmailRequest(BaseModel):
     recipient_email: EmailStr
@@ -3640,6 +3756,21 @@ class QuoteResponseRequest(BaseModel):
     status: str  # ACCEPTED or REJECTED
     comments: Optional[str] = None
     accepted_option_ids: List[str] = []  # IDs of accepted options
+    # Rejection reason fields (only used when status = REJECTED)
+    rejection_reason_code: Optional[str] = None
+    rejection_reason_label: Optional[str] = None
+    rejection_reason_note: Optional[str] = None
+
+# Valid rejection reason codes
+REJECTION_REASON_CODES = {
+    "preco_alto": "Preço alto",
+    "vai_pedir_outra_opiniao": "Vai pedir outra opinião/orçamento",
+    "resolveu_noutro_local": "Já resolveu noutro local",
+    "nao_quer_avancar": "Não quer avançar para já",
+    "nao_entendeu": "Não entendeu o orçamento",
+    "quer_falar_primeiro": "Quer falar com a oficina primeiro",
+    "outro": "Outro"
+}
 
 class PublicReplyTicketData(BaseModel):
     ticket_number: str
@@ -3990,6 +4121,15 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     if response_data.status not in ["ACCEPTED", "REJECTED"]:
         raise HTTPException(status_code=400, detail="Estado inválido")
     
+    # Validate rejection reason if rejected
+    if response_data.status == "REJECTED":
+        if response_data.rejection_reason_code:
+            if response_data.rejection_reason_code not in REJECTION_REASON_CODES:
+                raise HTTPException(status_code=400, detail="Código de motivo de rejeição inválido")
+            # If reason is "outro", note is required
+            if response_data.rejection_reason_code == "outro" and not response_data.rejection_reason_note:
+                raise HTTPException(status_code=400, detail="Para 'Outro' motivo, a observação é obrigatória")
+    
     # Check quote validity
     if ticket.get("quote_valid_until"):
         valid_until_dt = datetime.fromisoformat(ticket["quote_valid_until"].replace("Z", "+00:00"))
@@ -4058,6 +4198,17 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     else:
         # Change status to REJEITADO_LINK if rejected
         ticket_update["status"] = TicketStatus.REJEITADO_LINK.value
+        # Save rejection reason data
+        ticket_update["rejected_at"] = now.isoformat()
+        ticket_update["rejected_via"] = "link"
+        if response_data.rejection_reason_code:
+            ticket_update["rejection_reason_code"] = response_data.rejection_reason_code
+            ticket_update["rejection_reason_label"] = REJECTION_REASON_CODES.get(
+                response_data.rejection_reason_code, 
+                response_data.rejection_reason_label or response_data.rejection_reason_code
+            )
+        if response_data.rejection_reason_note:
+            ticket_update["rejection_reason_note"] = response_data.rejection_reason_note
     
     await db.tickets.update_one({"id": ticket_id}, {"$set": ticket_update})
     
@@ -4071,6 +4222,15 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         note_body += f"Total aceite: {accepted_total:.2f}€"
     else:
         note_body = f"Cliente respondeu ao orçamento: {status_text}"
+        # Add rejection reason to note if provided
+        if response_data.status == "REJECTED" and response_data.rejection_reason_code:
+            reason_label = REJECTION_REASON_CODES.get(
+                response_data.rejection_reason_code,
+                response_data.rejection_reason_label or response_data.rejection_reason_code
+            )
+            note_body += f"\nMotivo: {reason_label}"
+            if response_data.rejection_reason_note:
+                note_body += f"\nObservação: {response_data.rejection_reason_note}"
     
     if response_data.comments:
         note_body += f"\nComentários: {response_data.comments}"
