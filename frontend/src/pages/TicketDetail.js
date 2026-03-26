@@ -2137,31 +2137,130 @@ Qualquer dúvida estamos disponíveis.`;
               <CardTitle className="text-lg">Prazos SLA</CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Main SLA Status */}
+              <div className={`p-4 rounded-lg border-2 ${
+                ticket.sla_breached ? 'bg-red-50 border-red-300' :
+                ticket.sla_paused_at ? 'bg-amber-50 border-amber-300' :
+                ticket.first_response_done ? 'bg-emerald-50 border-emerald-300' :
+                'bg-zinc-50 border-zinc-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-full ${
+                      ticket.sla_breached ? 'bg-red-100' :
+                      ticket.sla_paused_at ? 'bg-amber-100' :
+                      ticket.first_response_done ? 'bg-emerald-100' :
+                      'bg-zinc-100'
+                    }`}>
+                      <Clock className={`h-6 w-6 ${
+                        ticket.sla_breached ? 'text-red-600' :
+                        ticket.sla_paused_at ? 'text-amber-600' :
+                        ticket.first_response_done ? 'text-emerald-600' :
+                        'text-zinc-500'
+                      }`} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">
+                        {ticket.sla_breached ? 'SLA Violado' :
+                         ticket.sla_paused_at ? 'SLA Pausado' :
+                         ticket.first_response_done ? 'SLA Cumprido' :
+                         'SLA em Curso'}
+                      </p>
+                      <p className="text-sm text-zinc-500">
+                        {ticket.sla_policy_key || `Tipo: ${ticket.type}`}
+                      </p>
+                    </div>
+                  </div>
+                  {ticket.sla_target_minutes && (
+                    <div className="text-right">
+                      <p className="text-sm text-zinc-500">Tempo Alvo</p>
+                      <p className="font-semibold text-slate-800">
+                        {Math.floor(ticket.sla_target_minutes / 60)}h {ticket.sla_target_minutes % 60}m úteis
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SLA Details Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* SLA Due */}
                 <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
-                  <Clock className={`h-6 w-6 ${ticket.first_response_done ? 'text-emerald-600' : 'text-zinc-400'}`} />
+                  <Clock className={`h-5 w-5 ${ticket.is_overdue ? 'text-red-500' : 'text-zinc-400'}`} />
                   <div>
-                    <p className="text-sm text-zinc-500">1ª Resposta</p>
-                    {ticket.sla_first_response_due ? (
-                      <p className={`font-semibold ${ticket.first_response_done ? 'text-emerald-600' : ''}`}>
-                        {ticket.first_response_done ? 'Concluído' : formatDate(ticket.sla_first_response_due)}
+                    <p className="text-sm text-zinc-500">Prazo SLA</p>
+                    {ticket.sla_due ? (
+                      <p className={`font-medium ${ticket.is_overdue ? 'text-red-600' : 'text-slate-700'}`}>
+                        {formatDate(ticket.sla_due)}
                       </p>
                     ) : (
-                      <p className="text-zinc-400">N/A</p>
+                      <p className="text-zinc-400">Não definido</p>
                     )}
                   </div>
                 </div>
+
+                {/* SLA Started */}
                 <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
-                  <FileText className={`h-6 w-6 ${ticket.quote_sent ? 'text-emerald-600' : 'text-zinc-400'}`} />
+                  <Clock className="h-5 w-5 text-zinc-400" />
+                  <div>
+                    <p className="text-sm text-zinc-500">Início SLA</p>
+                    {ticket.sla_started_at ? (
+                      <p className="font-medium text-slate-700">{formatDate(ticket.sla_started_at)}</p>
+                    ) : (
+                      <p className="text-zinc-400">{formatDate(ticket.created_at)}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* First Response */}
+                <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
+                  <CheckCircle className={`h-5 w-5 ${ticket.first_response_done ? 'text-emerald-500' : 'text-zinc-400'}`} />
+                  <div>
+                    <p className="text-sm text-zinc-500">1ª Resposta</p>
+                    <p className={`font-medium ${ticket.first_response_done ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      {ticket.first_response_done ? 'Concluída' : 'Pendente'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Paused Minutes */}
+                {(ticket.sla_paused_minutes > 0 || ticket.sla_paused_at) && (
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-amber-500" />
+                    <div>
+                      <p className="text-sm text-amber-600">Tempo Pausado</p>
+                      <p className="font-medium text-amber-700">
+                        {ticket.sla_paused_minutes || 0} min úteis
+                        {ticket.sla_paused_at && ' (ativo)'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Breached At */}
+                {ticket.sla_breached && ticket.sla_breached_at && (
+                  <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-red-500" />
+                    <div>
+                      <p className="text-sm text-red-600">Violado em</p>
+                      <p className="font-medium text-red-700">{formatDate(ticket.sla_breached_at)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quote Status */}
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium text-zinc-600 mb-3">Estado do Orçamento</p>
+                <div className="flex items-center gap-3 p-4 bg-zinc-50 rounded-lg">
+                  <FileText className={`h-5 w-5 ${ticket.quote_sent ? 'text-emerald-500' : 'text-zinc-400'}`} />
                   <div>
                     <p className="text-sm text-zinc-500">Orçamento</p>
-                    {ticket.sla_quote_due ? (
-                      <p className={`font-semibold ${ticket.quote_sent ? 'text-emerald-600' : ''}`}>
-                        {ticket.quote_sent ? 'Enviado' : formatDate(ticket.sla_quote_due)}
-                      </p>
-                    ) : (
-                      <p className="text-zinc-400">N/A</p>
-                    )}
+                    <p className={`font-medium ${ticket.quote_sent ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                      {ticket.quote_sent ? 
+                        `Enviado${ticket.quote_value ? ` - ${ticket.quote_value.toFixed(2)}€` : ''}` : 
+                        'Não enviado'}
+                    </p>
                   </div>
                 </div>
               </div>
