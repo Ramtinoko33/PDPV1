@@ -35,6 +35,8 @@ const AdminReports = () => {
   const [customerStats, setCustomerStats] = useState(null);
   const [tireAnalysis, setTireAnalysis] = useState(null);
   const [loadingTires, setLoadingTires] = useState(false);
+  const [rejectionStats, setRejectionStats] = useState(null);
+  const [loadingRejections, setLoadingRejections] = useState(false);
   const [filters, setFilters] = useState({
     // Default to last 90 days to capture more data
     start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -52,6 +54,7 @@ const AdminReports = () => {
     fetchTicketTypes();
     generateReport();
     fetchCustomerStats();
+    fetchRejectionStats();
   }, []);
 
   const fetchCustomerStats = async () => {
@@ -120,6 +123,27 @@ const AdminReports = () => {
       toast.error(error.response?.data?.detail || 'Erro ao analisar medidas');
     } finally {
       setLoadingTires(false);
+    }
+  };
+
+  const fetchRejectionStats = async () => {
+    setLoadingRejections(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.start_date) params.append('start_date', filters.start_date);
+      if (filters.end_date) params.append('end_date', filters.end_date);
+      if (filters.type) params.append('ticket_type', filters.type);
+      if (filters.assigned_to) params.append('assigned_to', filters.assigned_to);
+      
+      const response = await axios.get(
+        `${API_URL}/api/admin/reports/rejection-reasons?${params.toString()}`,
+        { headers: getAuthHeaders() }
+      );
+      setRejectionStats(response.data);
+    } catch (error) {
+      console.error('Error fetching rejection stats:', error);
+    } finally {
+      setLoadingRejections(false);
     }
   };
 
@@ -555,6 +579,139 @@ const AdminReports = () => {
           Clique em "Atualizar" para gerar o relatório
         </div>
       )}
+
+      {/* Rejection Reasons Analysis Section */}
+      <Card className="border-t-4 border-t-red-500">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <XCircle className="h-5 w-5 text-red-600" />
+                Análise de Orçamentos Recusados
+              </CardTitle>
+              <CardDescription>
+                Motivos de rejeição e tendências de recusa
+              </CardDescription>
+            </div>
+            <Button 
+              onClick={fetchRejectionStats}
+              disabled={loadingRejections}
+              variant="outline"
+              className="border-red-300 text-red-600 hover:bg-red-50"
+            >
+              {loadingRejections ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Atualizar
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingRejections ? (
+            <div className="flex justify-center py-8">
+              <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : rejectionStats ? (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-sm text-red-600 font-medium">Total Recusados</p>
+                  <p className="text-2xl font-bold text-red-700">{rejectionStats.total_rejected}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-600 font-medium">Com Motivo Registado</p>
+                  <p className="text-2xl font-bold text-amber-700">{rejectionStats.with_reason}</p>
+                </div>
+                <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4">
+                  <p className="text-sm text-zinc-600 font-medium">Sem Motivo</p>
+                  <p className="text-2xl font-bold text-zinc-700">{rejectionStats.without_reason}</p>
+                </div>
+              </div>
+
+              {rejectionStats.total_rejected > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* By Reason */}
+                  <div>
+                    <h4 className="font-semibold text-zinc-700 mb-3 flex items-center gap-2">
+                      <Tag className="h-4 w-4" />
+                      Por Motivo de Rejeição
+                    </h4>
+                    <div className="space-y-2">
+                      {rejectionStats.by_reason.map((reason) => (
+                        <div key={reason.code} className="flex items-center justify-between bg-zinc-50 rounded-lg p-3">
+                          <span className="text-sm text-zinc-700">{reason.label}</span>
+                          <div className="flex items-center gap-3">
+                            <div className="w-24 h-2 bg-zinc-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-red-500 rounded-full"
+                                style={{ width: `${reason.percentage}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-medium text-zinc-600 w-16 text-right">
+                              {reason.count} ({reason.percentage}%)
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* By Ticket Type */}
+                  <div>
+                    <h4 className="font-semibold text-zinc-700 mb-3 flex items-center gap-2">
+                      <Wrench className="h-4 w-4" />
+                      Por Tipo de Ticket
+                    </h4>
+                    <div className="space-y-2">
+                      {rejectionStats.by_ticket_type.map((item) => {
+                        const typeInfo = ticketTypes.find(t => t.code === item.type);
+                        return (
+                          <div key={item.type} className="flex items-center justify-between bg-zinc-50 rounded-lg p-3">
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: typeInfo?.color || '#6b7280' }}
+                              />
+                              <span className="text-sm text-zinc-700">{typeInfo?.label || item.type}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="w-24 h-2 bg-zinc-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full rounded-full"
+                                  style={{ 
+                                    width: `${item.percentage}%`,
+                                    backgroundColor: typeInfo?.color || '#6b7280'
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium text-zinc-600 w-16 text-right">
+                                {item.count} ({item.percentage}%)
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rejectionStats.total_rejected === 0 && (
+                <p className="text-center text-zinc-500 py-4">
+                  Nenhum orçamento recusado no período selecionado
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-center text-zinc-500 py-8">
+              Clique em "Atualizar" para ver estatísticas de rejeição
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tire Size Analysis Section */}
       <Card className="border-t-4 border-t-orange-500">
