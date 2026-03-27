@@ -3,54 +3,56 @@
 ## Overview
 Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. Pedro V).
 
-## Architecture
+## Architecture (After Refactoring)
 
-### Backend Structure (After Refactoring)
+### Refactoring Summary
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| server.py | 4957 lines | 2563 lines | **-48%** |
+| Modular routes | 0 | 2 files | +1390 lines |
+| Services | 1 | 6 files | +1091 lines |
+
+### Backend Structure
 ```
 /app/backend/
-├── server.py              # Main FastAPI app (~3819 lines - reduced from 4957)
+├── server.py              # Main FastAPI app (~2563 lines - orchestration)
 ├── services/
-│   ├── __init__.py        # Service exports
-│   ├── sla_service.py     # SLA business logic (~380 lines)
-│   ├── storage_service.py # Object Storage operations
-│   ├── ticket_service.py  # Ticket helpers
-│   ├── notification_service.py # Web Push notifications
-│   ├── auth_service.py    # Auth helpers
-│   └── customer_service.py
+│   ├── __init__.py        (89 lines)
+│   ├── sla_service.py     (379 lines) - SLA business logic
+│   ├── storage_service.py (77 lines)  - Object Storage operations
+│   ├── ticket_service.py  (78 lines)  - Ticket helpers
+│   ├── notification_service.py (193 lines) - Web Push
+│   ├── auth_service.py    (85 lines)  - Auth helpers
+│   └── customer_service.py (190 lines)
 ├── routes/
-│   ├── auth.py            # Authentication routes
-│   ├── customers.py       # Customer management
-│   ├── users.py           # User management
-│   ├── vehicles.py        # Vehicle management
-│   └── tickets.py         # NEW - Ticket CRUD routes (~600 lines)
+│   ├── auth.py            (203 lines) - Authentication
+│   ├── customers.py       (529 lines) - Customer management
+│   ├── users.py           (100 lines) - User management
+│   ├── vehicles.py        (18 lines)  - Vehicle management
+│   ├── tickets.py         (623 lines) - Ticket CRUD, archive, status
+│   └── admin.py           (767 lines) - Admin settings, reports
 ├── modules/
-│   ├── intake/            # Pre-ticket intake
-│   ├── telegram/          # Telegram bot
-│   └── whatsapp/          # WhatsApp (pending implementation)
+│   ├── intake/            - Pre-ticket intake
+│   ├── telegram/          - Telegram bot
+│   └── whatsapp/          - WhatsApp (pending)
 ├── schemas/
 │   ├── ticket.py
 │   ├── user.py
 │   └── customer.py
 └── tests/
-    └── test_sla_logic.py
+    └── test_sla_logic.py  (12 tests passing)
 ```
 
-### Refactoring Progress
-| Phase | Lines Removed | Status |
-|-------|---------------|--------|
-| Phase 1 - Services | ~525 lines | ✅ Complete |
-| Phase 2 - Tickets Router | ~614 lines | ✅ Complete |
-| **Total** | **~1138 lines** | **23% reduction** |
-
-### Remaining in server.py
+### What Remains in server.py
 - Messages, Notes, Alerts, Reminders routes
-- Attachments routes
+- Attachments routes (upload/download)
 - Dashboard routes
-- Webhooks (Telegram, WhatsApp)
-- Admin settings routes
-- Quote routes (options, public links, PDF)
-- Export routes
-- Notifications routes
+- Webhooks (Telegram)
+- Quote system routes (options, public links, PDF generation)
+- Export routes (CSV)
+- Seed data
+- Notifications API
+- Web Push routes
 - WebSocket management
 - Startup/shutdown events
 
@@ -76,6 +78,7 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - [x] Quote acceptance/rejection flow
 - [x] Rejection reason collection
 - [x] Quote history tracking
+- [x] PDF generation
 
 ### File Storage
 - [x] Emergent Object Storage integration (persistent)
@@ -94,7 +97,7 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 
 ## API Endpoints
 
-### Auth
+### Auth (routes/auth.py)
 - POST /api/auth/register
 - POST /api/auth/login
 - POST /api/auth/refresh
@@ -110,19 +113,25 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - POST /api/tickets/{id}/restore - Restore ticket
 - GET /api/tickets/{id}/status-history - Get status history
 
+### Admin (routes/admin.py)
+- GET/POST/PUT/DELETE /api/admin/ticket-types
+- GET/POST/PUT/DELETE /api/admin/ticket-statuses
+- GET/PUT /api/admin/sla-config
+- GET/PUT /api/admin/email-config
+- GET/PUT /api/admin/branding
+- POST /api/admin/reports
+- GET /api/admin/reports/rejection-reasons
+
 ### Tickets (still in server.py)
 - POST/GET /api/tickets/{id}/messages
 - POST/GET /api/tickets/{id}/notes
 - GET /api/tickets/{id}/alerts
 - POST/GET /api/tickets/{id}/reminders
 - POST/GET /api/tickets/{id}/attachments
+- GET/POST /api/tickets/{id}/quote-options
+- POST /api/tickets/{id}/generate-quote-link
 
-### Admin
-- GET/PUT /api/admin/sla-config
-- GET/POST/PUT/DELETE /api/admin/ticket-types
-- GET/POST/PUT/DELETE /api/admin/ticket-statuses
-
-### Public
+### Public (server.py)
 - GET /api/quote/{token}
 - POST /api/quote/{token}/respond
 - GET /api/quote/{token}/pdf
