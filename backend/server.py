@@ -63,59 +63,12 @@ EMAIL_FROM = os.environ.get('EMAIL_FROM', 'onboarding@resend.dev')
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
-# File storage - Local (temporary) and Object Storage (persistent)
-UPLOAD_DIR = ROOT_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-# Object Storage configuration
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
-APP_NAME = "pdpv-tickets"  # Prefix all paths to avoid bucket collisions
-_storage_key = None  # Module-level, set once and reused globally
-
-def init_storage():
-    """Initialize object storage - call once at startup."""
-    global _storage_key
-    if _storage_key:
-        return _storage_key
-    if not EMERGENT_KEY:
-        return None
-    try:
-        import requests as req
-        resp = req.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-        resp.raise_for_status()
-        _storage_key = resp.json()["storage_key"]
-        return _storage_key
-    except Exception as e:
-        logger.error(f"Failed to initialize object storage: {e}")
-        return None
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    """Upload file to object storage."""
-    key = init_storage()
-    if not key:
-        raise Exception("Object storage not initialized")
-    import requests as req
-    resp = req.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-def get_object(path: str) -> tuple:
-    """Download file from object storage."""
-    key = init_storage()
-    if not key:
-        raise Exception("Object storage not initialized")
-    import requests as req
-    resp = req.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
-    )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+# File storage - imported from services.storage_service
+from services.storage_service import (
+    UPLOAD_DIR, APP_NAME,
+    init_storage, put_object, get_object,
+    get_storage_client, is_storage_available
+)
 
 # Frontend URL for email links
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
@@ -210,383 +163,31 @@ async def modules_status():
 # - schemas.customer: VehicleCreate, VehicleResponse, CustomerCreate, CustomerUpdate,
 #                     CustomerResponse, CustomerSearchResult, WhatsAppWebhook, TelegramWebhook
 
-# ============== HELPERS ==============
-def generate_ticket_number():
-    now = datetime.now(timezone.utc)
-    return f"TK{now.strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
+# ============== TICKET HELPERS (imported from services.ticket_service) ==============
+from services.ticket_service import (
+    generate_ticket_number,
+    log_status_change,
+    log_quote_change,
+    get_or_create_reply_token,
+    REJECTION_REASON_CODES
+)
 
-# ============== SLA BUSINESS HOURS CONFIGURATION ==============
-# Business hours configuration (Portugal timezone - Europe/Lisbon)
-# Default values - can be overridden by database config
-BUSINESS_HOURS = {
-    0: (time(8, 30), time(18, 30)),   # Monday
-    1: (time(8, 30), time(18, 30)),   # Tuesday
-    2: (time(8, 30), time(18, 30)),   # Wednesday
-    3: (time(8, 30), time(18, 30)),   # Thursday
-    4: (time(8, 30), time(18, 30)),   # Friday
-    5: (time(8, 30), time(13, 0)),    # Saturday
-    6: None,                           # Sunday (closed)
-}
+# ============== SLA CONFIGURATION (imported from services.sla_service) ==============
+from services.sla_service import (
+    BUSINESS_HOURS, SLA_TARGETS_MINUTES, SLA_DEFAULT_MINUTES,
+    SLA_USE_BUSINESS_HOURS, SLA_PAUSE_ON_AGUARDA_CLIENTE,
+    parse_time_string, load_sla_config_from_db as _load_sla_config,
+    is_business_day, get_business_hours_for_day, get_business_minutes_in_day,
+    add_business_minutes, calculate_business_minutes_between,
+    compute_sla_due, compute_sla_due_simple,
+    check_ticket_overdue, calculate_sla_elapsed_minutes
+)
 
-# SLA targets in business minutes per ticket type - default values
-SLA_TARGETS_MINUTES = {
-    "ORCAMENTO_PNEUS": 480,      # 8 hours = 480 minutes
-    "ORCAMENTO_MECANICA": 480,   # 8 hours = 480 minutes
-    "INFORMACAO": 120,           # 2 hours = 120 minutes
-    "RECLAMACAO": 120,           # 2 hours = 120 minutes
-    "MARCACAO": 180,             # 3 hours = 180 minutes
-    "INTERNO": 480,              # 8 hours (default for internal)
-}
-
-# SLA options - default values
-SLA_DEFAULT_MINUTES = 120  # 2 hours fallback
-SLA_USE_BUSINESS_HOURS = True
-SLA_PAUSE_ON_AGUARDA_CLIENTE = True
-
-# Holidays list (empty for now, to be configured later)
-HOLIDAYS: list[date] = []
-
-def parse_time_string(time_str: str) -> time:
-    """Parse a time string like '08:30' into a time object."""
-    try:
-        parts = time_str.split(':')
-        return time(int(parts[0]), int(parts[1]))
-    except (ValueError, IndexError):
-        return time(8, 30)  # Default fallback
-
+# Wrapper to use db from this module
 async def load_sla_config_from_db():
-    """Load SLA configuration from database and update global variables."""
-    global BUSINESS_HOURS, SLA_TARGETS_MINUTES, SLA_DEFAULT_MINUTES, SLA_USE_BUSINESS_HOURS, SLA_PAUSE_ON_AGUARDA_CLIENTE
-    
-    try:
-        config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
-        if not config:
-            return  # Use defaults
-        
-        # Update business hours
-        day_mapping = {
-            'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
-            'friday': 4, 'saturday': 5, 'sunday': 6
-        }
-        
-        for day_name, day_num in day_mapping.items():
-            day_config = config.get(day_name)
-            if day_config:
-                if day_config.get('closed', False):
-                    BUSINESS_HOURS[day_num] = None
-                else:
-                    start = parse_time_string(day_config.get('start', '08:30'))
-                    end = parse_time_string(day_config.get('end', '18:30'))
-                    BUSINESS_HOURS[day_num] = (start, end)
-        
-        # Update SLA targets (convert hours to minutes)
-        if 'sla_orcamento_mecanica' in config:
-            SLA_TARGETS_MINUTES['ORCAMENTO_MECANICA'] = config['sla_orcamento_mecanica'] * 60
-        if 'sla_orcamento_pneus' in config:
-            SLA_TARGETS_MINUTES['ORCAMENTO_PNEUS'] = config['sla_orcamento_pneus'] * 60
-        if 'sla_informacao' in config:
-            SLA_TARGETS_MINUTES['INFORMACAO'] = config['sla_informacao'] * 60
-        if 'sla_reclamacao' in config:
-            SLA_TARGETS_MINUTES['RECLAMACAO'] = config['sla_reclamacao'] * 60
-        if 'sla_marcacao' in config:
-            SLA_TARGETS_MINUTES['MARCACAO'] = config['sla_marcacao'] * 60
-        if 'sla_interno' in config:
-            SLA_TARGETS_MINUTES['INTERNO'] = config['sla_interno'] * 60
-        if 'sla_default' in config:
-            SLA_DEFAULT_MINUTES = config['sla_default'] * 60
-        
-        # Update options
-        if 'use_business_hours' in config:
-            SLA_USE_BUSINESS_HOURS = config['use_business_hours']
-        if 'pause_on_aguarda_cliente' in config:
-            SLA_PAUSE_ON_AGUARDA_CLIENTE = config['pause_on_aguarda_cliente']
-            
-        logger.info(f"SLA config loaded from database: business_hours={SLA_USE_BUSINESS_HOURS}, pause_aguarda={SLA_PAUSE_ON_AGUARDA_CLIENTE}")
-    except Exception as e:
-        logger.error(f"Error loading SLA config: {e}")
+    """Load SLA configuration from database."""
+    await _load_sla_config(db)
 
-def is_business_day(d: date) -> bool:
-    """Check if a date is a business day (not weekend, not holiday)."""
-    if d in HOLIDAYS:
-        return False
-    weekday = d.weekday()
-    return BUSINESS_HOURS.get(weekday) is not None
-
-def get_business_hours_for_day(d: date) -> Tuple[time, time] | None:
-    """Get business hours (start, end) for a given date. Returns None if closed."""
-    if d in HOLIDAYS:
-        return None
-    return BUSINESS_HOURS.get(d.weekday())
-
-def get_business_minutes_in_day(d: date, start_time: time = None, end_time: time = None) -> int:
-    """
-    Calculate business minutes available in a day.
-    If start_time is provided, start counting from that time.
-    If end_time is provided, stop counting at that time.
-    """
-    hours = get_business_hours_for_day(d)
-    if not hours:
-        return 0
-    
-    biz_start, biz_end = hours
-    
-    # Effective start is max of business start and provided start
-    effective_start = biz_start
-    if start_time:
-        effective_start = max(biz_start, start_time)
-    
-    # Effective end is min of business end and provided end
-    effective_end = biz_end
-    if end_time:
-        effective_end = min(biz_end, end_time)
-    
-    # If effective start >= effective end, no business time available
-    if effective_start >= effective_end:
-        return 0
-    
-    # Calculate minutes
-    start_minutes = effective_start.hour * 60 + effective_start.minute
-    end_minutes = effective_end.hour * 60 + effective_end.minute
-    
-    return end_minutes - start_minutes
-
-def add_business_minutes(start_dt: datetime, minutes_to_add: int) -> datetime:
-    """
-    Add business minutes to a datetime and return the resulting datetime.
-    If start_dt is outside business hours, it advances to the next business period.
-    """
-    if minutes_to_add <= 0:
-        return start_dt
-    
-    current_dt = start_dt
-    remaining_minutes = minutes_to_add
-    
-    # Maximum iterations to prevent infinite loop (e.g., 365 days)
-    max_iterations = 365
-    iterations = 0
-    
-    while remaining_minutes > 0 and iterations < max_iterations:
-        iterations += 1
-        current_date = current_dt.date()
-        current_time = current_dt.time()
-        
-        hours = get_business_hours_for_day(current_date)
-        
-        if not hours:
-            # Not a business day, move to next day at midnight
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-            continue
-        
-        biz_start, biz_end = hours
-        
-        # If current time is before business start, move to business start
-        if current_time < biz_start:
-            current_dt = datetime.combine(current_date, biz_start, tzinfo=current_dt.tzinfo)
-            current_time = biz_start
-        
-        # If current time is after business end, move to next day
-        if current_time >= biz_end:
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-            continue
-        
-        # Calculate available minutes until end of business day
-        current_minutes = current_time.hour * 60 + current_time.minute
-        end_minutes = biz_end.hour * 60 + biz_end.minute
-        available_minutes = end_minutes - current_minutes
-        
-        if remaining_minutes <= available_minutes:
-            # Can finish within this day
-            final_minutes = current_minutes + remaining_minutes
-            final_hour = final_minutes // 60
-            final_minute = final_minutes % 60
-            return datetime.combine(current_date, time(final_hour, final_minute), tzinfo=current_dt.tzinfo)
-        else:
-            # Use all available minutes and move to next day
-            remaining_minutes -= available_minutes
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-    
-    # Fallback if max iterations reached
-    return current_dt
-
-def calculate_business_minutes_between(start_dt: datetime, end_dt: datetime) -> int:
-    """
-    Calculate the number of business minutes between two datetimes.
-    Used to calculate elapsed SLA time.
-    """
-    if end_dt <= start_dt:
-        return 0
-    
-    total_minutes = 0
-    current_dt = start_dt
-    
-    # Maximum iterations to prevent infinite loop
-    max_iterations = 365
-    iterations = 0
-    
-    while current_dt < end_dt and iterations < max_iterations:
-        iterations += 1
-        current_date = current_dt.date()
-        current_time = current_dt.time()
-        
-        hours = get_business_hours_for_day(current_date)
-        
-        if not hours:
-            # Not a business day, move to next day
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-            continue
-        
-        biz_start, biz_end = hours
-        
-        # If current time is before business start, move to business start
-        if current_time < biz_start:
-            current_dt = datetime.combine(current_date, biz_start, tzinfo=current_dt.tzinfo)
-            current_time = biz_start
-        
-        # If current time is after business end, move to next day
-        if current_time >= biz_end:
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-            continue
-        
-        # Determine how far we can go today
-        if end_dt.date() == current_date:
-            # End is on the same day
-            end_time_today = min(end_dt.time(), biz_end)
-        else:
-            # End is on a future day, count until business end
-            end_time_today = biz_end
-        
-        # If end_time_today is before current time (shouldn't happen normally), skip
-        if end_time_today <= current_time:
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-            continue
-        
-        # Calculate minutes in this segment
-        current_minutes = current_time.hour * 60 + current_time.minute
-        end_minutes_today = end_time_today.hour * 60 + end_time_today.minute
-        segment_minutes = end_minutes_today - current_minutes
-        total_minutes += segment_minutes
-        
-        # Move to end of this segment
-        if end_dt.date() == current_date and end_dt.time() <= biz_end:
-            # We've reached the end
-            break
-        else:
-            # Move to next day
-            current_dt = datetime.combine(current_date + timedelta(days=1), time(0, 0), tzinfo=current_dt.tzinfo)
-    
-    return total_minutes
-
-def compute_sla_due(ticket_type: str = "INFORMACAO", created_at: datetime = None) -> Tuple[datetime, int, str]:
-    """
-    Returns (SLA due datetime, target_minutes, policy_key) based on ticket type and business hours.
-    If created_at is outside business hours, SLA starts at next business period.
-    Uses SLA_DEFAULT_MINUTES as fallback if ticket type not found.
-    """
-    if created_at is None:
-        created_at = datetime.now(timezone.utc)
-    
-    # Get target minutes from config, use global default as fallback
-    target_minutes = SLA_TARGETS_MINUTES.get(ticket_type, SLA_DEFAULT_MINUTES)
-    policy_key = f"SLA_{ticket_type}_{target_minutes}min"
-    
-    # Check if business hours mode is enabled
-    if SLA_USE_BUSINESS_HOURS:
-        sla_due = add_business_minutes(created_at, target_minutes)
-    else:
-        # Simple calculation - just add minutes directly
-        sla_due = created_at + timedelta(minutes=target_minutes)
-    
-    return sla_due, target_minutes, policy_key
-
-def compute_sla_due_simple() -> datetime:
-    """Legacy function for backwards compatibility - returns 2 hours from now (simple calculation)."""
-    now = datetime.now(timezone.utc)
-    return now + timedelta(hours=2)
-
-# Token functions (create_access_token, create_refresh_token) are imported from core.security
-# Auth dependency (get_current_user) is imported from core.security
-
-def check_ticket_overdue(ticket: dict) -> bool:
-    """
-    Check if ticket is overdue based on SLA due date and first response status.
-    Takes into account:
-    - Ticket status (closed tickets are never overdue)
-    - First response done flag
-    - SLA breached flag (if already marked as breached)
-    - SLA pause state
-    """
-    now = datetime.now(timezone.utc)
-    
-    # Closed tickets are never considered overdue
-    if ticket.get("status") == TicketStatus.FECHADO.value:
-        return False
-    
-    # If SLA already breached, return True
-    if ticket.get("sla_breached"):
-        return True
-    
-    # If first response already done, not overdue
-    if ticket.get("first_response_done"):
-        return False
-    
-    # If SLA is currently paused, not overdue (clock is stopped)
-    if ticket.get("sla_paused_at"):
-        return False
-    
-    # Check if current time exceeds SLA due
-    if ticket.get("sla_due"):
-        try:
-            sla_due = datetime.fromisoformat(ticket["sla_due"].replace("Z", "+00:00"))
-            if now > sla_due:
-                return True
-        except (ValueError, TypeError):
-            pass
-    
-    return False
-
-def calculate_sla_elapsed_minutes(ticket: dict) -> int:
-    """
-    Calculate total elapsed business minutes for SLA tracking.
-    Takes into account pause periods.
-    """
-    created_at_str = ticket.get("sla_started_at") or ticket.get("created_at")
-    if not created_at_str:
-        return 0
-    
-    try:
-        sla_start = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return 0
-    
-    # Get paused time accumulated
-    paused_minutes = ticket.get("sla_paused_minutes", 0)
-    
-    # If currently paused, calculate only up to pause start
-    if ticket.get("sla_paused_at"):
-        try:
-            pause_start = datetime.fromisoformat(ticket["sla_paused_at"].replace("Z", "+00:00"))
-            elapsed = calculate_business_minutes_between(sla_start, pause_start)
-            return elapsed - paused_minutes
-        except (ValueError, TypeError):
-            pass
-    
-    # Calculate elapsed from start to now
-    now = datetime.now(timezone.utc)
-    elapsed = calculate_business_minutes_between(sla_start, now)
-    
-    return max(0, elapsed - paused_minutes)
-
-async def log_status_change(ticket_id: str, old_status: Optional[str], new_status: str, user_id: str):
-    """Log a status change to the ticket_status_history collection"""
-    history_doc = {
-        "id": str(uuid.uuid4()),
-        "ticket_id": ticket_id,
-        "old_status": old_status,
-        "new_status": new_status,
-        "changed_by_user_id": user_id,
-        "changed_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.ticket_status_history.insert_one(history_doc)
 
 # ============== AUTH ROUTES ==============
 # Auth routes (register, login, refresh, logout, /me) are in routes/auth.py
@@ -1213,26 +814,6 @@ async def get_ticket_status_history(ticket_id: str, current_user: dict = Depends
         h["changed_by_name"] = users_map.get(h.get("changed_by_user_id"))
     
     return [TicketStatusHistoryResponse(**h) for h in history]
-
-# ============== REPLY LINK HELPER ==============
-async def get_or_create_reply_token(ticket_id: str) -> str:
-    """Get existing reply token or create a new one for the ticket."""
-    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "reply_link_token": 1})
-    if ticket and ticket.get("reply_link_token"):
-        return ticket["reply_link_token"]
-    token = str(uuid.uuid4())
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
-    reply_link_doc = {
-        "id": str(uuid.uuid4()),
-        "ticket_id": ticket_id,
-        "token": token,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "expires_at": expires_at,
-        "created_by_user_id": None
-    }
-    await db.reply_links.insert_one(reply_link_doc)
-    await db.tickets.update_one({"id": ticket_id}, {"$set": {"reply_link_token": token}})
-    return token
 
 # ============== MESSAGES ==============
 @api_router.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
@@ -2409,91 +1990,8 @@ async def cleanup_invalid_push_subscriptions(current_user: dict = Depends(get_cu
     total_removed = result1.deleted_count + result2.deleted_count
     return {"message": f"Removidas {total_removed} subscrições inválidas"}
 
-async def send_web_push_to_user(user_id: str, title: str, body: str, url: str = None):
-    """Send web push notification to all devices of a user"""
-    # Check if VAPID keys are valid before attempting to send
-    if not VAPID_KEYS_VALID:
-        return  # Silently skip if keys not valid
-    
-    if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
-        return
-    
-    try:
-        subscriptions = await db.push_subscriptions.find(
-            {"user_id": user_id}
-        ).to_list(100)
-        
-        if not subscriptions:
-            return
-        
-        payload = json.dumps({
-            "title": title,
-            "body": body,
-            "icon": "/logo192.png",
-            "badge": "/logo192.png",
-            "url": url or "/"
-        })
-        
-        for sub in subscriptions:
-            try:
-                # Validate subscription has required fields
-                if not sub.get("endpoint") or not sub.get("keys"):
-                    logger.warning(f"Invalid subscription format for user {user_id}, removing")
-                    await db.push_subscriptions.delete_one({"_id": sub.get("_id")})
-                    continue
-                
-                # Skip invalid endpoints
-                endpoint = sub["endpoint"]
-                if "permanently-removed" in endpoint or "invalid" in endpoint or not endpoint.startswith("https://"):
-                    logger.warning(f"Invalid endpoint for user {user_id}, removing subscription")
-                    await db.push_subscriptions.delete_one({"endpoint": endpoint})
-                    continue
-                    
-                webpush(
-                    subscription_info={
-                        "endpoint": sub["endpoint"],
-                        "keys": sub["keys"]
-                    },
-                    data=payload,
-                    vapid_private_key=VAPID_PRIVATE_KEY,
-                    vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"}
-                )
-                logger.info(f"Web push sent to user {user_id}")
-            except WebPushException as e:
-                # Get response status code safely
-                status_code = getattr(e.response, 'status_code', None) if e.response else None
-                
-                # If subscription is expired/invalid (400, 404, 410), remove it silently
-                if status_code in [400, 404, 410]:
-                    await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
-                    # Don't log warnings for expected expiration - just debug
-                    logger.debug(f"Removed invalid/expired subscription for user {user_id} (HTTP {status_code})")
-                elif e.response is None or status_code is None:
-                    # No response means connection failed - subscription is likely invalid
-                    await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
-                    logger.debug(f"Removed unreachable subscription for user {user_id}")
-                else:
-                    # Only log warning for unexpected status codes (5xx, etc.)
-                    if status_code and status_code >= 500:
-                        logger.warning(f"Web push server error for user {user_id}: HTTP {status_code}")
-                    else:
-                        logger.debug(f"Web push failed for user {user_id}: HTTP {status_code}")
-            except ValueError as e:
-                # VAPID key format error - log and skip silently
-                logger.warning(f"VAPID key format error, web push disabled: {e}")
-                return  # Exit early, no point trying other subscriptions with invalid keys
-            except Exception as e:
-                # Catch any other unexpected errors - remove problematic subscription
-                error_str = str(e)
-                if "permanently-removed" in error_str or "NameResolutionError" in error_str:
-                    await db.push_subscriptions.delete_one({"endpoint": sub.get("endpoint", "")})
-                    logger.debug(f"Removed invalid subscription for user {user_id}")
-                else:
-                    logger.warning(f"Web push error for user {user_id}: {type(e).__name__}")
-                continue
-    except Exception as e:
-        # Catch any top-level errors to prevent task crash
-        logger.error(f"Web push task error for user {user_id}: {e}")
+# Web push function imported from notification_service
+from services.notification_service import send_web_push_to_user
 
 # Helper function to create and send notification
 async def create_notification(user_id: str, title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
@@ -3250,19 +2748,6 @@ async def get_quote_history(ticket_id: str, current_user: dict = Depends(get_cur
     
     return [QuoteHistoryResponse(**h) for h in history]
 
-async def log_quote_change(ticket_id: str, old_value: Optional[float], new_value: float, user_id: str, reason: Optional[str] = None):
-    """Log a quote value change to history"""
-    history_doc = {
-        "id": str(uuid.uuid4()),
-        "ticket_id": ticket_id,
-        "old_value": old_value,
-        "new_value": new_value,
-        "changed_by_user_id": user_id,
-        "changed_at": datetime.now(timezone.utc).isoformat(),
-        "reason": reason
-    }
-    await db.quote_history.insert_one(history_doc)
-
 # ============== ADMIN REPORTS ==============
 class ReportFilters(BaseModel):
     start_date: Optional[str] = None
@@ -3853,16 +3338,7 @@ class QuoteResponseRequest(BaseModel):
     rejection_reason_label: Optional[str] = None
     rejection_reason_note: Optional[str] = None
 
-# Valid rejection reason codes
-REJECTION_REASON_CODES = {
-    "preco_alto": "Preço alto",
-    "vai_pedir_outra_opiniao": "Vai pedir outra opinião/orçamento",
-    "resolveu_noutro_local": "Já resolveu noutro local",
-    "nao_quer_avancar": "Não quer avançar para já",
-    "nao_entendeu": "Não entendeu o orçamento",
-    "quer_falar_primeiro": "Quer falar com a oficina primeiro",
-    "outro": "Outro"
-}
+# REJECTION_REASON_CODES imported from services.ticket_service
 
 class PublicReplyTicketData(BaseModel):
     ticket_number: str

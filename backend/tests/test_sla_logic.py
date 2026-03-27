@@ -7,8 +7,8 @@ sys.path.insert(0, '/app/backend')
 
 from datetime import datetime, timezone, timedelta, date, time
 
-# Import SLA functions from server
-from server import (
+# Import SLA functions from sla_service
+from services.sla_service import (
     BUSINESS_HOURS,
     SLA_TARGETS_MINUTES,
     HOLIDAYS,
