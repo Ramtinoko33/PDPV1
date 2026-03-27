@@ -207,6 +207,49 @@ async def load_holidays_from_db():
 # ============== TICKET ROUTES ==============
 # Ticket routes (CRUD, archive, status-history) are in routes/tickets.py
 
+# ============== PUBLIC TICKET CONFIG (for authenticated users) ==============
+@api_router.get("/ticket-statuses")
+async def list_ticket_statuses(current_user: dict = Depends(get_current_user)):
+    """List all ticket statuses - available to all authenticated users"""
+    statuses = await db.ticket_statuses.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    
+    if not statuses:
+        # Return default statuses if none exist
+        default_statuses = [
+            {"id": str(uuid.uuid4()), "code": "ABERTO", "label": "Aberto", "color": "#3b82f6", "is_final": False, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "EM_TRATAMENTO", "label": "Em Tratamento", "color": "#f59e0b", "is_final": False, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "AGUARDA_CLIENTE", "label": "Aguarda Cliente", "color": "#8b5cf6", "is_final": False, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "AGENDADO", "label": "Agendado", "color": "#10b981", "is_final": False, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "FECHADO", "label": "Fechado", "color": "#6b7280", "is_final": True, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "ACEITE_LINK", "label": "Aceite (Link)", "color": "#22c55e", "is_final": False, "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "REJEITADO_LINK", "label": "Rejeitado (Link)", "color": "#ef4444", "is_final": True, "created_at": datetime.now(timezone.utc).isoformat()}
+        ]
+        await db.ticket_statuses.insert_many(default_statuses)
+        statuses = default_statuses
+    
+    return statuses
+
+
+@api_router.get("/ticket-types")
+async def list_ticket_types(current_user: dict = Depends(get_current_user)):
+    """List all ticket types - available to all authenticated users"""
+    types = await db.ticket_types.find({}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    
+    if not types:
+        # Return default types if none exist
+        default_types = [
+            {"id": str(uuid.uuid4()), "code": "ORCAMENTO_PNEUS", "label": "Orçamento Pneus", "color": "#f97316", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "ORCAMENTO_MECANICA", "label": "Orçamento Mecânica", "color": "#3b82f6", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "MARCACAO", "label": "Marcação", "color": "#10b981", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "INFORMACAO", "label": "Informação", "color": "#8b5cf6", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "INTERNO", "label": "Interno", "color": "#6b7280", "created_at": datetime.now(timezone.utc).isoformat()},
+            {"id": str(uuid.uuid4()), "code": "RECLAMACAO", "label": "Reclamação", "color": "#ef4444", "created_at": datetime.now(timezone.utc).isoformat()}
+        ]
+        await db.ticket_types.insert_many(default_types)
+        types = default_types
+    
+    return types
+
 # ============== MESSAGES ==============
 @api_router.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
 async def create_message(ticket_id: str, message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
