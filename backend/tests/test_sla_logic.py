@@ -12,7 +12,9 @@ from services.sla_service import (
     BUSINESS_HOURS,
     SLA_TARGETS_MINUTES,
     HOLIDAYS,
+    RECURRING_HOLIDAYS,
     is_business_day,
+    is_holiday,
     get_business_hours_for_day,
     get_business_minutes_in_day,
     add_business_minutes,
@@ -385,6 +387,220 @@ def run_all_tests():
     return failed == 0
 
 
+# ============== HOLIDAY TESTS ==============
+def test_fixed_holiday():
+    """Test that a fixed holiday is correctly identified."""
+    print("\n=== Test: Fixed Holiday ===")
+    import services.sla_service as sla
+    
+    # Save original holidays
+    original_holidays = sla.HOLIDAYS.copy()
+    original_recurring = sla.RECURRING_HOLIDAYS.copy()
+    
+    # Set a fixed holiday
+    test_date = date(2026, 6, 10)  # 10 de Junho (Portugal Day)
+    sla.HOLIDAYS = [test_date]
+    sla.RECURRING_HOLIDAYS = []
+    
+    # Test is_holiday
+    assert is_holiday(test_date) == True, "June 10, 2026 should be a holiday"
+    assert is_business_day(test_date) == False, "Holiday should not be a business day"
+    
+    # Test that business hours return None for holiday
+    hours = get_business_hours_for_day(test_date)
+    assert hours is None, "Holiday should have no business hours"
+    
+    # Test that non-holiday is still working
+    non_holiday = date(2026, 6, 9)  # Day before
+    assert is_holiday(non_holiday) == False, "June 9 should not be a holiday"
+    
+    # Restore
+    sla.HOLIDAYS = original_holidays
+    sla.RECURRING_HOLIDAYS = original_recurring
+    
+    print("  Fixed holiday identified correctly ✓")
+    print("  [PASSED]")
+
+
+def test_recurring_annual_holiday():
+    """Test that recurring annual holidays are correctly identified across years."""
+    print("\n=== Test: Recurring Annual Holiday ===")
+    import services.sla_service as sla
+    
+    # Save original holidays
+    original_holidays = sla.HOLIDAYS.copy()
+    original_recurring = sla.RECURRING_HOLIDAYS.copy()
+    
+    # Set a recurring holiday (Christmas - December 25)
+    sla.HOLIDAYS = []
+    sla.RECURRING_HOLIDAYS = [(12, 25)]  # month, day
+    
+    # Test different years
+    assert is_holiday(date(2025, 12, 25)) == True, "Christmas 2025 should be a holiday"
+    assert is_holiday(date(2026, 12, 25)) == True, "Christmas 2026 should be a holiday"
+    assert is_holiday(date(2027, 12, 25)) == True, "Christmas 2027 should be a holiday"
+    
+    # Test non-Christmas days
+    assert is_holiday(date(2026, 12, 24)) == False, "December 24 should not be a holiday"
+    assert is_holiday(date(2026, 12, 26)) == False, "December 26 should not be a holiday"
+    
+    # Restore
+    sla.HOLIDAYS = original_holidays
+    sla.RECURRING_HOLIDAYS = original_recurring
+    
+    print("  Recurring holiday works across years ✓")
+    print("  [PASSED]")
+
+
+def test_sla_across_holiday():
+    """Test that SLA calculation correctly skips holidays."""
+    print("\n=== Test: SLA Calculation Across Holiday ===")
+    import services.sla_service as sla
+    
+    # Save original holidays
+    original_holidays = sla.HOLIDAYS.copy()
+    original_recurring = sla.RECURRING_HOLIDAYS.copy()
+    
+    # Set a fixed holiday on a Wednesday
+    holiday_date = date(2026, 4, 1)  # Wednesday, April 1, 2026
+    sla.HOLIDAYS = [holiday_date]
+    sla.RECURRING_HOLIDAYS = []
+    
+    # Start on Tuesday at 17:00 (1.5 hours before close)
+    # 1.5 hours = 90 minutes available on Tuesday
+    # Wednesday is a holiday (0 minutes)
+    # Thursday should provide the rest
+    start = datetime(2026, 3, 31, 17, 0, tzinfo=timezone.utc)  # Tuesday
+    
+    # Add 180 minutes (3 hours)
+    # 90 min on Tuesday -> 90 min remaining
+    # Skip Wednesday (holiday)
+    # 90 min on Thursday starting at 08:30 -> ends at 10:00
+    result = add_business_minutes(start, 180)
+    
+    # Should skip the holiday and land on Thursday
+    assert result.date() == date(2026, 4, 2), f"Should land on Thursday, got {result.date()}"
+    
+    print(f"  Start: {start} (Tuesday)")
+    print(f"  Added: 180 minutes")
+    print(f"  Result: {result} (Thursday)")
+    print("  Holiday was correctly skipped ✓")
+    
+    # Restore
+    sla.HOLIDAYS = original_holidays
+    sla.RECURRING_HOLIDAYS = original_recurring
+    
+    print("  [PASSED]")
+
+
+def test_saturday_plus_holiday():
+    """Test that Saturday + holiday on Monday works correctly."""
+    print("\n=== Test: Saturday + Holiday on Monday ===")
+    import services.sla_service as sla
+    
+    # Save original holidays
+    original_holidays = sla.HOLIDAYS.copy()
+    original_recurring = sla.RECURRING_HOLIDAYS.copy()
+    
+    # Set Monday as a holiday
+    # Find a Monday in 2026
+    monday_holiday = date(2026, 4, 6)  # Monday, April 6, 2026
+    sla.HOLIDAYS = [monday_holiday]
+    sla.RECURRING_HOLIDAYS = []
+    
+    # Start on Saturday at 12:00 (1 hour before close on Saturday)
+    # Saturday: 1 hour = 60 minutes
+    # Sunday: closed
+    # Monday: holiday (0 minutes)
+    # Tuesday should provide the rest
+    start = datetime(2026, 4, 4, 12, 0, tzinfo=timezone.utc)  # Saturday
+    
+    # Add 120 minutes (2 hours)
+    # 60 min on Saturday -> 60 min remaining
+    # Skip Sunday (closed)
+    # Skip Monday (holiday)
+    # 60 min on Tuesday starting at 08:30 -> ends at 09:30
+    result = add_business_minutes(start, 120)
+    
+    assert result.date() == date(2026, 4, 7), f"Should land on Tuesday, got {result.date()}"
+    
+    print(f"  Start: {start} (Saturday)")
+    print(f"  Added: 120 minutes")
+    print(f"  Result: {result} (Tuesday - skipped Sunday and holiday Monday)")
+    
+    # Restore
+    sla.HOLIDAYS = original_holidays
+    sla.RECURRING_HOLIDAYS = original_recurring
+    
+    print("  [PASSED]")
+
+
+def test_sunday_still_closed():
+    """Test that Sunday remains closed even with holidays configured."""
+    print("\n=== Test: Sunday Still Closed ===")
+    import services.sla_service as sla
+    
+    # Save original holidays
+    original_holidays = sla.HOLIDAYS.copy()
+    original_recurring = sla.RECURRING_HOLIDAYS.copy()
+    
+    # Configure some holidays
+    sla.HOLIDAYS = [date(2026, 6, 10)]
+    sla.RECURRING_HOLIDAYS = [(12, 25)]
+    
+    # Test various Sundays
+    sundays = [
+        date(2026, 4, 5),
+        date(2026, 5, 3),
+        date(2026, 6, 7),
+    ]
+    
+    for sunday in sundays:
+        assert is_business_day(sunday) == False, f"{sunday} should not be a business day (Sunday)"
+        hours = get_business_hours_for_day(sunday)
+        assert hours is None, f"{sunday} should have no business hours (Sunday)"
+    
+    print("  Sundays remain closed regardless of holiday config ✓")
+    
+    # Restore
+    sla.HOLIDAYS = original_holidays
+    sla.RECURRING_HOLIDAYS = original_recurring
+    
+    print("  [PASSED]")
+
+
+def run_holiday_tests():
+    """Run all holiday-related tests."""
+    tests = [
+        test_fixed_holiday,
+        test_recurring_annual_holiday,
+        test_sla_across_holiday,
+        test_saturday_plus_holiday,
+        test_sunday_still_closed,
+    ]
+    
+    passed = 0
+    failed = 0
+    
+    for test in tests:
+        try:
+            test()
+            passed += 1
+        except AssertionError as e:
+            failed += 1
+            print(f"  [FAILED] {e}")
+        except Exception as e:
+            failed += 1
+            print(f"  [ERROR] {e}")
+    
+    print("\n" + "=" * 60)
+    print(f"Holiday tests: {passed} passed, {failed} failed")
+    print("=" * 60)
+    
+    return failed == 0
+
+
 if __name__ == "__main__":
     success = run_all_tests()
-    sys.exit(0 if success else 1)
+    holiday_success = run_holiday_tests()
+    sys.exit(0 if (success and holiday_success) else 1)

@@ -30,7 +30,10 @@ import {
   Palette,
   Building,
   FileText,
-  Database
+  Database,
+  Calendar,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -128,6 +131,20 @@ const AdminSettings = () => {
   const [sendingTest, setSendingTest] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Holidays State
+  const [holidays, setHolidays] = useState([]);
+  const [loadingHolidays, setLoadingHolidays] = useState(true);
+  const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState(null);
+  const [holidayForm, setHolidayForm] = useState({ 
+    date: '', 
+    name: '', 
+    is_recurring_annual: false, 
+    scope: 'nacional', 
+    active: true 
+  });
+  const [savingHoliday, setSavingHoliday] = useState(false);
+
   // Fetch all settings on mount
   useEffect(() => {
     fetchTicketTypes();
@@ -136,6 +153,7 @@ const AdminSettings = () => {
     fetchEmailConfig();
     fetchPushConfig();
     fetchBrandingConfig();
+    fetchHolidays();
   }, []);
 
   // ============== TICKET TYPES ==============
@@ -445,6 +463,91 @@ const AdminSettings = () => {
     }
   };
 
+  // ============== HOLIDAYS ==============
+  const fetchHolidays = async () => {
+    setLoadingHolidays(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/admin/holidays`, { headers: getAuthHeaders() });
+      setHolidays(response.data);
+    } catch (error) {
+      console.error('Error fetching holidays:', error);
+      toast.error('Erro ao carregar feriados');
+    } finally {
+      setLoadingHolidays(false);
+    }
+  };
+
+  const openHolidayDialog = (holiday = null) => {
+    if (holiday) {
+      setEditingHoliday(holiday);
+      setHolidayForm({
+        date: holiday.date,
+        name: holiday.name,
+        is_recurring_annual: holiday.is_recurring_annual,
+        scope: holiday.scope,
+        active: holiday.active
+      });
+    } else {
+      setEditingHoliday(null);
+      setHolidayForm({ date: '', name: '', is_recurring_annual: false, scope: 'nacional', active: true });
+    }
+    setHolidayDialogOpen(true);
+  };
+
+  const saveHoliday = async () => {
+    if (!holidayForm.date || !holidayForm.name) {
+      toast.error('Data e nome são obrigatórios');
+      return;
+    }
+    
+    setSavingHoliday(true);
+    try {
+      if (editingHoliday) {
+        await axios.put(
+          `${API_URL}/api/admin/holidays/${editingHoliday.id}`,
+          holidayForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Feriado actualizado');
+      } else {
+        await axios.post(
+          `${API_URL}/api/admin/holidays`,
+          holidayForm,
+          { headers: getAuthHeaders() }
+        );
+        toast.success('Feriado criado');
+      }
+      setHolidayDialogOpen(false);
+      fetchHolidays();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao guardar feriado');
+    } finally {
+      setSavingHoliday(false);
+    }
+  };
+
+  const deleteHoliday = async (holidayId) => {
+    if (!window.confirm('Tem a certeza que deseja eliminar este feriado?')) return;
+    
+    try {
+      await axios.delete(`${API_URL}/api/admin/holidays/${holidayId}`, { headers: getAuthHeaders() });
+      toast.success('Feriado eliminado');
+      fetchHolidays();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao eliminar feriado');
+    }
+  };
+
+  const toggleHoliday = async (holidayId) => {
+    try {
+      await axios.post(`${API_URL}/api/admin/holidays/${holidayId}/toggle`, {}, { headers: getAuthHeaders() });
+      toast.success('Estado do feriado alterado');
+      fetchHolidays();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao alterar estado');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -470,6 +573,10 @@ const AdminSettings = () => {
           <TabsTrigger value="sla" className="data-[state=active]:bg-white" data-testid="tab-sla">
             <Clock className="h-4 w-4 mr-2" />
             Regras SLA
+          </TabsTrigger>
+          <TabsTrigger value="holidays" className="data-[state=active]:bg-white" data-testid="tab-holidays">
+            <Calendar className="h-4 w-4 mr-2" />
+            Feriados
           </TabsTrigger>
           <TabsTrigger value="email" className="data-[state=active]:bg-white" data-testid="tab-email">
             <Mail className="h-4 w-4 mr-2" />
@@ -928,6 +1035,116 @@ const AdminSettings = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Holidays Tab */}
+        <TabsContent value="holidays">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Feriados
+                </CardTitle>
+                <CardDescription>
+                  Configure os feriados que serão excluídos do cálculo de SLA
+                </CardDescription>
+              </div>
+              <Button onClick={() => openHolidayDialog()} className="bg-orange-600 hover:bg-orange-700" data-testid="add-holiday-btn">
+                <Plus className="h-4 w-4 mr-2" />
+                Adicionar Feriado
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loadingHolidays ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : holidays.length === 0 ? (
+                <div className="text-center py-8 text-zinc-500">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Nenhum feriado configurado</p>
+                  <p className="text-sm">Adicione feriados para excluí-los do cálculo de SLA</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {holidays.map((holiday) => (
+                    <div 
+                      key={holiday.id} 
+                      className={`flex items-center justify-between p-3 rounded-lg border ${holiday.active ? 'bg-white' : 'bg-zinc-50 opacity-60'}`}
+                      data-testid={`holiday-${holiday.id}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-24 text-sm font-mono text-zinc-600">
+                          {holiday.date}
+                        </div>
+                        <div>
+                          <span className="font-medium">{holiday.name}</span>
+                          <div className="flex items-center gap-2 mt-1">
+                            {holiday.is_recurring_annual && (
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                Anual
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {holiday.scope}
+                            </Badge>
+                            {!holiday.active && (
+                              <Badge variant="outline" className="text-xs bg-zinc-100 text-zinc-500">
+                                Inactivo
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => toggleHoliday(holiday.id)}
+                          title={holiday.active ? 'Desactivar' : 'Activar'}
+                          data-testid={`toggle-holiday-${holiday.id}`}
+                        >
+                          {holiday.active ? (
+                            <ToggleRight className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <ToggleLeft className="h-5 w-5 text-zinc-400" />
+                          )}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => openHolidayDialog(holiday)}
+                          data-testid={`edit-holiday-${holiday.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => deleteHoliday(holiday.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          data-testid={`delete-holiday-${holiday.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Info box */}
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <h4 className="font-medium text-blue-900 mb-2">Como funcionam os feriados?</h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• Os feriados activos são excluídos do cálculo de tempo útil do SLA</li>
+                  <li>• Feriados marcados como "Anual" repetem-se automaticamente todos os anos</li>
+                  <li>• Pode desactivar temporariamente um feriado sem o eliminar</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Email Tab */}
@@ -1808,6 +2025,106 @@ const AdminSettings = () => {
               data-testid="save-status-btn"
             >
               {savingStatus ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                'Guardar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Holiday Dialog */}
+      <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
+        <DialogContent data-testid="holiday-dialog">
+          <DialogHeader>
+            <DialogTitle>{editingHoliday ? 'Editar Feriado' : 'Novo Feriado'}</DialogTitle>
+            <DialogDescription>
+              {editingHoliday ? 'Edite os dados do feriado' : 'Configure um novo feriado para excluir do SLA'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="holiday-date">Data *</Label>
+              <Input
+                id="holiday-date"
+                type="date"
+                value={holidayForm.date}
+                onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
+                data-testid="holiday-date-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="holiday-name">Nome *</Label>
+              <Input
+                id="holiday-name"
+                value={holidayForm.name}
+                onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })}
+                placeholder="Ex: Natal, 25 de Abril..."
+                data-testid="holiday-name-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="holiday-scope">Âmbito</Label>
+              <select
+                id="holiday-scope"
+                value={holidayForm.scope}
+                onChange={(e) => setHolidayForm({ ...holidayForm, scope: e.target.value })}
+                className="w-full px-3 py-2 border border-zinc-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                data-testid="holiday-scope-select"
+              >
+                <option value="nacional">Nacional</option>
+                <option value="local">Local</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <input
+                type="checkbox"
+                id="holiday-recurring"
+                checked={holidayForm.is_recurring_annual}
+                onChange={(e) => setHolidayForm({ ...holidayForm, is_recurring_annual: e.target.checked })}
+                className="w-4 h-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+                data-testid="holiday-recurring-checkbox"
+              />
+              <div>
+                <Label htmlFor="holiday-recurring" className="text-sm font-medium">
+                  Feriado anual recorrente
+                </Label>
+                <p className="text-xs text-blue-700">
+                  Repete-se automaticamente todos os anos na mesma data
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-lg border">
+              <input
+                type="checkbox"
+                id="holiday-active"
+                checked={holidayForm.active}
+                onChange={(e) => setHolidayForm({ ...holidayForm, active: e.target.checked })}
+                className="w-4 h-4 rounded border-zinc-300 text-green-600 focus:ring-green-500"
+                data-testid="holiday-active-checkbox"
+              />
+              <div>
+                <Label htmlFor="holiday-active" className="text-sm font-medium">
+                  Feriado activo
+                </Label>
+                <p className="text-xs text-zinc-500">
+                  Apenas feriados activos são excluídos do cálculo de SLA
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHolidayDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={saveHoliday} 
+              disabled={savingHoliday}
+              className="bg-orange-600 hover:bg-orange-700"
+              data-testid="save-holiday-btn"
+            >
+              {savingHoliday ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 'Guardar'

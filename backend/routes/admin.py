@@ -765,3 +765,166 @@ async def get_rejection_reasons_report(
         reasons=reasons,
         period={"start": start_date, "end": end_date}
     )
+
+
+
+# ============== HOLIDAYS ==============
+class HolidayCreate(BaseModel):
+    date: str  # YYYY-MM-DD format
+    name: str
+    is_recurring_annual: bool = False
+    scope: str = "nacional"  # nacional, local
+    active: bool = True
+
+class HolidayUpdate(BaseModel):
+    date: Optional[str] = None
+    name: Optional[str] = None
+    is_recurring_annual: Optional[bool] = None
+    scope: Optional[str] = None
+    active: Optional[bool] = None
+
+class HolidayResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    date: str
+    name: str
+    is_recurring_annual: bool
+    scope: str
+    active: bool
+    created_at: str
+
+
+@router.get("/holidays", response_model=List[HolidayResponse])
+async def list_holidays(
+    active_only: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """List all holidays - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem ver feriados")
+    
+    query = {}
+    if active_only:
+        query["active"] = True
+    
+    holidays = await db.holidays.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
+    return [HolidayResponse(**h) for h in holidays]
+
+
+@router.post("/holidays", response_model=HolidayResponse)
+async def create_holiday(holiday_data: HolidayCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new holiday - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem criar feriados")
+    
+    # Validate date format
+    try:
+        datetime.strptime(holiday_data.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD")
+    
+    # Check for duplicate date
+    existing = await db.holidays.find_one({"date": holiday_data.date})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Já existe um feriado na data {holiday_data.date}")
+    
+    holiday_doc = {
+        "id": str(uuid.uuid4()),
+        "date": holiday_data.date,
+        "name": holiday_data.name,
+        "is_recurring_annual": holiday_data.is_recurring_annual,
+        "scope": holiday_data.scope,
+        "active": holiday_data.active,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.holidays.insert_one(holiday_doc)
+    
+    # Reload holidays in SLA service
+    from services.sla_service import load_holidays_from_db
+    await load_holidays_from_db(db)
+    
+    return HolidayResponse(**holiday_doc)
+
+
+@router.put("/holidays/{holiday_id}", response_model=HolidayResponse)
+async def update_holiday(holiday_id: str, holiday_data: HolidayUpdate, current_user: dict = Depends(get_current_user)):
+    """Update a holiday - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar feriados")
+    
+    holiday = await db.holidays.find_one({"id": holiday_id}, {"_id": 0})
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Feriado não encontrado")
+    
+    update_doc = {}
+    
+    if holiday_data.date is not None:
+        # Validate date format
+        try:
+            datetime.strptime(holiday_data.date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD")
+        
+        # Check for duplicate date (excluding current)
+        existing = await db.holidays.find_one({"date": holiday_data.date, "id": {"$ne": holiday_id}})
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Já existe um feriado na data {holiday_data.date}")
+        update_doc["date"] = holiday_data.date
+    
+    if holiday_data.name is not None:
+        update_doc["name"] = holiday_data.name
+    if holiday_data.is_recurring_annual is not None:
+        update_doc["is_recurring_annual"] = holiday_data.is_recurring_annual
+    if holiday_data.scope is not None:
+        update_doc["scope"] = holiday_data.scope
+    if holiday_data.active is not None:
+        update_doc["active"] = holiday_data.active
+    
+    if update_doc:
+        await db.holidays.update_one({"id": holiday_id}, {"$set": update_doc})
+    
+    # Reload holidays in SLA service
+    from services.sla_service import load_holidays_from_db
+    await load_holidays_from_db(db)
+    
+    updated = await db.holidays.find_one({"id": holiday_id}, {"_id": 0})
+    return HolidayResponse(**updated)
+
+
+@router.delete("/holidays/{holiday_id}")
+async def delete_holiday(holiday_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a holiday - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem eliminar feriados")
+    
+    holiday = await db.holidays.find_one({"id": holiday_id}, {"_id": 0})
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Feriado não encontrado")
+    
+    await db.holidays.delete_one({"id": holiday_id})
+    
+    # Reload holidays in SLA service
+    from services.sla_service import load_holidays_from_db
+    await load_holidays_from_db(db)
+    
+    return {"message": "Feriado eliminado"}
+
+
+@router.post("/holidays/{holiday_id}/toggle")
+async def toggle_holiday(holiday_id: str, current_user: dict = Depends(get_current_user)):
+    """Toggle holiday active status - ADMIN only"""
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar feriados")
+    
+    holiday = await db.holidays.find_one({"id": holiday_id}, {"_id": 0})
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Feriado não encontrado")
+    
+    new_status = not holiday.get("active", True)
+    await db.holidays.update_one({"id": holiday_id}, {"$set": {"active": new_status}})
+    
+    # Reload holidays in SLA service
+    from services.sla_service import load_holidays_from_db
+    await load_holidays_from_db(db)
+    
+    return {"message": f"Feriado {'activado' if new_status else 'desactivado'}", "active": new_status}

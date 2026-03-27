@@ -35,8 +35,11 @@ SLA_DEFAULT_MINUTES = 120  # 2 hours fallback
 SLA_USE_BUSINESS_HOURS = True
 SLA_PAUSE_ON_AGUARDA_CLIENTE = True
 
-# Holidays list (empty for now, to be configured later)
+# Holidays - loaded from database
+# Structure: List of tuples (date, is_recurring_annual)
+# For recurring holidays, we store (month, day) for annual matching
 HOLIDAYS: List[date] = []
+RECURRING_HOLIDAYS: List[tuple] = []  # [(month, day), ...]
 
 
 def parse_time_string(time_str: str) -> time:
@@ -46,6 +49,52 @@ def parse_time_string(time_str: str) -> time:
         return time(int(parts[0]), int(parts[1]))
     except (ValueError, IndexError):
         return time(8, 30)  # Default fallback
+
+
+async def load_holidays_from_db(db):
+    """Load holidays from database and update global variables."""
+    global HOLIDAYS, RECURRING_HOLIDAYS
+    
+    try:
+        # Get all active holidays
+        holidays = await db.holidays.find({"active": True}, {"_id": 0}).to_list(1000)
+        
+        fixed_holidays = []
+        recurring_holidays = []
+        
+        for h in holidays:
+            try:
+                holiday_date = datetime.strptime(h["date"], "%Y-%m-%d").date()
+                
+                if h.get("is_recurring_annual", False):
+                    # Store as (month, day) for annual matching
+                    recurring_holidays.append((holiday_date.month, holiday_date.day))
+                else:
+                    # Store as fixed date
+                    fixed_holidays.append(holiday_date)
+            except (ValueError, KeyError):
+                continue
+        
+        HOLIDAYS = fixed_holidays
+        RECURRING_HOLIDAYS = recurring_holidays
+        
+        logger.info(f"Holidays loaded: {len(HOLIDAYS)} fixed, {len(RECURRING_HOLIDAYS)} recurring")
+    except Exception as e:
+        logger.error(f"Error loading holidays: {e}")
+
+
+def is_holiday(d: date) -> bool:
+    """Check if a date is a holiday (fixed or recurring annual)."""
+    # Check fixed holidays
+    if d in HOLIDAYS:
+        return True
+    
+    # Check recurring annual holidays
+    for month, day in RECURRING_HOLIDAYS:
+        if d.month == month and d.day == day:
+            return True
+    
+    return False
 
 
 async def load_sla_config_from_db(db):
@@ -102,15 +151,15 @@ async def load_sla_config_from_db(db):
 
 def is_business_day(d: date) -> bool:
     """Check if a date is a business day (not weekend, not holiday)."""
-    if d in HOLIDAYS:
+    if is_holiday(d):
         return False
     weekday = d.weekday()
     return BUSINESS_HOURS.get(weekday) is not None
 
 
 def get_business_hours_for_day(d: date) -> Tuple[time, time] | None:
-    """Get business hours (start, end) for a given date. Returns None if closed."""
-    if d in HOLIDAYS:
+    """Get business hours (start, end) for a given date. Returns None if closed or holiday."""
+    if is_holiday(d):
         return None
     return BUSINESS_HOURS.get(d.weekday())
 

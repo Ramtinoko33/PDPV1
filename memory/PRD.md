@@ -3,34 +3,34 @@
 ## Overview
 Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. Pedro V).
 
-## Architecture (After Refactoring)
+## Architecture (After Full Refactoring)
 
 ### Refactoring Summary
 | Metric | Before | After | Change |
 |--------|--------|-------|--------|
-| server.py | 4957 lines | 2563 lines | **-48%** |
-| Modular routes | 0 | 2 files | +1390 lines |
-| Services | 1 | 6 files | +1091 lines |
+| server.py | 4957 lines | 2574 lines | **-48%** |
+| Modular routes | 0 | 2 files | +1500 lines |
+| Services | 1 | 6 files | +1150 lines |
 
 ### Backend Structure
 ```
 /app/backend/
-├── server.py              # Main FastAPI app (~2563 lines - orchestration)
+├── server.py              # Main FastAPI app (~2574 lines - orchestration)
 ├── services/
-│   ├── __init__.py        (89 lines)
-│   ├── sla_service.py     (379 lines) - SLA business logic
-│   ├── storage_service.py (77 lines)  - Object Storage operations
-│   ├── ticket_service.py  (78 lines)  - Ticket helpers
-│   ├── notification_service.py (193 lines) - Web Push
-│   ├── auth_service.py    (85 lines)  - Auth helpers
-│   └── customer_service.py (190 lines)
+│   ├── __init__.py        
+│   ├── sla_service.py     (~430 lines) - SLA + Holidays logic
+│   ├── storage_service.py - Object Storage
+│   ├── ticket_service.py  - Ticket helpers
+│   ├── notification_service.py - Web Push
+│   ├── auth_service.py    - Auth helpers
+│   └── customer_service.py
 ├── routes/
-│   ├── auth.py            (203 lines) - Authentication
-│   ├── customers.py       (529 lines) - Customer management
-│   ├── users.py           (100 lines) - User management
-│   ├── vehicles.py        (18 lines)  - Vehicle management
-│   ├── tickets.py         (623 lines) - Ticket CRUD, archive, status
-│   └── admin.py           (767 lines) - Admin settings, reports
+│   ├── auth.py            - Authentication
+│   ├── customers.py       - Customer management
+│   ├── users.py           - User management
+│   ├── vehicles.py        - Vehicle management
+│   ├── tickets.py         (~623 lines) - Ticket CRUD, archive, status
+│   └── admin.py           (~900 lines) - Types, statuses, SLA, email, branding, reports, HOLIDAYS
 ├── modules/
 │   ├── intake/            - Pre-ticket intake
 │   ├── telegram/          - Telegram bot
@@ -40,21 +40,8 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 │   ├── user.py
 │   └── customer.py
 └── tests/
-    └── test_sla_logic.py  (12 tests passing)
+    └── test_sla_logic.py  (17 tests passing)
 ```
-
-### What Remains in server.py
-- Messages, Notes, Alerts, Reminders routes
-- Attachments routes (upload/download)
-- Dashboard routes
-- Webhooks (Telegram)
-- Quote system routes (options, public links, PDF generation)
-- Export routes (CSV)
-- Seed data
-- Notifications API
-- Web Push routes
-- WebSocket management
-- Startup/shutdown events
 
 ## Implemented Features
 
@@ -70,7 +57,17 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - [x] SLA targets per ticket type (configurable in AdminSettings)
 - [x] SLA pause when status = AGUARDA_CLIENTE
 - [x] SLA breach detection and tracking
-- [x] Unit tests for SLA logic (12 tests)
+- [x] **NEW: Holiday management** - Fixed and recurring annual holidays
+- [x] Unit tests for SLA logic (17 tests including 5 holiday tests)
+
+### Holiday System (NEW)
+- [x] CRUD for holidays via `/api/admin/holidays`
+- [x] Toggle active/inactive status
+- [x] Fixed holidays (specific date)
+- [x] Recurring annual holidays (repeat every year)
+- [x] Scope: nacional/local
+- [x] Integration with SLA calculation (holidays excluded)
+- [x] Admin UI in Settings > Feriados tab
 
 ### Quote System
 - [x] Quote options management
@@ -104,14 +101,14 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - GET /api/auth/me
 
 ### Tickets (routes/tickets.py)
-- GET /api/tickets - List active tickets
-- POST /api/tickets - Create ticket
-- GET /api/tickets/archived - List archived tickets
-- GET /api/tickets/{id} - Get ticket details
-- PUT /api/tickets/{id} - Update ticket
-- POST /api/tickets/{id}/archive - Archive ticket
-- POST /api/tickets/{id}/restore - Restore ticket
-- GET /api/tickets/{id}/status-history - Get status history
+- GET /api/tickets
+- POST /api/tickets
+- GET /api/tickets/archived
+- GET /api/tickets/{id}
+- PUT /api/tickets/{id}
+- POST /api/tickets/{id}/archive
+- POST /api/tickets/{id}/restore
+- GET /api/tickets/{id}/status-history
 
 ### Admin (routes/admin.py)
 - GET/POST/PUT/DELETE /api/admin/ticket-types
@@ -121,6 +118,11 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - GET/PUT /api/admin/branding
 - POST /api/admin/reports
 - GET /api/admin/reports/rejection-reasons
+- **GET /api/admin/holidays** - List all holidays
+- **POST /api/admin/holidays** - Create holiday
+- **PUT /api/admin/holidays/{id}** - Update holiday
+- **DELETE /api/admin/holidays/{id}** - Delete holiday
+- **POST /api/admin/holidays/{id}/toggle** - Toggle active status
 
 ### Tickets (still in server.py)
 - POST/GET /api/tickets/{id}/messages
@@ -144,6 +146,20 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 - quote_options, quote_history
 - ticket_status_history
 - push_subscriptions
+- **holidays** (NEW)
+
+## Holiday Document Schema
+```json
+{
+  "id": "uuid",
+  "date": "YYYY-MM-DD",
+  "name": "string",
+  "is_recurring_annual": "boolean",
+  "scope": "nacional|local",
+  "active": "boolean",
+  "created_at": "ISO datetime"
+}
+```
 
 ## Environment Variables
 - MONGO_URL, DB_NAME
@@ -156,6 +172,16 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 
 ## Test Credentials
 - Admin: admin@pdpv.pt / HCNMEnKMLq
+
+## Tests
+- 17 tests passing in `tests/test_sla_logic.py`:
+  - 12 original SLA tests
+  - 5 holiday tests:
+    - test_fixed_holiday
+    - test_recurring_annual_holiday
+    - test_sla_across_holiday
+    - test_saturday_plus_holiday
+    - test_sunday_still_closed
 
 ## Known Issues
 - Files uploaded before Object Storage integration cannot be downloaded

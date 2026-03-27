@@ -179,6 +179,7 @@ from services.sla_service import (
     BUSINESS_HOURS, SLA_TARGETS_MINUTES, SLA_DEFAULT_MINUTES,
     SLA_USE_BUSINESS_HOURS, SLA_PAUSE_ON_AGUARDA_CLIENTE,
     parse_time_string, load_sla_config_from_db as _load_sla_config,
+    load_holidays_from_db as _load_holidays,
     is_business_day, get_business_hours_for_day, get_business_minutes_in_day,
     add_business_minutes, calculate_business_minutes_between,
     compute_sla_due, compute_sla_due_simple,
@@ -189,6 +190,10 @@ from services.sla_service import (
 async def load_sla_config_from_db():
     """Load SLA configuration from database."""
     await _load_sla_config(db)
+
+async def load_holidays_from_db():
+    """Load holidays from database."""
+    await _load_holidays(db)
 
 
 # ============== AUTH ROUTES ==============
@@ -2544,6 +2549,10 @@ async def startup_event():
     # Load SLA configuration from database
     await load_sla_config_from_db()
     logger.info("[STARTUP] SLA configuration loaded from database")
+    
+    # Load holidays from database
+    await load_holidays_from_db()
+    logger.info("[STARTUP] Holidays loaded from database")
     
     # Create TTL index for login attempts cleanup (30 days)
     try:
