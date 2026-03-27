@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const API_URL = 'https://vehicle-ticket-hub.preview.emergentagent.com';
+const API_URL = 'https://pdpv-whatsapp.preview.emergentagent.com';
 
 // Test credentials
 const ADMIN_EMAIL = 'admin@pdpv.pt';

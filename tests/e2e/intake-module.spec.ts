@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL || 'https://vehicle-ticket-hub.preview.emergentagent.com';
+const BASE_URL = process.env.BASE_URL || 'https://pdpv-whatsapp.preview.emergentagent.com';
 const ADMIN_EMAIL = 'admin@pdpv.pt';
 const ADMIN_PASSWORD = 'HCNMEnKMLq';
 

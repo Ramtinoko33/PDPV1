@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test';
  * - Checkboxes and buttons disabled after decision on public page
  */
 
-const BASE_URL = 'https://vehicle-ticket-hub.preview.emergentagent.com';
+const BASE_URL = 'https://pdpv-whatsapp.preview.emergentagent.com';
 const ADMIN_EMAIL = 'admin@pdpv.pt';
 const ADMIN_PASSWORD = 'HCNMEnKMLq';
 

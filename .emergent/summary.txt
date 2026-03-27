@@ -1,87 +1,87 @@
-<analysis>**original_problem_statement:**
-O utilizador está a desenvolver o PDPV Tickets, um sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. Pedro V). O sistema inclui uma arquitetura modular com um módulo Intake (gestão de pré-tickets) e um módulo Telegram (automação de conversas via bot). O objetivo contínuo é adicionar novas funcionalidades, refinar a experiência do utilizador e melhorar as integrações (como o uso de LLMs para extrair dados de texto, fotos e áudio no Telegram).
-PRODUCT REQUIREMENTS: 
+<analysis>**original_problem_statement:** 
+O utilizador está a desenvolver o PDPV Tickets, um sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. Pedro V). O objetivo contínuo é adicionar novas funcionalidades, refinar a experiência do utilizador e integrar múltiplos canais de comunicação. 
+PRODUCT REQUIREMENTS:
 - Manter o sistema rápido e livre de bugs.
-- Automatizar a criação de tickets via Telegram usando a Emergent LLM Key para Visão, Texto e Transcrição de Áudio.
 - Implementar lógicas complexas de SLA baseadas no horário de funcionamento da oficina.
+- Melhorar o fluxo de orçamentos (recolha de motivos de rejeição).
+- Garantir a persistência de ficheiros (PDFs/Anexos).
+- Integrar WhatsApp Business Cloud API para criação e gestão automática de tickets.
 
 **User's preferred language**: Portuguese
 *(INSTRUCTION FOR NEXT AGENT: You MUST respond to the user in Portuguese only)*
 
 **what currently exists?** 
-Uma aplicação full-stack (FastAPI backend + React frontend + MongoDB). O backend possui uma arquitetura modular com um ficheiro  ainda monolítico e módulos separados para  e . O sistema possui autenticação JWT, gestão de clientes/veículos, sistema de pré-tickets (Intake) convertíveis em tickets, integração bidirecional com Telegram, relatórios estatísticos e geração dinâmica de PDFs. 
+Uma aplicação full-stack (FastAPI backend + React frontend + MongoDB). Possui arquitetura mista (monolito  e módulos separados para  e ). Funcionalidades incluem: autenticação JWT, gestão de pré-tickets, geração dinâmica de PDFs, fluxos de orçamentação por link público, cálculos avançados de SLA com pausas automáticas, e persistência de ficheiros via Emergent Object Storage.
 
 **Last working item**:
-    - Last item agent was working: Implementar lógicas avançadas de SLA (Service Level Agreement) no backend. O utilizador forneceu regras rígidas de cálculo de tempo útil (seg-sex: 08:30-18:30, sab: 08:30-13:00, dom: fechado), SLAs diferenciados por tipo de ticket (8h orçamento, 2h informação/reclamação, 3h marcação) e lógicas de pausa/retoma de SLA consoante o status (ex: pausa em ). O agente apenas iniciou a visualização do  para aplicar as regras.
+    - Last item agent was working: Integração do WhatsApp Business Cloud API (MVP). O agente obteve o playbook de integração, adicionou as variáveis de ambiente necessárias no  (ex: , ) e criou os ficheiros base vazios na pasta  (, , ).
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? backend testing agent / manual testing by python -c (escrever testes unitários em Python para garantir que os cálculos de horas úteis e feriados/fins-de-semana estão exatos).
+    - Which testing method agent to use? backend testing agent / manual testing by curl para simular os webhooks do WhatsApp (GET para verificação e POST para mensagens). Frontend screenshot tool para o badge do WhatsApp.
     - User Testing Done: N
 
-**All Pending/In progress Issue list**:
-  Issue 1: Implementar novas regras de SLA no  (P0)
+**All Pending/In progress Issue list**: 
+  Issue 1: Concluir Integração WhatsApp MVP (P0)
   Issue 2: Refatoração do  monolítico (P1)
 
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: O agente analisou as funções  e  no . Nenhuma alteração de código foi efetivada ainda.
+     - Attempted fixes: O agente apenas preparou o terreno (playbook lido,  atualizado, ficheiros vazios criados).
      - Next debug checklist: 
-       * Criar função de cálculo de business hours (tempo útil).
-       * Ajustar  e .
-       * Adicionar campos ao modelo do ticket (, , , , ).
-       * Implementar gatilho de pausa quando status =  e retoma para .
-     - Why fix this issue and what will be achieved with the fix? Necessário para que a oficina consiga medir com precisão os incumprimentos e tempos de resposta aos clientes reais sem penalizar os agentes por demoras do lado do cliente ou fora de horas.
+       * Implementar os schemas no .
+       * Implementar a lógica de processamento (criar ticket/atualizar ticket, evitar duplicados via ) no .
+       * Implementar os endpoints de webhook (GET verificação, POST mensagens) no .
+       * Registar o router do whatsapp no  ou .
+       * Atualizar o Frontend (ex:  ou ) para mostrar badge do WhatsApp e botão para abrir conversa.
+     - Why fix this issue and what will be achieved with the fix? Requisito explícito do utilizador para permitir que clientes comuniquem com a oficina via WhatsApp.
      - Status: IN PROGRESS
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Backend (escrever scripts curtos para testar as transições de data/hora).
+     - Should Test frontend/backend/both after fix? Both
      - Blocked on other issue: None
+
   - Issue 2: 
-     - Attempted fixes: Módulos de clientes, veículos e users já foram extraídos anteriormente, mas tickets, quotes e SLAs continuam no .
-     - Next debug checklist: Extrair a lógica de 'Tickets' e 'Quotes' para routers independentes em  e .
-     - Why fix this issue and what will be achieved with the fix? Escalar a aplicação e reduzir dívida técnica massiva no ficheiro .
+     - Attempted fixes: Adiado.
+     - Next debug checklist: Extrair a lógica de 'Tickets' e 'Quotes' do  para routers independentes.
+     - Why fix this issue and what will be achieved with the fix? O ficheiro  tem quase 5000 linhas, causando dívida técnica massiva e dificultando manutenção.
      - Status: NOT STARTED
-     - Is recurring issue? Y (Adiado várias vezes a pedido do utilizador)
+     - Is recurring issue? Y
      - Should Test frontend/backend/both after fix? Both
      - Blocked on other issue: Issue 1 (Prioridade P0 dada pelo user).
 
 **In progress Task List**:
-  Task 1: Nova Lógica de SLA
+  Task 1: Integração WhatsApp
   
   Task Detail:
   - Task 1: 
-     - Where to resume:  nas funções relacionadas com SLA (, , e endpoints de update de status).
-     - What will be achieved with this? Histórico fidedigno de cumprimento de SLA com pausa no relógio quando dependente do cliente.
+     - Where to resume:  (ficheiros estão em branco).
+     - What will be achieved with this? Gestão de tickets via WhatsApp de forma bidirecional.
      - Status: IN PROGRESS
-     - Should Test frontend/backend/both after fix? Backend.
+     - Should Test frontend/backend/both after fix? Both
      - Blocked on something: Nothing.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
     - P1: Refatoração do  (Mover lógica de Tickets e Quotes para routers específicos).
+    - P2: Painel de configuração de feriados para cálculos de SLA.
     Future Tasks:
-    - P2: Integração WhatsApp.
     - P3: Funcionalidade de importação de Excel.
     - P3: Desenvolvimento de um Portal do Cliente dedicado.
 
 **Completed work in this session**
-- Movido card Novos Clientes do  para  (DONE)
-- Atualização do Telegram Module v3 (Substituição de Gemini API explícita pela Emergent LLM Key) (DONE)
-  -  & : Implementado buffer de 15 segundos para agrupar mensagens, processamento de Texto e Visão ( -> ).
-- Conversão de Áudio (OGG -> MP3 fallback nativo usando renomeação e compatibilidade local, devido à ausência do  em prod) em  (DONE)
-- Correção de Spam WebSocket em  verificando expiração do token (DONE)
-- Fix no deploy relacionado com a config de MongoDB (Substituição de  por  em ) (DONE)
-- Correção na Atribuição de Lembretes no  e  (Dropdown de utilizadores para roles ADMIN/SUPERVISOR e fix no campo ) (DONE)
-- Correção na Visualização de PDF público em  (Usando endpoint de geração dinâmica de PDF ao invés de buscar ficheiro estático  que era apagado nos deploys) (DONE)
-- Badge Numérico de Notificação de Pré-Tickets Pendentes na Sidebar ( e novo endpoint  no ) (DONE)
-- Melhorias na Conversão Intake -> Ticket (Busca dinâmica de Clientes, transferência de  e  para a descrição do ticket) em  e  (DONE)
-- Tratamento de falhas e warnings do Web Push Notification em  (Removido poluição de logs para subscrições inativas) (DONE)
+- Lógica de SLA Avançada: Horário útil, pausa em Aguarda Cliente, SLAs por tipo de ticket e testes unitários (DONE)
+- Nova UI de Configuração de SLA no  (DONE)
+- Fluxo de Rejeição de Orçamento: Modal no frontend público para recolha de motivo e nota opcional (DONE)
+- Persistência de Ficheiros: Integração do **Emergent Object Storage** para resolver a perda de PDFs entre deployments (DONE)
+- Tratamento de Logs Web Push: Removido spam de erros 400/410 no  (DONE)
+- UI de Relatórios: Adicionada secção de estatísticas de motivos de rejeição em  (DONE)
+- UI de Tickets: Atualizada a aba de SLAs em  para mostrar os dados reais e prazos em curso (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-   - Nenhuma issue anterior não tratada, à exceção da refatoração de código (Issue 2). O agente atendeu sistematicamente todos os pedidos do utilizador na sessão.
+   - Ficheiros antigos carregados antes da integração do Object Storage não podem ser descarregados porque já não existem no disco local após o deployment. O utilizador foi informado.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: Refatoração do  continua por fazer.
-  - Recurrence count: 3
+  - Recurrence count: 4
   - Status: NOT STARTED
 
 **Code Architecture**
@@ -90,65 +90,67 @@ Uma aplicação full-stack (FastAPI backend + React frontend + MongoDB). O backe
 **Key Technical Concepts**
 - Frontend: React.js, Tailwind CSS, Shadcn/UI (Context API).
 - Backend: FastAPI, MongoDB via motor_asyncio.
-- Architecture: Modular e Monolítica mista.
-- LLM / Integrations: O sistema depende inteiramente da  instanciada via  para parsing multimodal do Telegram (Visão para faturas/fotos, Whisper para áudios, Texto genérico para extração estruturada de JSON).
+- Storage: Emergent Object Storage (Recém-adicionado para substituir sistema de ficheiros local volátil).
+- Webhooks: Telegram e (agora em desenvolvimento) WhatsApp Business Cloud API.
 
 **key DB schema**
-  - tickets: 
-  - intake_requests: 
-  - customers: 
+  - : Adicionados campos de SLA (, , ) e campos de rejeição (, , , ).
+  - : Adicionado documento  com horários da oficina e tempos por tipo.
 
 **changes in tech stack**
-  - Integração total com a infraestrutura da  para LLMs, substituindo o SDK nativo do Google/Gemini.
+  - **MUITO IMPORTANTE:** Substituição do armazenamento de ficheiros local () pelo **Emergent Object Storage**. Os uploads/downloads de anexos de tickets agora passam por este serviço para garantir persistência em Kubernetes.
 
 **All files of reference**
-- : Atual (Para aplicar a lógica de SLA, lida com PDFs).
-- : Tratamento de Visão, Audio (Whisper) e Texto do Telegram via Emergent Key.
-- : Lógica de conversão Intake -> Ticket e Contador de Pendentes.
-- : UI Modal para conversão de tickets, lida com busca assíncrona de clientes.
+- : Ficheiros criados para o MVP do WhatsApp (Onde o próximo agente deve trabalhar).
+- : Regista o SLA, lida com webhooks, object storage e rotas antigas.
+- : UI atualizada com novos campos de SLA e motivos de rejeição.
+- : Documentação atualizada do projeto.
 
 **Areas that need refactoring**:
-- : Ficheiro massivo (>4000 linhas) contendo rotas principais que devem ser divididas em  e .
+- : Arquivo massivo. Necessita extração de rotas.
 
 **key api endpoints**
-- : Webhook do bot do Telegram, implementa buffer de 15s.
-- : Converte pré-ticket para Ticket, anexando histórico.
-- : Endpoint otimizado para buscar clientes por matrícula, nome ou telefone.
-- : Renderiza dinamicamente PDFs de Orçamentos usando  (Contorna falta de persistência de disco local no deploy).
+- : Gera link para orçamento.
+- : Novo endpoint para métricas de rejeição.
+- *(Pendente)* : Receberá mensagens do WhatsApp.
 
 **Critical Info for New Agent**
-- **SLA LOGIC IS STRICT:** Lê atentamente o último prompt do utilizador com as regras de horários e mapeamentos de ticket para fazer o SLA. Apenas implementa código de SLA, **sem alterar o UI/Dashboards**. 
-- **EMERGENT LLM KEY:** O sistema já está configurado para a chave universal da Emergent. Não instales o SDK da OpenAI nem do Gemini diretamente. Usa sempre a importação  e . 
-- Ficheiros não persistem na pasta  do disco local após deploys. Por isso, a geração de PDFs é on-the-fly (). Cuidado ao adicionar funcionalidades que exijam salvamento estático no disco para visualização pública.
+- **WHATSAPP MVP:** Os ficheiros do módulo whatsapp estão vazios. O  já tem as chaves necessárias. Usa a tua lógica para construir o webhook verificando o token e processando as mensagens (Texto/Anexos -> Ticket).
+- **OBJECT STORAGE ATIVO:** Qualquer nova funcionalidade que exija ficheiros (ex: anexos do WhatsApp) **DEVE** usar o  já implementado no . Não guardes ficheiros de forma permanente na pasta local do container.
 
 **documents and test reports created in this job**
-  - N/A (Apenas screenshot logs em  foram gerados).
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. *User*: Asked for badge with the number of pending pre-tickets on the Pré-Tickets button. *(Completed)*
-2. *User*: Confirmed the badge logic design. *(Completed)*
-3. *User*: Requested 3 improvements to the Intake conversion flow: append vehicle info to description, search/fill all customer data automatically via API, and allow user to pick if multiple clients match. *(Completed)*
-4. *User*: Provided build error logs (warnings) from deployment regarding Web push failed for user (unknown). *(Completed - Improved exception handling).*
-5. *User (Pending/Last Task)*: Asked about SLA records and provided extensive requirements to update and fix the SLA rules (business hours, SLA pausing, specific SLAs per type of ticket) and requested NOT to change UI, only the backend logic. *(IN PROGRESS - Next agent to execute)*.
+1. *User*: Problema com PDFs que não abrem corretamente. *(Completed - Era problema de storage em K8s; resolvido com Object Storage)*.
+2. *User*: Enviou logs de erro de deployment (Web push failed 410/400). *(Completed - Tratamento de erro melhorado para não poluir logs)*.
+3. *User*: em relaçao aos pdfs, porque que dantes dava e deixou de dar agora? *(Completed - Explicado o ciclo de vida dos containers)*.
+4. *User*: onde é que ficou defenido estar visivel a estatistica de ticktes recusados e os seus motivos? *(Completed - Explicado que estava só na API)*.
+5. *User*: ok entao adiciona a essa pagina isso *(Completed - Adicionado ao AdminReports.js)*.
+6. *User*: onde esta registados os tempos de SLA´s? *(Completed - Explicado)*.
+7. *User*: Avisou que a tab de SLAs no TicketDetail estava a mostrar informação inútil. *(Completed - Substituído pelos dados reais de SLA)*.
+8. *User (Pending/Last Task)*: Pediu para integrar WhatsApp Business Cloud API no backend (MVP funcional: webhooks, tickets automáticos, histórico, evitar duplicados, badge no frontend). *(IN PROGRESS - Agente criou ficheiros, próximo agente deve implementar o código).*
 
 **Project Health Check:**
 - Broken: None
 - Mocked: None
 
 **3rd Party Integrations** 
-- Emergent LLM Key — uses Emergent LLM Key (Used for  text/vision and  transcription via ).
-- Telegram Bot — requires User API Key ().
+- Emergent LLM Key — uses Emergent LLM Key 
+- Emergent Object Storage — uses Emergent LLM Key infrastructure (via  para guardar PDFs/Anexos).
+- Telegram Bot — requires User API Key.
 - Resend (Emails) — requires User API Key.
-- pywebpush — uses internal VAPID keys for browser push notifications.
+- WhatsApp Business Cloud API — requires User API Key ( e  já colocados no ).
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Last updates were tested via direct local execution / curl / screenshots).
-  - Troubleshoot agent used after agent stuck in loop: NO (Deployment agent was used twice to clarify container logs).
-  - Test files created: []
-  - Known regressions: []
+  - Testing agent used after significant changes: NO (Testado localmente via script Python e Screenshot tool).
+  - Troubleshoot agent used after agent stuck in loop: NO (Deployment agent usado para validar logs).
+  - Test files created: 
+  - Known regressions: Ficheiros antigos (< sessão atual) não abrem porque não estão no Object Storage.
 
 **Credentials to test flow:**
 - Admin:  / 
 
 **What agent forgot to execute**
-- A refatoração do  está continuamente esquecida/adiada, mas isto ocorreu devido às prioridades explícitas e emergentes criadas pelo utilizador. O novo pedido do SLA é atualmente a máxima prioridade (P0).</analysis>
+- A implementação das funções dentro dos ficheiros do módulo  (o agente apenas criou os ficheiros vazios antes de terminar o contexto). A refatoração do  continua adiada.</analysis>
