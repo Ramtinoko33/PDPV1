@@ -6,7 +6,7 @@ from datetime import datetime
 import json
 
 class PDPVTicketsAPITester:
-    def __init__(self, base_url="https://pdpv-whatsapp.preview.emergentagent.com"):
+    def __init__(self, base_url="https://quote-management-4.preview.emergentagent.com"):
         self.base_url = base_url
         self.admin_token = None
         self.supervisor_token = None
