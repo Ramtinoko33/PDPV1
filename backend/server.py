@@ -73,7 +73,7 @@ from services.storage_service import (
 )
 
 # Frontend URL for email links
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://tickets.pneusdpedrov.com')
 
 # VAPID Config for Web Push (strip any surrounding quotes from env vars)
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '').strip().strip('"').strip("'")
