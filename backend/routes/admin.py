@@ -196,10 +196,38 @@ class RejectionReasonStat(BaseModel):
     count: int
     percentage: float
 
+class RejectionByTicketType(BaseModel):
+    type: str
+    count: int
+    percentage: float
+
 class RejectionReasonsResponse(BaseModel):
     total_rejected: int
-    reasons: List[RejectionReasonStat]
-    period: Dict[str, Optional[str]]
+    with_reason: int = 0
+    without_reason: int = 0
+    by_reason: List[RejectionReasonStat] = []
+    by_ticket_type: List[RejectionByTicketType] = []
+    period: Dict[str, Optional[str]] = {}
+
+class TireSizeStat(BaseModel):
+    size: str
+    count: int
+    percentage: float
+
+class TireBrandStat(BaseModel):
+    brand: str
+    count: int
+
+class TireKeywordStat(BaseModel):
+    keyword: str
+    count: int
+
+class TireAnalysisResponse(BaseModel):
+    total_tickets_analyzed: int
+    tickets_with_sizes: int
+    tire_sizes: List[TireSizeStat] = []
+    brands: List[TireBrandStat] = []
+    keywords: List[TireKeywordStat] = []
 
 
 # ============== HELPERS ==============
@@ -796,49 +824,189 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
 async def get_rejection_reasons_report(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    ticket_type: Optional[str] = None,
+    assigned_to: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
         raise HTTPException(status_code=403, detail="Sem permissão para ver relatórios")
     
-    query = {"rejection_reason_code": {"$ne": None}}
+    # Get ALL rejected tickets (with or without reason)
+    query = {"quote_response_status": "REJECTED"}
     
     if start_date:
-        query["rejected_at"] = {"$gte": start_date}
+        query["created_at"] = {"$gte": start_date}
     if end_date:
-        if "rejected_at" in query:
-            query["rejected_at"]["$lte"] = end_date
+        if "created_at" in query:
+            query["created_at"]["$lte"] = end_date
         else:
-            query["rejected_at"] = {"$lte": end_date}
+            query["created_at"] = {"$lte": end_date}
+    if ticket_type:
+        query["type"] = ticket_type
+    if assigned_to:
+        query["assigned_to_user_id"] = assigned_to
     
-    tickets = await db.tickets.find(query, {"_id": 0, "rejection_reason_code": 1, "rejection_reason_label": 1}).to_list(10000)
+    tickets = await db.tickets.find(query, {
+        "_id": 0, "rejection_reason_code": 1, "rejection_reason_label": 1, "type": 1
+    }).to_list(10000)
     
     total = len(tickets)
+    with_reason = 0
+    without_reason = 0
     reason_counts = {}
+    type_counts = {}
     
     for t in tickets:
-        code = t.get("rejection_reason_code", "unknown")
-        label = t.get("rejection_reason_label") or REJECTION_REASON_CODES.get(code, "Sem motivo registado")
+        code = t.get("rejection_reason_code")
+        if code:
+            with_reason += 1
+            label = t.get("rejection_reason_label") or REJECTION_REASON_CODES.get(code, "Sem motivo registado")
+            if code not in reason_counts:
+                reason_counts[code] = {"label": label, "count": 0}
+            reason_counts[code]["count"] += 1
+        else:
+            without_reason += 1
         
-        if code not in reason_counts:
-            reason_counts[code] = {"label": label, "count": 0}
-        reason_counts[code]["count"] += 1
+        ticket_type_val = t.get("type", "UNKNOWN")
+        type_counts[ticket_type_val] = type_counts.get(ticket_type_val, 0) + 1
     
-    reasons = []
+    by_reason = []
     for code, data in sorted(reason_counts.items(), key=lambda x: x[1]["count"], reverse=True):
-        reasons.append(RejectionReasonStat(
+        by_reason.append(RejectionReasonStat(
             code=code,
             label=data["label"],
             count=data["count"],
             percentage=round((data["count"] / total * 100), 1) if total > 0 else 0
         ))
     
+    by_ticket_type = []
+    for ttype, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True):
+        by_ticket_type.append(RejectionByTicketType(
+            type=ttype,
+            count=count,
+            percentage=round((count / total * 100), 1) if total > 0 else 0
+        ))
+    
     return RejectionReasonsResponse(
         total_rejected=total,
-        reasons=reasons,
+        with_reason=with_reason,
+        without_reason=without_reason,
+        by_reason=by_reason,
+        by_ticket_type=by_ticket_type,
         period={"start": start_date, "end": end_date}
     )
 
+
+# ============== TIRE ANALYSIS ==============
+import re
+
+TIRE_SIZE_PATTERN = re.compile(r'\b(\d{3})\s*[/\\]\s*(\d{2,3})\s*[RrZz]?\s*(\d{2})\b')
+TIRE_BRANDS = [
+    "michelin", "continental", "bridgestone", "goodyear", "pirelli", "dunlop",
+    "hankook", "yokohama", "firestone", "toyo", "kumho", "nexen", "falken",
+    "cooper", "bf goodrich", "bfgoodrich", "uniroyal", "barum", "semperit",
+    "nokian", "vredestein", "lassa", "nankang", "maxxis", "general tire",
+    "general", "kleber", "sava", "debica", "matador", "viking", "gt radial",
+    "triangle", "landsail", "roadstone", "imperial", "tracmax", "minerva",
+    "westlake", "zeetex", "sailun", "rovelo", "aplus", "windforce", "boto",
+    "davanti", "gripmax", "hifly"
+]
+SERVICE_KEYWORDS = {
+    "montagem": ["montagem", "montar", "monte"],
+    "equilibragem": ["equilibragem", "equilibrar", "balanceamento"],
+    "alinhamento": ["alinhamento", "alinhar", "alinhamento direcção"],
+    "substituição": ["substituição", "substituir", "troca", "trocar"],
+    "reparação": ["reparação", "reparar", "arranjo", "arranjar"],
+    "inspeção": ["inspeção", "inspecção", "ipo", "revisão"],
+    "óleo": ["óleo", "oleo", "vidro óleo"],
+    "travões": ["travões", "travoes", "pastilhas", "discos"],
+    "amortecedores": ["amortecedores", "amortecedor", "suspensão"],
+    "pneus usados": ["usados", "usado", "recauchutado", "recauchutagem"],
+    "pneus novos": ["novos", "novo"],
+    "jantes": ["jante", "jantes"],
+    "válvulas": ["válvula", "valvula", "válvulas", "valvulas"],
+    "furos": ["furo", "furos", "furado"]
+}
+
+@router.get("/reports/tire-analysis", response_model=TireAnalysisResponse)
+async def get_tire_analysis(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Sem permissão para ver relatórios")
+    
+    query = {"archived_at": None}
+    if start_date:
+        query["created_at"] = {"$gte": start_date}
+    if end_date:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = end_date
+        else:
+            query["created_at"] = {"$lte": end_date}
+    
+    tickets = await db.tickets.find(query, {"_id": 0, "description": 1, "subject": 1}).to_list(10000)
+    
+    total_analyzed = len(tickets)
+    tickets_with_sizes = 0
+    size_counts = {}
+    brand_counts = {}
+    keyword_counts = {}
+    
+    for t in tickets:
+        text = f"{t.get('subject', '')} {t.get('description', '')}".strip()
+        if not text:
+            continue
+        text_lower = text.lower()
+        
+        # Extract tire sizes
+        sizes = TIRE_SIZE_PATTERN.findall(text)
+        if sizes:
+            tickets_with_sizes += 1
+            for width, aspect, rim in sizes:
+                size_str = f"{width}/{aspect}R{rim}"
+                size_counts[size_str] = size_counts.get(size_str, 0) + 1
+        
+        # Extract brands
+        for brand in TIRE_BRANDS:
+            if brand in text_lower:
+                display_brand = brand.title()
+                if display_brand == "Bf Goodrich":
+                    display_brand = "BF Goodrich"
+                elif display_brand == "Gt Radial":
+                    display_brand = "GT Radial"
+                brand_counts[display_brand] = brand_counts.get(display_brand, 0) + 1
+        
+        # Extract service keywords
+        for service, variants in SERVICE_KEYWORDS.items():
+            for variant in variants:
+                if variant in text_lower:
+                    keyword_counts[service] = keyword_counts.get(service, 0) + 1
+                    break
+    
+    total_sizes = sum(size_counts.values()) or 1
+    tire_sizes = sorted(
+        [TireSizeStat(size=s, count=c, percentage=round(c / total_sizes * 100, 1))
+         for s, c in size_counts.items()],
+        key=lambda x: x.count, reverse=True
+    )
+    brands = sorted(
+        [TireBrandStat(brand=b, count=c) for b, c in brand_counts.items()],
+        key=lambda x: x.count, reverse=True
+    )
+    keywords = sorted(
+        [TireKeywordStat(keyword=k, count=c) for k, c in keyword_counts.items()],
+        key=lambda x: x.count, reverse=True
+    )
+    
+    return TireAnalysisResponse(
+        total_tickets_analyzed=total_analyzed,
+        tickets_with_sizes=tickets_with_sizes,
+        tire_sizes=tire_sizes,
+        brands=brands,
+        keywords=keywords
+    )
 
 
 # ============== HOLIDAYS ==============

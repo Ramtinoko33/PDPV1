@@ -2255,6 +2255,39 @@ async def generate_quote_pdf(token: str):
         }
     )
 
+# ============== PUBLIC BRANDING ==============
+@api_router.get("/public/branding")
+async def get_public_branding():
+    """Get branding config for public pages - NO AUTH REQUIRED"""
+    config = await db.settings.find_one({"type": "branding_config"}, {"_id": 0})
+    if not config:
+        return {
+            "company_name": "PDPV Tickets",
+            "primary_color": "#f97316",
+            "logo_url": None,
+            "quote_header_text": "Proposta de Orçamento",
+            "quote_footer_text": "Obrigado pela sua preferência.",
+            "company_phone": None,
+            "company_email": None,
+            "quote_page_accepted_title": None,
+            "quote_page_accepted_message": None,
+            "quote_page_rejected_title": None,
+            "quote_page_rejected_message": None
+        }
+    return {
+        "company_name": config.get("company_name", "PDPV Tickets"),
+        "primary_color": config.get("primary_color", "#f97316"),
+        "logo_url": config.get("logo_url"),
+        "quote_header_text": config.get("quote_header_text", "Proposta de Orçamento"),
+        "quote_footer_text": config.get("quote_footer_text", "Obrigado pela sua preferência."),
+        "company_phone": config.get("company_phone"),
+        "company_email": config.get("company_email"),
+        "quote_page_accepted_title": config.get("quote_page_accepted_title"),
+        "quote_page_accepted_message": config.get("quote_page_accepted_message"),
+        "quote_page_rejected_title": config.get("quote_page_rejected_title"),
+        "quote_page_rejected_message": config.get("quote_page_rejected_message")
+    }
+
 # ============== PUBLIC REPLY ENDPOINTS ==============
 @api_router.get("/public/reply/{token}", response_model=PublicReplyTicketData)
 async def get_public_reply(token: str):
