@@ -416,7 +416,7 @@ const AdminSettings = () => {
   const fetchEmailConfig = async () => {
     setLoadingEmail(true);
     try {
-      const response = await axios.get(`${API_URL}/api/admin/email-settings`, { headers: getAuthHeaders() });
+      const response = await axios.get(`${API_URL}/api/admin/email-config`, { headers: getAuthHeaders() });
       setEmailConfig(response.data);
     } catch (error) {
       console.error('Error fetching email config:', error);
@@ -429,7 +429,7 @@ const AdminSettings = () => {
     setSavingEmail(true);
     try {
       await axios.put(
-        `${API_URL}/api/admin/email-settings`,
+        `${API_URL}/api/admin/email-config`,
         emailConfig,
         { headers: getAuthHeaders() }
       );

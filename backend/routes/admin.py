@@ -538,6 +538,79 @@ async def update_email_config(config_data: EmailConfigUpdate, current_user: dict
     )
 
 
+class TestEmailRequest(BaseModel):
+    recipient_email: str
+
+
+@router.post("/test-email")
+async def send_test_email(request: TestEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Send a test email to verify SMTP configuration - ADMIN only"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    if current_user["role"] != UserRole.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem enviar emails de teste")
+    
+    config = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+    if not config:
+        raise HTTPException(status_code=400, detail="Configuração de email não encontrada")
+    
+    smtp_host = config.get("smtp_host")
+    smtp_port = config.get("smtp_port", 587)
+    smtp_username = config.get("smtp_username")
+    smtp_password = config.get("smtp_password")
+    smtp_use_tls = config.get("smtp_use_tls", True)
+    smtp_use_ssl = config.get("smtp_use_ssl", False)
+    email_from = config.get("email_from", smtp_username)
+    email_from_name = config.get("email_from_name", "PDPV Tickets")
+    
+    if not smtp_host or not smtp_username or not smtp_password:
+        raise HTTPException(status_code=400, detail="Configuração SMTP incompleta")
+    
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = f"{email_from_name} <{email_from}>"
+        msg['To'] = request.recipient_email
+        msg['Subject'] = "Teste de Configuração SMTP - PDPV Tickets"
+        
+        body = """
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #f97316;">Teste de Email</h2>
+            <p>Este é um email de teste do sistema PDPV Tickets.</p>
+            <p>Se recebeu este email, a configuração SMTP está correcta!</p>
+            <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+            <p style="color: #6b7280; font-size: 12px;">
+                Email enviado automaticamente pelo sistema PDPV Tickets
+            </p>
+        </body>
+        </html>
+        """
+        msg.attach(MIMEText(body, 'html'))
+        
+        # Connect and send
+        if smtp_use_ssl:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port)
+            if smtp_use_tls:
+                server.starttls()
+        
+        server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        
+        return {"message": f"Email de teste enviado para {request.recipient_email}"}
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=400, detail="Erro de autenticação SMTP. Verifique username e password.")
+    except smtplib.SMTPConnectError:
+        raise HTTPException(status_code=400, detail=f"Não foi possível conectar ao servidor {smtp_host}:{smtp_port}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar email: {str(e)}")
+
+
 # ============== BRANDING CONFIG ==============
 @router.get("/branding", response_model=BrandingConfigResponse)
 async def get_branding(current_user: dict = Depends(get_current_user)):
