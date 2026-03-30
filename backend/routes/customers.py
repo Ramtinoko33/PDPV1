@@ -195,11 +195,13 @@ async def search_customers(
         email = c.get("emails", [])[0] if c.get("emails") else ""
         name = c.get("name", "")
         
-        # Get plates
+        # Get vehicles (as objects with plate + model)
         if c.get("from_ticket"):
             plates = [c.get("_plate")] if c.get("_plate") else []
+            vehicles = [{"plate": p, "model": None} for p in plates]
         else:
-            plates = [v["plate"] for v in vehicles_by_customer.get(cid, [])]
+            vehicles = vehicles_by_customer.get(cid, [])
+            plates = [v["plate"] for v in vehicles]
         
         # Deduplicate by name+phone combination
         combo_key = f"{name}_{phone}"
@@ -215,6 +217,7 @@ async def search_customers(
             "phones": c.get("phones", []),
             "emails": c.get("emails", []),
             "plates": plates,
+            "vehicles": vehicles,
             "display": f"{name}" + (f" - {phone}" if phone else "") + (f" - {email}" if email else "") + (f" - {', '.join(plates)}" if plates else ""),
             "from_ticket": c.get("from_ticket", False)
         })
