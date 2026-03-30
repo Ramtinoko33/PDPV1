@@ -1206,7 +1206,7 @@ async def seed_data():
     admin_doc = {
         "id": str(uuid.uuid4()),
         "email": "admin@pdpv.pt",
-        "password_hash": pwd_context.hash("admin123"),
+        "password_hash": pwd_context.hash("HCNMEnKMLq"),
         "name": "Administrador",
         "role": UserRole.ADMIN.value,
         "created_at": now
