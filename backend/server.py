@@ -1313,6 +1313,7 @@ async def admin_generate_vapid_keys(current_user: dict = Depends(get_current_use
         VAPID_PRIVATE_KEY = keys["vapid_private_key"]
         VAPID_KEYS_VALID = True
         logger.info(f"[VAPID] Admin {current_user['email']} regenerated VAPID keys")
+        sync_vapid_to_notification_service()
         return {"status": "success", "public_key": VAPID_PUBLIC_KEY}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar chaves: {str(e)}")
@@ -1734,6 +1735,17 @@ def validate_vapid_keys():
 
 validate_vapid_keys()
 
+# Sync VAPID state to notification_service module
+from services.notification_service import set_vapid_keys_valid as ns_set_valid, set_vapid_keys as ns_set_keys
+
+def sync_vapid_to_notification_service():
+    """Sync VAPID keys and validity to notification_service module."""
+    ns_set_valid(VAPID_KEYS_VALID)
+    if VAPID_KEYS_VALID:
+        ns_set_keys(VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+
+sync_vapid_to_notification_service()
+
 # ============== VAPID DB FALLBACK + AUTO-GENERATE ==============
 async def generate_and_store_vapid_keys() -> dict:
     """Generate new VAPID keys and persist in DB."""
@@ -1780,6 +1792,7 @@ async def load_and_validate_vapid_keys():
             VAPID_PRIVATE_KEY = config["vapid_private_key"]
             VAPID_KEYS_VALID = True
             logger.info("[VAPID] Loaded keys from DB - Web Push enabled")
+            sync_vapid_to_notification_service()
             return
     except Exception as e:
         logger.warning(f"[VAPID] DB key load failed: {e}")
@@ -1792,6 +1805,7 @@ async def load_and_validate_vapid_keys():
         VAPID_PRIVATE_KEY = keys["vapid_private_key"]
         VAPID_KEYS_VALID = True
         logger.info("[VAPID] Auto-generated new VAPID keys - Web Push enabled")
+        sync_vapid_to_notification_service()
     except Exception as e:
         logger.error(f"[VAPID] Auto-generate failed: {e}")
         VAPID_KEYS_VALID = False
