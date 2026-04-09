@@ -140,6 +140,11 @@ class TicketResponse(BaseModel):
     intake_source: Optional[str] = None
     intake_source_type: Optional[str] = None
     telegram_username: Optional[str] = None
+    # Acceptance intent fields (from quote response questionnaire)
+    acceptance_intent: Optional[str] = None
+    acceptance_intent_label: Optional[str] = None
+    preferred_date: Optional[str] = None
+    preferred_period: Optional[str] = None
 
 
 class TicketStatusHistoryResponse(BaseModel):

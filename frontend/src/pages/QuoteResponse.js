@@ -22,7 +22,9 @@ import {
   Mail,
   FileDown,
   AlertTriangle,
-  MessageSquare
+  MessageSquare,
+  Calendar,
+  PhoneCall
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -36,6 +38,13 @@ const REJECTION_REASONS = [
   { code: 'nao_entendeu', label: 'Não entendeu o orçamento' },
   { code: 'quer_falar_primeiro', label: 'Quer falar com a oficina primeiro' },
   { code: 'outro', label: 'Outro' }
+];
+
+// Acceptance intents
+const ACCEPTANCE_INTENTS = [
+  { code: 'agendar', label: 'Quero agendar para uma data específica', icon: Calendar },
+  { code: 'avancar', label: 'Podem avançar com o serviço', icon: Wrench },
+  { code: 'contactar', label: 'Tenho dúvidas / Quero ser contactado', icon: PhoneCall },
 ];
 
 const QuoteResponse = () => {
@@ -56,6 +65,12 @@ const QuoteResponse = () => {
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [rejectionReasonCode, setRejectionReasonCode] = useState('');
   const [rejectionReasonNote, setRejectionReasonNote] = useState('');
+  
+  // Acceptance intent state
+  const [showAcceptanceModal, setShowAcceptanceModal] = useState(false);
+  const [acceptanceIntent, setAcceptanceIntent] = useState('');
+  const [preferredDate, setPreferredDate] = useState('');
+  const [preferredPeriod, setPreferredPeriod] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -155,15 +170,37 @@ const QuoteResponse = () => {
       return;
     }
     
+    // Show acceptance modal
+    setShowAcceptanceModal(true);
+  };
+
+  const confirmAcceptance = async () => {
+    if (!acceptanceIntent) {
+      toast.error('Selecione como pretende avançar');
+      return;
+    }
+    if (acceptanceIntent === 'agendar' && !preferredDate) {
+      toast.error('Selecione a data pretendida');
+      return;
+    }
+    if (acceptanceIntent === 'agendar' && !preferredPeriod) {
+      toast.error('Selecione a altura do dia (manhã ou tarde)');
+      return;
+    }
+
     setSubmitting(true);
-    setResponse(status);
+    setResponse('ACCEPTED');
     try {
       await axios.post(`${API_URL}/api/public/quote/${token}/respond`, {
-        status,
+        status: 'ACCEPTED',
         comments,
-        accepted_option_ids: status === 'ACCEPTED' ? selectedOptions : []
+        accepted_option_ids: selectedOptions,
+        acceptance_intent: acceptanceIntent,
+        preferred_date: acceptanceIntent === 'agendar' ? preferredDate : null,
+        preferred_period: acceptanceIntent === 'agendar' ? preferredPeriod : null,
       });
       setSubmitted(true);
+      setShowAcceptanceModal(false);
       toast.success('Orçamento aceite!');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Erro ao submeter resposta');
@@ -695,6 +732,154 @@ const QuoteResponse = () => {
                     <XCircle className="h-4 w-4 mr-2" />
                   )}
                   Confirmar Rejeição
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Acceptance Intent Modal */}
+      {showAcceptanceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-full" style={{ backgroundColor: `${branding?.primary_color || '#f97316'}20` }}>
+                  <CheckCircle className="h-6 w-6" style={{ color: branding?.primary_color || '#f97316' }} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900">Como pretende avançar?</h3>
+                  <p className="text-sm text-zinc-500">Ajude-nos a organizar o seu serviço da melhor forma.</p>
+                </div>
+              </div>
+
+              {/* Acceptance Intents */}
+              <div className="space-y-2 mb-4">
+                {ACCEPTANCE_INTENTS.map((intent) => {
+                  const Icon = intent.icon;
+                  return (
+                    <label 
+                      key={intent.code}
+                      className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        acceptanceIntent === intent.code 
+                          ? 'border-emerald-500 bg-emerald-50' 
+                          : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      }`}
+                      data-testid={`acceptance-intent-${intent.code}`}
+                    >
+                      <input
+                        type="radio"
+                        name="acceptanceIntent"
+                        value={intent.code}
+                        checked={acceptanceIntent === intent.code}
+                        onChange={(e) => {
+                          setAcceptanceIntent(e.target.value);
+                          if (e.target.value !== 'agendar') {
+                            setPreferredDate('');
+                            setPreferredPeriod('');
+                          }
+                        }}
+                        className="w-4 h-4 text-emerald-600 border-zinc-300 focus:ring-emerald-500"
+                      />
+                      <Icon className={`h-5 w-5 shrink-0 ${acceptanceIntent === intent.code ? 'text-emerald-600' : 'text-zinc-400'}`} />
+                      <span className="text-sm text-zinc-700 font-medium">{intent.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Scheduling fields - only show when "agendar" is selected */}
+              {acceptanceIntent === 'agendar' && (
+                <div className="space-y-3 mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <div>
+                    <Label htmlFor="preferred-date" className="text-sm font-medium text-zinc-700 mb-1.5 block">
+                      Data pretendida <span className="text-red-500">*</span>
+                    </Label>
+                    <input
+                      id="preferred-date"
+                      type="date"
+                      value={preferredDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setPreferredDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-md border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      data-testid="preferred-date-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-zinc-700 mb-1.5 block">
+                      Altura do dia <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all text-sm font-medium ${
+                          preferredPeriod === 'manha'
+                            ? 'border-emerald-500 bg-white text-emerald-700'
+                            : 'border-zinc-200 hover:border-zinc-300 text-zinc-600'
+                        }`}
+                        data-testid="period-manha"
+                      >
+                        <input
+                          type="radio"
+                          name="preferredPeriod"
+                          value="manha"
+                          checked={preferredPeriod === 'manha'}
+                          onChange={(e) => setPreferredPeriod(e.target.value)}
+                          className="sr-only"
+                        />
+                        Manhã
+                      </label>
+                      <label
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all text-sm font-medium ${
+                          preferredPeriod === 'tarde'
+                            ? 'border-emerald-500 bg-white text-emerald-700'
+                            : 'border-zinc-200 hover:border-zinc-300 text-zinc-600'
+                        }`}
+                        data-testid="period-tarde"
+                      >
+                        <input
+                          type="radio"
+                          name="preferredPeriod"
+                          value="tarde"
+                          checked={preferredPeriod === 'tarde'}
+                          onChange={(e) => setPreferredPeriod(e.target.value)}
+                          className="sr-only"
+                        />
+                        Tarde
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowAcceptanceModal(false);
+                    setAcceptanceIntent('');
+                    setPreferredDate('');
+                    setPreferredPeriod('');
+                  }}
+                  disabled={submitting}
+                >
+                  Voltar
+                </Button>
+                <Button
+                  className="flex-1 text-white font-bold"
+                  style={{ backgroundColor: '#059669' }}
+                  onClick={confirmAcceptance}
+                  disabled={submitting || !acceptanceIntent || (acceptanceIntent === 'agendar' && (!preferredDate || !preferredPeriod))}
+                  data-testid="confirm-acceptance-btn"
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Confirmar Aceitação
                 </Button>
               </div>
             </div>

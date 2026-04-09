@@ -69,6 +69,16 @@ class QuoteResponseRequest(BaseModel):
     rejection_reason_code: Optional[str] = None
     rejection_reason_label: Optional[str] = None
     rejection_reason_note: Optional[str] = None
+    # Acceptance intent fields
+    acceptance_intent: Optional[str] = None  # "agendar", "avancar", "contactar"
+    preferred_date: Optional[str] = None
+    preferred_period: Optional[str] = None  # "manha", "tarde"
+
+ACCEPTANCE_INTENT_CODES = {
+    "agendar": "Quero agendar para uma data específica",
+    "avancar": "Podem avançar com o serviço",
+    "contactar": "Tenho dúvidas / Quero ser contactado",
+}
 
 class QuoteResponseData(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -439,6 +449,16 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         if accepted_total > 0:
             ticket_update["accepted_total"] = accepted_total
             ticket_update["accepted_count"] = accepted_count
+        # Save acceptance intent
+        if response_data.acceptance_intent:
+            ticket_update["acceptance_intent"] = response_data.acceptance_intent
+            ticket_update["acceptance_intent_label"] = ACCEPTANCE_INTENT_CODES.get(
+                response_data.acceptance_intent, response_data.acceptance_intent
+            )
+        if response_data.preferred_date:
+            ticket_update["preferred_date"] = response_data.preferred_date
+        if response_data.preferred_period:
+            ticket_update["preferred_period"] = response_data.preferred_period
     else:
         ticket_update["status"] = TicketStatus.REJEITADO_LINK.value
         ticket_update["rejected_at"] = now.isoformat()
@@ -462,8 +482,25 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         for desc in accepted_descriptions:
             note_body += f"  - {desc}\n"
         note_body += f"Total aceite: {accepted_total:.2f}€"
+        # Add acceptance intent to note
+        if response_data.acceptance_intent:
+            intent_label = ACCEPTANCE_INTENT_CODES.get(response_data.acceptance_intent, response_data.acceptance_intent)
+            note_body += f"\n\nIntenção: {intent_label}"
+            if response_data.acceptance_intent == "agendar" and response_data.preferred_date:
+                period_text = "Manhã" if response_data.preferred_period == "manha" else "Tarde" if response_data.preferred_period == "tarde" else ""
+                note_body += f"\nData pretendida: {response_data.preferred_date}"
+                if period_text:
+                    note_body += f" ({period_text})"
     else:
         note_body = f"Cliente respondeu ao orçamento: {status_text}"
+        if response_data.status == "ACCEPTED" and response_data.acceptance_intent:
+            intent_label = ACCEPTANCE_INTENT_CODES.get(response_data.acceptance_intent, response_data.acceptance_intent)
+            note_body += f"\nIntenção: {intent_label}"
+            if response_data.acceptance_intent == "agendar" and response_data.preferred_date:
+                period_text = "Manhã" if response_data.preferred_period == "manha" else "Tarde" if response_data.preferred_period == "tarde" else ""
+                note_body += f"\nData pretendida: {response_data.preferred_date}"
+                if period_text:
+                    note_body += f" ({period_text})"
         if response_data.status == "REJECTED" and response_data.rejection_reason_code:
             reason_label = REJECTION_REASON_CODES.get(
                 response_data.rejection_reason_code,
@@ -490,6 +527,14 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
     notification_body = f"O cliente {ticket['customer_name']} {status_text.lower()} o orçamento do ticket {ticket['ticket_number']}"
     if accepted_total > 0:
         notification_body += f" (Total: {accepted_total:.2f}€)"
+    if response_data.acceptance_intent:
+        intent_label = ACCEPTANCE_INTENT_CODES.get(response_data.acceptance_intent, "")
+        notification_body += f"\n{intent_label}"
+        if response_data.acceptance_intent == "agendar" and response_data.preferred_date:
+            period_text = "Manhã" if response_data.preferred_period == "manha" else "Tarde" if response_data.preferred_period == "tarde" else ""
+            notification_body += f" - {response_data.preferred_date}"
+            if period_text:
+                notification_body += f" ({period_text})"
     
     if ticket.get("assigned_to_user_id"):
         asyncio.create_task(create_notification(

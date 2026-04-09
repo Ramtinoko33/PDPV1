@@ -1,0 +1,78 @@
+{
+  "summary": "PDPV Tickets Iteration 19 - Acceptance Questionnaire Feature tested. All 12 backend tests pass. Frontend acceptance modal with 3 intent options (agendar/avancar/contactar), date picker, and period selector (manha/tarde) working correctly. Fixed missing acceptance_intent fields in TicketResponse schema.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_acceptance_questionnaire.py",
+    "/app/test_reports/pytest/pytest_acceptance_questionnaire.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/schemas/ticket.py",
+    "/app/backend/tests/test_acceptance_questionnaire.py"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 passed)",
+    "frontend": "100% (acceptance modal, rejection modal, all flows verified)"
+  },
+  "seed_data_creation": "Created test tickets with quote options and quote links for UI testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Acceptance questionnaire feature fully tested. The POST /api/public/quote/{token}/respond endpoint accepts acceptance_intent ('agendar', 'avancar', 'contactar'), preferred_date, and preferred_period fields. These are saved to the ticket and returned via GET /api/tickets/{id}. Frontend shows acceptance modal with 3 options when clicking Accept. Selecting 'agendar' shows date picker and morning/afternoon selector. All regression tests pass (login, public branding, tire analysis report, rejection flow).",
+  "verified_features": {
+    "acceptance_questionnaire": {
+      "status": "PASS",
+      "description": "New acceptance intent modal with 3 options: agendar (schedule), avancar (proceed), contactar (contact)",
+      "backend_fields": ["acceptance_intent", "acceptance_intent_label", "preferred_date", "preferred_period"],
+      "frontend_elements": ["acceptance modal", "date picker", "period selector (manha/tarde)", "confirm button"]
+    },
+    "acceptance_intent_agendar": {
+      "status": "PASS",
+      "description": "Schedule for specific date with date picker and morning/afternoon selector"
+    },
+    "acceptance_intent_avancar": {
+      "status": "PASS",
+      "description": "Proceed with service - no additional fields required"
+    },
+    "acceptance_intent_contactar": {
+      "status": "PASS",
+      "description": "Customer wants to be contacted - no additional fields required"
+    },
+    "rejection_flow": {
+      "status": "PASS",
+      "description": "Rejection modal with 7 reason options still works correctly"
+    },
+    "public_branding_endpoint": {
+      "status": "PASS",
+      "endpoint": "GET /api/public/branding"
+    },
+    "tire_analysis_report": {
+      "status": "PASS",
+      "endpoint": "GET /api/admin/reports/tire-analysis"
+    },
+    "login_flow": {
+      "status": "PASS",
+      "credentials": "admin@pdpv.pt / HCNMEnKMLq"
+    },
+    "backward_compatibility": {
+      "status": "PASS",
+      "description": "Acceptance without intent fields still works (old behavior)"
+    }
+  },
+  "bug_fix_applied": {
+    "issue": "acceptance_intent fields not returned in GET /api/tickets/{id} response",
+    "fix": "Added acceptance_intent, acceptance_intent_label, preferred_date, preferred_period to TicketResponse schema in /app/backend/schemas/ticket.py",
+    "verified": true
+  },
+  "test_credentials": {
+    "admin": "admin@pdpv.pt / HCNMEnKMLq"
+  }
+}
