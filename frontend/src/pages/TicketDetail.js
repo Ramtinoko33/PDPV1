@@ -1852,6 +1852,41 @@ Qualquer dúvida estamos disponíveis.`;
                       </div>
                     </div>
                   )}
+
+                  {/* Acceptance Intent Details */}
+                  {ticket.quote_response_status === 'ACCEPTED' && ticket.acceptance_intent && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mt-2" data-testid="acceptance-intent-card">
+                      <h4 className="font-medium text-emerald-800 flex items-center gap-2 mb-2">
+                        <CheckCircle className="h-4 w-4" />
+                        Intenção do Cliente
+                      </h4>
+                      <div className="space-y-1 text-sm">
+                        <p className="text-emerald-700">
+                          <span className="font-medium">
+                            {ticket.acceptance_intent === 'agendar' && '📅 '}
+                            {ticket.acceptance_intent === 'avancar' && '🔧 '}
+                            {ticket.acceptance_intent === 'contactar' && '📞 '}
+                          </span>
+                          {ticket.acceptance_intent_label || ticket.acceptance_intent}
+                        </p>
+                        {ticket.acceptance_intent === 'agendar' && ticket.preferred_date && (
+                          <p className="text-emerald-700 font-semibold">
+                            Data pretendida: {new Date(ticket.preferred_date + 'T00:00:00').toLocaleDateString('pt-PT')}
+                            {ticket.preferred_period && (
+                              <span className="ml-1">
+                                ({ticket.preferred_period === 'manha' ? 'Manhã' : 'Tarde'})
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        {ticket.quote_response_at && (
+                          <p className="text-emerald-500 text-xs mt-2">
+                            Aceite em {formatDate(ticket.quote_response_at)} via link do cliente
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <form onSubmit={sendMessage} className="space-y-4">
