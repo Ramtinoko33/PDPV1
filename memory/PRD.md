@@ -32,7 +32,7 @@ Sistema completo de gestão de tickets para oficina de veículos (Pneus D. Pedro
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
-│   │   │   ├── AlertsPage.js (NEW - /alertas)
+│   │   │   ├── AlertsPage.js (/alertas)
 │   │   │   ├── QuoteResponse.js, TicketDetail.js, IntakePage.js, etc.
 │   │   ├── components/Layout.js (sidebar with alerts badge)
 │   │   ├── App.js (routes including /alertas)
@@ -45,16 +45,19 @@ Sistema completo de gestão de tickets para oficina de veículos (Pneus D. Pedro
 - [x] Acceptance questionnaire (agendar/avançar/contactar + date/period)
 - [x] Rejection questionnaire (7 reason codes)
 - [x] PDF generation, Email/Telegram/Web Push notifications
-- [x] Admin dashboard, Customer management, Reports (tire analysis, rejection)
+- [x] Admin dashboard, Customer management, Reports
 - [x] Backend refactoring complete (62% reduction)
 - [x] Vehicle plate suggestions in ticket creation
 - [x] VAPID push notification sync fix
-- [x] **Telegram Alerts Module - Backend** (webhook, CRUD, message buffer, GPT-5.2 Vision, conversion)
-- [x] **Telegram Alerts Module - Frontend** (/alertas page, stats, SLA colors, detail modal, convert modal)
-- [x] **has_alerts_access** field on User model + toggle in UserManagement
-- [x] **AI Prompt updated** for CEINOR GENES software screenshots
-- [x] **Conversion UI** reuses IntakePage pattern (customer search, auto-create, SLA compute)
-- [x] **Base64 storage limit** bumped to 5MB
+- [x] Telegram Alerts Module - Backend (webhook, CRUD, message buffer, GPT-5.2 Vision, conversion)
+- [x] Telegram Alerts Module - Frontend (/alertas page, stats, SLA colors, detail modal, convert modal)
+- [x] has_alerts_access field on User model + toggle in UserManagement
+- [x] AI Prompt updated for CEINOR GENES software screenshots
+- [x] Conversion UI reuses IntakePage pattern (customer search, auto-create, SLA compute)
+- [x] Base64 storage limit bumped to 5MB
+- [x] Webhook registered for @pdpv_alertas_bot (preview)
+- [x] Full flow tested: text message → alert created → fields edited → converted to ticket → ticket detail loads
+- [x] Bug fix: /tickets/{id}/alerts 500 error when alert-converted ticket viewed (filter telegram_alerts from ticket alerts query)
 
 ## Bugs Fixed (Apr 2026)
 - [x] VAPID push notifications not sending
@@ -62,24 +65,18 @@ Sistema completo de gestão de tickets para oficina de veículos (Pneus D. Pedro
 - [x] Public quote page "blocked:oth"
 - [x] Reports tire-analysis 404, rejection reasons model mismatch
 - [x] Seed admin password mismatch
+- [x] /tickets/{id}/alerts 500 error for alert-converted tickets (telegram_alerts shared alerts collection conflict)
 
 ## Pending / Backlog
-- [ ] P0: Register Telegram webhook for @pdpv_alertas_bot (setup-webhook endpoint ready, needs production URL)
+- [ ] P0: Register webhook for production URL (https://tickets.pneusdpedrov.com) via "Configurar Webhook" button
+- [ ] P0: Test real Telegram flow with actual photo from mechanic (Vision extraction)
 - [ ] P1: WhatsApp Business Cloud API integration (paused by user, needs token)
 - [ ] P3: Excel import functionality
 - [ ] P3: Dedicated client portal
 
-## 3rd Party Integrations
-- Emergent Object Storage (Emergent LLM Key)
-- Resend (User API Key)
-- Telegram Bot for notifications (User API Key)
-- Telegram Bot for Alerts (Bot: 8660518959)
-- OpenAI GPT-5.2 Vision (Emergent LLM Key) - for alert image analysis
-- WhatsApp Business Cloud API (paused)
-
 ## Key API Endpoints - Telegram Alerts
 - POST /api/telegram-alerts/webhook - Receive bot updates
-- POST /api/telegram-alerts/setup-webhook - Register webhook (admin)
+- POST /api/telegram-alerts/setup-webhook - Register webhook (admin, accepts custom URL)
 - GET /api/telegram-alerts/alerts - List alerts (filters: status, assigned_to, pagination)
 - GET /api/telegram-alerts/alerts/stats - Stats (pending/converted/dismissed/total)
 - GET /api/telegram-alerts/alerts-count - Pending count for sidebar badge
@@ -89,6 +86,14 @@ Sistema completo de gestão de tickets para oficina de veículos (Pneus D. Pedro
 - POST /api/telegram-alerts/alerts/{id}/dismiss - Dismiss alert
 - DELETE /api/telegram-alerts/alerts/{id} - Delete (admin only)
 - GET /api/telegram-alerts/alerts/{id}/photo/{att_id} - Get photo
+
+## 3rd Party Integrations
+- Emergent Object Storage (Emergent LLM Key)
+- Resend (User API Key)
+- Telegram Bot for notifications (Token in .env)
+- Telegram Bot for Alerts (Token: 8660518959 in .env)
+- OpenAI GPT-5.2 Vision (Emergent LLM Key) - for alert image analysis
+- WhatsApp Business Cloud API (paused)
 
 ## Environments
 - Preview: https://quote-management-4.preview.emergentagent.com

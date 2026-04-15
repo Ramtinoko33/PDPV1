@@ -136,25 +136,35 @@ MAX_PHOTO_SIZE_MB = 3
 
 # ============== WEBHOOK SETUP ==============
 @router.post("/setup-webhook")
-async def setup_alerts_webhook(current_user: dict = Depends(get_current_user)):
+async def setup_alerts_webhook(request: Request, current_user: dict = Depends(get_current_user)):
     """Setup Telegram webhook for alerts bot. Admin only."""
     if current_user["role"] not in ("ADMIN", "SUPERVISOR"):
         raise HTTPException(status_code=403, detail="Sem permissão")
 
-    # Determine webhook URL from frontend URL settings
-    email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
-    frontend_url = email_settings.get("frontend_url", "") if email_settings else ""
+    # Allow custom URL in body
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    custom_url = body.get("webhook_url") if body else None
 
-    if not frontend_url:
-        # Fallback to FRONTEND_URL env
-        import os
-        frontend_url = os.environ.get("FRONTEND_URL", "")
+    if custom_url:
+        webhook_url = custom_url
+    else:
+        # Determine webhook URL from frontend URL settings
+        email_settings = await db.settings.find_one({"type": "email_config"}, {"_id": 0})
+        frontend_url = email_settings.get("frontend_url", "") if email_settings else ""
 
-    if not frontend_url:
-        raise HTTPException(status_code=400, detail="URL do frontend não configurado. Configure nas definições de email.")
+        if not frontend_url:
+            import os
+            frontend_url = os.environ.get("FRONTEND_URL", "") or os.environ.get("APP_URL", "")
 
-    # Build webhook URL (same domain, /api prefix)
-    webhook_url = f"{frontend_url}/api/telegram-alerts/webhook"
+        if not frontend_url:
+            raise HTTPException(status_code=400, detail="URL do frontend não configurado. Configure nas definições de email.")
+
+        webhook_url = f"{frontend_url}/api/telegram-alerts/webhook"
+
     result = await service.setup_webhook(webhook_url)
 
     if result.get("success"):

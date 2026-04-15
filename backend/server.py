@@ -531,7 +531,7 @@ async def list_notes(ticket_id: str, current_user: dict = Depends(get_current_us
 async def list_alerts(ticket_id: str, current_user: dict = Depends(get_current_user)):
     current_user
     
-    alerts = await db.alerts.find({"ticket_id": ticket_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    alerts = await db.alerts.find({"ticket_id": ticket_id, "source": {"$ne": "telegram_alerts"}}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return [AlertResponse(**a) for a in alerts]
 
 @api_router.put("/alerts/{alert_id}/resolve")
