@@ -494,13 +494,13 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
     ticket_type = data.get("ticket_type") or "ORCAMENTO_MECANICA"
     assigned_to = data.get("assigned_to") or alert.get("assigned_to")
 
-    # Append items to description if available
+    # Append items to description only if not already present
     items_list = alert.get("items", [])
     if items_list:
         items_text = ", ".join(items_list)
-        if description:
+        if description and items_text not in description:
             description = f"{description} | Itens: {items_text}"
-        else:
+        elif not description:
             description = f"Itens: {items_text}"
 
     # Auto-create customer and vehicle
