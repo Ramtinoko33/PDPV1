@@ -576,7 +576,7 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
 
     await db.tickets.insert_one(ticket_doc)
 
-    # Transfer attachments
+    # Transfer attachments (marked as internal - not shown to clients)
     for att in alert.get("attachments", []):
         att_doc = {
             "id": att.get("id", str(uuid.uuid4())),
@@ -588,6 +588,7 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
             "storage_path": att.get("storage_path"),
             "uploaded_by_user_id": converted_by,
             "uploaded_at": now.isoformat(),
+            "source": "telegram_alert",
         }
         await db.attachments.insert_one(att_doc)
 

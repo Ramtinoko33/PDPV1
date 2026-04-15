@@ -315,7 +315,7 @@ async def get_public_quote(token: str):
     quote_options = await db.quote_options.find({"ticket_id": quote_link["ticket_id"]}, {"_id": 0}).to_list(100)
     
     ticket_attachments_raw = await db.attachments.find(
-        {"ticket_id": quote_link["ticket_id"]},
+        {"ticket_id": quote_link["ticket_id"], "source": {"$ne": "telegram_alert"}},
         {"_id": 0, "id": 1, "original_filename": 1}
     ).to_list(100)
     attachment_map = {a["id"]: a["original_filename"] for a in ticket_attachments_raw}
