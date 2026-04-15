@@ -383,17 +383,35 @@ async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> 
         f"✅ Alerta atribuído a <b>{user_name}</b>.\n\nPode enviar nova foto ou texto para criar outro alerta."
     )
 
-    # Create notification for assigned user
+    # Create notification for assigned user AND admin
     try:
         from services.notification_service import create_notification
         alert = await db.alerts.find_one({"id": alert_id}, {"_id": 0})
         plate_info = f" ({alert['license_plate']})" if alert and alert.get("license_plate") else ""
+        mechanic_name = alert.get("created_by", {}).get("name", "Mecânico") if alert else "Mecânico"
+        notif_body = f"Alerta de {mechanic_name}{plate_info} - atribuído a {user_name}"
+
+        # Notify assigned agent
         await create_notification(
             user_id=user_id,
-            title="Novo Alerta",
-            body=f"Alerta recebido{plate_info} - atribuído a si",
+            title="Novo Alerta Telegram",
+            body=notif_body,
             notification_type="info",
         )
+
+        # Notify all admins
+        admins = await db.users.find(
+            {"role": "ADMIN", "is_active": {"$ne": False}},
+            {"_id": 0, "id": 1}
+        ).to_list(10)
+        for admin in admins:
+            if admin["id"] != user_id:
+                await create_notification(
+                    user_id=admin["id"],
+                    title="Novo Alerta Telegram",
+                    body=notif_body,
+                    notification_type="info",
+                )
     except Exception as e:
         logger.warning(f"[ALERTS] Notification error: {e}")
 
@@ -606,6 +624,17 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
     )
 
     logger.info(f"[ALERTS] Converted alert {alert_id} to ticket {ticket_number}")
+
+    # Notify mechanic via Telegram that alert was converted
+    mechanic_chat_id = alert.get("telegram_chat_id")
+    if mechanic_chat_id:
+        plate_text = f" ({vehicle_plate})" if vehicle_plate else ""
+        await send_message(
+            mechanic_chat_id,
+            f"📋 O seu alerta{plate_text} foi convertido no ticket <b>{ticket_number}</b>.\n"
+            f"Cliente: {customer_name}"
+        )
+
     return {"ticket_id": ticket_id, "ticket_number": ticket_number, "customer_created": was_created}
 
 

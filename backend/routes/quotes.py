@@ -554,6 +554,14 @@ async def respond_to_quote(token: str, response_data: QuoteResponseRequest):
         ticket_number=ticket["ticket_number"]
     ))
     
+    # Notify mechanic via Telegram if ticket came from alert
+    if ticket.get("source_alert_id"):
+        asyncio.create_task(_notify_mechanic_quote_response(
+            ticket=ticket,
+            status_text=status_text,
+            accepted_total=accepted_total,
+        ))
+    
     return {
         "status": "success",
         "message": f"Resposta registada: {status_text}"
@@ -815,3 +823,40 @@ async def get_public_branding():
         "quote_page_rejected_title": config.get("quote_page_rejected_title"),
         "quote_page_rejected_message": config.get("quote_page_rejected_message")
     }
+
+
+
+async def _notify_mechanic_quote_response(ticket: dict, status_text: str, accepted_total: float = 0):
+    """Send Telegram message to mechanic when client accepts/rejects quote."""
+    try:
+        alert = await db.alerts.find_one(
+            {"id": ticket["source_alert_id"], "source": "telegram_alerts"},
+            {"_id": 0, "telegram_chat_id": 1, "license_plate": 1}
+        )
+        if not alert or not alert.get("telegram_chat_id"):
+            return
+
+        from modules.telegram_alerts.service import send_message
+
+        plate = ticket.get("vehicle_plate") or alert.get("license_plate") or ""
+        plate_text = f" ({plate})" if plate else ""
+        ticket_num = ticket.get("ticket_number", "")
+        customer = ticket.get("customer_name", "Cliente")
+
+        if status_text == "ACEITE":
+            total_text = f"\nValor aceite: {accepted_total:.2f}€" if accepted_total > 0 else ""
+            await send_message(
+                alert["telegram_chat_id"],
+                f"✅ Orçamento <b>ACEITE</b> pelo cliente!\n"
+                f"Ticket: {ticket_num}{plate_text}\n"
+                f"Cliente: {customer}{total_text}"
+            )
+        else:
+            await send_message(
+                alert["telegram_chat_id"],
+                f"❌ Orçamento <b>RECUSADO</b> pelo cliente.\n"
+                f"Ticket: {ticket_num}{plate_text}\n"
+                f"Cliente: {customer}"
+            )
+    except Exception as e:
+        logging.warning(f"[QUOTES] Mechanic Telegram notify error: {e}")
