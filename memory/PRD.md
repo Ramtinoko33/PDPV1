@@ -49,51 +49,33 @@ Sistema completo de gestão de tickets para oficina de veículos (Pneus D. Pedro
 - [x] Backend refactoring complete (62% reduction)
 - [x] Vehicle plate suggestions in ticket creation
 - [x] VAPID push notification sync fix
-- [x] Telegram Alerts Module - Backend (webhook, CRUD, message buffer, GPT-5.2 Vision, conversion)
-- [x] Telegram Alerts Module - Frontend (/alertas page, stats, SLA colors, detail modal, convert modal)
+- [x] Telegram Alerts - Backend (webhook, CRUD, message buffer, GPT-5.2 Vision, conversion)
+- [x] Telegram Alerts - Frontend (/alertas page, stats, SLA colors, detail modal, convert modal)
 - [x] has_alerts_access field on User model + toggle in UserManagement
-- [x] AI Prompt updated for CEINOR GENES software screenshots
+- [x] AI Prompt for CEINOR GENES screenshots (is_alert, license_plate, client_name, items)
 - [x] Conversion UI reuses IntakePage pattern (customer search, auto-create, SLA compute)
-- [x] Base64 storage limit bumped to 5MB
-- [x] Webhook registered for @pdpv_alertas_bot (preview)
-- [x] Full flow tested: text message → alert created → fields edited → converted to ticket → ticket detail loads
-- [x] Bug fix: /tickets/{id}/alerts 500 error when alert-converted ticket viewed (filter telegram_alerts from ticket alerts query)
+- [x] Base64 storage limit 5MB, Object Storage via put_object
+- [x] Webhook registered for @pdpv_alertas_bot on PRODUCTION (tickets.pneusdpedrov.com)
+- [x] GPT-5.2 Vision tested and validated (extracts plate, name, items from CEINOR GENES screenshots)
+- [x] Photo display in alert detail modal (base64 and Object Storage)
+- [x] Bug fix: /tickets/{id}/alerts 500 (telegram_alerts collection conflict)
+- [x] Bug fix: storage_service import (upload_object → put_object)
+- [x] Bug fix: get_download_url → get_object for photo endpoint
 
 ## Bugs Fixed (Apr 2026)
 - [x] VAPID push notifications not sending
 - [x] Vehicle plates not showing in ticket creation
 - [x] Public quote page "blocked:oth"
-- [x] Reports tire-analysis 404, rejection reasons model mismatch
+- [x] Reports tire-analysis 404
 - [x] Seed admin password mismatch
-- [x] /tickets/{id}/alerts 500 error for alert-converted tickets (telegram_alerts shared alerts collection conflict)
+- [x] /tickets/{id}/alerts 500 for alert-converted tickets
+- [x] storage_service.upload_object → put_object
+- [x] get_download_url → get_object for photo retrieval
 
 ## Pending / Backlog
-- [ ] P0: Register webhook for production URL (https://tickets.pneusdpedrov.com) via "Configurar Webhook" button
-- [ ] P0: Test real Telegram flow with actual photo from mechanic (Vision extraction)
-- [ ] P1: WhatsApp Business Cloud API integration (paused by user, needs token)
+- [ ] P1: WhatsApp Business Cloud API integration (paused, needs token)
 - [ ] P3: Excel import functionality
 - [ ] P3: Dedicated client portal
-
-## Key API Endpoints - Telegram Alerts
-- POST /api/telegram-alerts/webhook - Receive bot updates
-- POST /api/telegram-alerts/setup-webhook - Register webhook (admin, accepts custom URL)
-- GET /api/telegram-alerts/alerts - List alerts (filters: status, assigned_to, pagination)
-- GET /api/telegram-alerts/alerts/stats - Stats (pending/converted/dismissed/total)
-- GET /api/telegram-alerts/alerts-count - Pending count for sidebar badge
-- GET /api/telegram-alerts/alerts/{id} - Alert detail
-- PUT /api/telegram-alerts/alerts/{id} - Update alert fields
-- POST /api/telegram-alerts/alerts/{id}/convert - Convert to ticket (full form)
-- POST /api/telegram-alerts/alerts/{id}/dismiss - Dismiss alert
-- DELETE /api/telegram-alerts/alerts/{id} - Delete (admin only)
-- GET /api/telegram-alerts/alerts/{id}/photo/{att_id} - Get photo
-
-## 3rd Party Integrations
-- Emergent Object Storage (Emergent LLM Key)
-- Resend (User API Key)
-- Telegram Bot for notifications (Token in .env)
-- Telegram Bot for Alerts (Token: 8660518959 in .env)
-- OpenAI GPT-5.2 Vision (Emergent LLM Key) - for alert image analysis
-- WhatsApp Business Cloud API (paused)
 
 ## Environments
 - Preview: https://quote-management-4.preview.emergentagent.com

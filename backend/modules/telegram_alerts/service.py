@@ -218,9 +218,9 @@ async def store_photo(image_bytes: bytes, original_filename: str, telegram_file_
 
     # Try Object Storage
     try:
-        from services.storage_service import upload_object
+        from services.storage_service import put_object
         path = f"alerts/{attachment_id}.jpg"
-        upload_object(path, image_bytes, "image/jpeg")
+        put_object(path, image_bytes, "image/jpeg")
         attachment["storage_path"] = path
         logger.info(f"[ALERTS_STORAGE] Stored in Object Storage: {path}")
         return attachment

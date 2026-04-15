@@ -285,9 +285,10 @@ async def get_alert_photo(alert_id: str, attachment_id: str, current_user: dict 
         if att.get("id") == attachment_id:
             if att.get("storage_path"):
                 try:
-                    from services.storage_service import get_download_url
-                    url = get_download_url(att["storage_path"])
-                    return {"url": url}
+                    from services.storage_service import get_object
+                    data, content_type = get_object(att["storage_path"])
+                    import base64
+                    return {"base64": base64.b64encode(data).decode("utf-8"), "file_type": content_type}
                 except Exception:
                     pass
             if att.get("base64_data"):
