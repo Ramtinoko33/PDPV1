@@ -17,6 +17,7 @@ import QuoteResponse from "./pages/QuoteResponse";
 import TicketReplyPage from "./pages/TicketReplyPage";
 import IntakePage from "./pages/IntakePage";
 import TelegramPage from "./pages/TelegramPage";
+import AlertsPage from "./pages/AlertsPage";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -127,6 +128,12 @@ function AppRoutes() {
       <Route path="/telegram" element={
         <ProtectedRoute allowedRoles={['ADMIN']}>
           <TelegramPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/alertas" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+          <AlertsPage />
         </ProtectedRoute>
       } />
       

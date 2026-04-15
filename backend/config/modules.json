@@ -1,5 +1,6 @@
 {
   "intake": true,
   "telegram": true,
-  "whatsapp": false
+  "whatsapp": false,
+  "telegram_alerts": true
 }

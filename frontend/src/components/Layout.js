@@ -21,7 +21,8 @@ import {
   BarChart3,
   Bell,
   ClipboardList,
-  Send
+  Send,
+  Zap
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -32,6 +33,7 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingIntakeCount, setPendingIntakeCount] = useState(0);
+  const [pendingAlertsCount, setPendingAlertsCount] = useState(0);
 
   // Fetch pending intake count for badge
   useEffect(() => {
@@ -51,6 +53,28 @@ const Layout = ({ children }) => {
     fetchPendingCount();
     // Refresh count every 30 seconds
     const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, getAuthHeaders]);
+
+  // Fetch pending alerts count for badge
+  useEffect(() => {
+    const fetchAlertsCount = async () => {
+      if (!user) return;
+      const hasAccess = ['ADMIN', 'SUPERVISOR'].includes(user.role) || user.has_alerts_access;
+      if (!hasAccess) return;
+
+      try {
+        const response = await axios.get(`${API_URL}/api/telegram-alerts/alerts-count`, {
+          headers: getAuthHeaders()
+        });
+        setPendingAlertsCount(response.data.count || 0);
+      } catch (error) {
+        // Module might be disabled - silent
+      }
+    };
+
+    fetchAlertsCount();
+    const interval = setInterval(fetchAlertsCount, 30000);
     return () => clearInterval(interval);
   }, [user, getAuthHeaders]);
 
@@ -87,6 +111,14 @@ const Layout = ({ children }) => {
       icon: ClipboardList,
       roles: ['ADMIN', 'SUPERVISOR'],
       badge: 'intake'
+    },
+    { 
+      path: '/alertas', 
+      label: 'Alertas', 
+      icon: Zap,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
+      badge: 'alerts',
+      requireAlertsAccess: true
     },
     { 
       path: '/tickets/archived', 
@@ -132,9 +164,12 @@ const Layout = ({ children }) => {
     },
   ];
 
-  const filteredNavItems = navItems.filter(item => 
-    item.roles.includes(user?.role)
-  );
+  const filteredNavItems = navItems.filter(item => {
+    if (!item.roles.includes(user?.role)) return false;
+    // For alerts: ADMIN/SUPERVISOR always see it, AGENT only if has_alerts_access
+    if (item.requireAlertsAccess && user?.role === 'AGENT' && !user?.has_alerts_access) return false;
+    return true;
+  });
 
   const roleLabels = {
     ADMIN: 'Administrador',
@@ -184,7 +219,7 @@ const Layout = ({ children }) => {
               {filteredNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
-                const badgeCount = item.badge === 'intake' ? pendingIntakeCount : 0;
+                const badgeCount = item.badge === 'intake' ? pendingIntakeCount : item.badge === 'alerts' ? pendingAlertsCount : 0;
                 return (
                   <Link
                     key={item.path}

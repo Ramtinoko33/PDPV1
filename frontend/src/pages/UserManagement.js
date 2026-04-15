@@ -7,10 +7,11 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Switch } from '../components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Users, Download, RefreshCw, Mail, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Download, RefreshCw, Mail, CheckCircle, XCircle, Zap } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -31,7 +32,8 @@ const UserManagement = () => {
     name: '',
     email: '',
     password: '',
-    role: 'AGENT'
+    role: 'AGENT',
+    has_alerts_access: false
   });
 
   const fetchUsers = async () => {
@@ -88,7 +90,8 @@ const UserManagement = () => {
         name: user.name,
         email: user.email,
         password: '',
-        role: user.role
+        role: user.role,
+        has_alerts_access: user.has_alerts_access || false
       });
     } else {
       setEditingUser(null);
@@ -96,7 +99,8 @@ const UserManagement = () => {
         name: '',
         email: '',
         password: '',
-        role: 'AGENT'
+        role: 'AGENT',
+        has_alerts_access: false
       });
     }
     setShowDialog(true);
@@ -108,7 +112,7 @@ const UserManagement = () => {
     try {
       if (editingUser) {
         // Update
-        const updateData = { name: formData.name, role: formData.role };
+        const updateData = { name: formData.name, role: formData.role, has_alerts_access: formData.has_alerts_access };
         if (formData.password) {
           updateData.password = formData.password;
         }
@@ -244,6 +248,7 @@ const UserManagement = () => {
                   <TableHead className="font-bold">Nome</TableHead>
                   <TableHead className="font-bold">Email</TableHead>
                   <TableHead className="font-bold">Função</TableHead>
+                  <TableHead className="font-bold text-center">Alertas</TableHead>
                   <TableHead className="font-bold">Criado</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -257,6 +262,13 @@ const UserManagement = () => {
                       <Badge className={`${getRoleBadgeClass(user.role)}`}>
                         {roleLabels[user.role]}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {(user.has_alerts_access || ['ADMIN', 'SUPERVISOR'].includes(user.role)) ? (
+                        <Zap className="h-4 w-4 text-amber-500 mx-auto" title="Acesso a alertas" />
+                      ) : (
+                        <span className="text-zinc-300">-</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-zinc-500">
                       {new Date(user.created_at).toLocaleDateString('pt-PT')}
@@ -420,6 +432,20 @@ const UserManagement = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-zinc-50 rounded-lg border">
+              <div>
+                <Label className="font-semibold flex items-center gap-1.5">
+                  <Zap className="h-4 w-4 text-amber-500" /> Acesso a Alertas Telegram
+                </Label>
+                <p className="text-xs text-zinc-500 mt-0.5">Permite ver e converter alertas dos mecânicos</p>
+              </div>
+              <Switch
+                checked={formData.has_alerts_access}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, has_alerts_access: checked }))}
+                data-testid="user-alerts-access-toggle"
+              />
             </div>
 
             <DialogFooter className="gap-2 pt-4">

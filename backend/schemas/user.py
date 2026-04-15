@@ -35,12 +35,14 @@ class UserResponse(BaseModel):
     dashboard_default_types: List[str] = []
     dashboard_default_states: List[str] = []
     dashboard_only_mine: bool = False
+    has_alerts_access: bool = False
 
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[UserRole] = None
     password: Optional[str] = None
+    has_alerts_access: Optional[bool] = None
 
 
 class DashboardConfigUpdate(BaseModel):
