@@ -73,9 +73,9 @@ async def download_telegram_photo(file_id: str) -> Optional[bytes]:
 
 
 async def get_system_users() -> List[dict]:
-    """Get active AGENT users from DB to show as assignee options in Telegram bot."""
+    """Get active AGENT users with alerts access to show as assignee options in Telegram bot."""
     users = await db.users.find(
-        {"is_active": {"$ne": False}, "role": "AGENT"},
+        {"is_active": {"$ne": False}, "role": "AGENT", "has_alerts_access": True},
         {"_id": 0, "id": 1, "name": 1, "role": 1}
     ).to_list(50)
     return users
