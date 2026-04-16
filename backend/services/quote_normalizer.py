@@ -211,6 +211,96 @@ def _remove_accents(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+# ============== TIRE BRANDS & DETECTION ==============
+TIRE_BRANDS = {
+    "michelin": {"display": "Michelin", "tagline": "qualidade premium e maior durabilidade"},
+    "bridgestone": {"display": "Bridgestone", "tagline": "tecnologia japonesa de alta performance"},
+    "firestone": {"display": "Firestone", "tagline": "boa relacao qualidade/preco"},
+    "hankook": {"display": "Hankook", "tagline": "boa performance com preco competitivo"},
+    "continental": {"display": "Continental", "tagline": "engenharia alema de confianca"},
+    "pirelli": {"display": "Pirelli", "tagline": "desempenho desportivo e aderencia superior"},
+    "goodyear": {"display": "Goodyear", "tagline": "durabilidade e conforto de conducao"},
+    "dunlop": {"display": "Dunlop", "tagline": "versatilidade e boa tracao"},
+    "yokohama": {"display": "Yokohama", "tagline": "tecnologia japonesa e performance"},
+    "kumho": {"display": "Kumho", "tagline": "qualidade coreana a preco acessivel"},
+    "nexen": {"display": "Nexen", "tagline": "preco competitivo com boa durabilidade"},
+    "toyo": {"display": "Toyo", "tagline": "fiabilidade e conforto"},
+    "falken": {"display": "Falken", "tagline": "performance e preco equilibrado"},
+    "bf goodrich": {"display": "BF Goodrich", "tagline": "robustez e tracao todo-o-terreno"},
+    "bfgoodrich": {"display": "BF Goodrich", "tagline": "robustez e tracao todo-o-terreno"},
+    "uniroyal": {"display": "Uniroyal", "tagline": "especialista em piso molhado"},
+    "barum": {"display": "Barum", "tagline": "opcao economica do grupo Continental"},
+    "laufenn": {"display": "Laufenn", "tagline": "linha acessivel da Hankook"},
+    "vredestein": {"display": "Vredestein", "tagline": "conforto e design holandes"},
+    "nokian": {"display": "Nokian", "tagline": "especialista em condicoes adversas"},
+    "maxxis": {"display": "Maxxis", "tagline": "versatilidade e durabilidade"},
+    "nankang": {"display": "Nankang", "tagline": "opcao economica com bom desempenho"},
+    "imperial": {"display": "Imperial", "tagline": "preco acessivel para uso diario"},
+    "sailun": {"display": "Sailun", "tagline": "preco competitivo"},
+    "triangle": {"display": "Triangle", "tagline": "opcao economica"},
+    "general tire": {"display": "General Tire", "tagline": "qualidade do grupo Continental"},
+    "general": {"display": "General Tire", "tagline": "qualidade do grupo Continental"},
+    "semperit": {"display": "Semperit", "tagline": "fiabilidade austriaca"},
+    "cooper": {"display": "Cooper", "tagline": "robustez americana"},
+    "avon": {"display": "Avon", "tagline": "tradicao britanica"},
+    "debica": {"display": "Debica", "tagline": "opcao economica do grupo Goodyear"},
+    "sava": {"display": "Sava", "tagline": "qualidade europeia acessivel"},
+    "roadstone": {"display": "Roadstone", "tagline": "preco competitivo"},
+}
+
+# Quantity patterns: "4x", "x4", "4 x", "x 4", "2x", "4 pneus", etc.
+_QTY_PATTERN = re.compile(r'(\d)\s*x\b|\bx\s*(\d)', re.IGNORECASE)
+_QTY_PNEUS_PATTERN = re.compile(r'\b(\d)\s+pneus?\b', re.IGNORECASE)
+
+
+def _detect_tire(normalized: str) -> dict:
+    """Detect tire product from normalized text.
+    Returns result dict if tire detected, None otherwise."""
+    # Check for any known brand
+    found_brand = None
+    for brand_key, brand_info in sorted(TIRE_BRANDS.items(), key=lambda x: -len(x[0])):
+        if brand_key in normalized:
+            found_brand = brand_info
+            break
+
+    # Check for quantity pattern
+    qty_match = _QTY_PATTERN.search(normalized)
+    qty = None
+    if qty_match:
+        qty = int(qty_match.group(1) or qty_match.group(2))
+    else:
+        # Try "4 pneus" pattern
+        qty_pneus = _QTY_PNEUS_PATTERN.search(normalized)
+        if qty_pneus:
+            qty = int(qty_pneus.group(1))
+
+    # Also check for "pneu"/"pneus" keyword
+    has_tire_word = bool(re.search(r'\bpneus?\b', normalized))
+
+    # Must have brand OR (quantity pattern + tire word) to be a tire product
+    if not found_brand and not (qty and has_tire_word):
+        return None
+
+    # Build title
+    if found_brand:
+        brand_display = found_brand["display"]
+        tagline = found_brand["tagline"]
+        qty_text = f" ({qty} unidades)" if qty else ""
+        title = f"Pneus {brand_display}{qty_text} — {tagline}"
+    else:
+        # Has qty + pneu word but no brand
+        qty_text = f" ({qty} unidades)" if qty else ""
+        title = f"Pneus{qty_text}"
+
+    return {
+        "title": title,
+        "type": "single",
+        "includes": [],
+        "priority": "safety",
+        "priority_message": PRIORITY_MESSAGES["safety"],
+    }
+
+
 def _normalize(text: str) -> str:
     """Lowercase, remove accents, remove punctuation/prices, trim."""
     text = text.lower().strip()
@@ -324,6 +414,11 @@ def normalize_description(raw_description: str) -> dict:
     normalized = _normalize(raw_description)
     normalized = _apply_synonyms(normalized)
 
+    # ---- TIRE PRODUCT DETECTION (before general matching) ----
+    tire_result = _detect_tire(normalized)
+    if tire_result and "+" not in normalized:
+        return tire_result
+
     # ---- PACKAGE DETECTION: "+" always means package ----
     is_package = "+" in normalized
 
@@ -334,6 +429,12 @@ def normalize_description(raw_description: str) -> dict:
 
         for part in parts:
             part = _apply_synonyms(part)
+            # Try tire detection for this part first
+            tire_part = _detect_tire(part)
+            if tire_part:
+                matched_titles.append(tire_part["title"])
+                matched_keys.append("pneus")
+                continue
             match, key = _match_single(part)
             if match:
                 matched_titles.append(match["title"])
