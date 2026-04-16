@@ -64,6 +64,8 @@ class QuoteOptionPublicResponse(BaseModel):
     display_includes: List[str] = []
     display_priority: Optional[str] = None
     display_priority_message: Optional[str] = None
+    display_recommended: bool = False
+    display_brand_tier: Optional[str] = None
 
 class QuoteOptionsUpdate(BaseModel):
     options: List[QuoteOptionCreate]
@@ -351,6 +353,8 @@ async def get_public_quote(token: str):
             display_includes=display.get("includes", []),
             display_priority=display.get("priority", "normal"),
             display_priority_message=display.get("priority_message"),
+            display_recommended=display.get("recommended", False),
+            display_brand_tier=display.get("brand_tier"),
         ))
     
     return QuoteResponseData(

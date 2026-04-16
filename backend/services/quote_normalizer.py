@@ -212,43 +212,71 @@ def _remove_accents(text: str) -> str:
 
 
 # ============== TIRE BRANDS & DETECTION ==============
-TIRE_BRANDS = {
-    "michelin": {"display": "Michelin", "tagline": "qualidade premium e maior durabilidade"},
-    "bridgestone": {"display": "Bridgestone", "tagline": "tecnologia japonesa de alta performance"},
-    "firestone": {"display": "Firestone", "tagline": "boa relacao qualidade/preco"},
-    "hankook": {"display": "Hankook", "tagline": "boa performance com preco competitivo"},
-    "continental": {"display": "Continental", "tagline": "engenharia alema de confianca"},
-    "pirelli": {"display": "Pirelli", "tagline": "desempenho desportivo e aderencia superior"},
-    "goodyear": {"display": "Goodyear", "tagline": "durabilidade e conforto de conducao"},
-    "dunlop": {"display": "Dunlop", "tagline": "versatilidade e boa tracao"},
-    "yokohama": {"display": "Yokohama", "tagline": "tecnologia japonesa e performance"},
-    "kumho": {"display": "Kumho", "tagline": "qualidade coreana a preco acessivel"},
-    "nexen": {"display": "Nexen", "tagline": "preco competitivo com boa durabilidade"},
-    "toyo": {"display": "Toyo", "tagline": "fiabilidade e conforto"},
-    "falken": {"display": "Falken", "tagline": "performance e preco equilibrado"},
-    "bf goodrich": {"display": "BF Goodrich", "tagline": "robustez e tracao todo-o-terreno"},
-    "bfgoodrich": {"display": "BF Goodrich", "tagline": "robustez e tracao todo-o-terreno"},
-    "uniroyal": {"display": "Uniroyal", "tagline": "especialista em piso molhado"},
-    "barum": {"display": "Barum", "tagline": "opcao economica do grupo Continental"},
-    "laufenn": {"display": "Laufenn", "tagline": "linha acessivel da Hankook"},
-    "vredestein": {"display": "Vredestein", "tagline": "conforto e design holandes"},
-    "nokian": {"display": "Nokian", "tagline": "especialista em condicoes adversas"},
-    "maxxis": {"display": "Maxxis", "tagline": "versatilidade e durabilidade"},
-    "nankang": {"display": "Nankang", "tagline": "opcao economica com bom desempenho"},
-    "imperial": {"display": "Imperial", "tagline": "preco acessivel para uso diario"},
-    "sailun": {"display": "Sailun", "tagline": "preco competitivo"},
-    "triangle": {"display": "Triangle", "tagline": "opcao economica"},
-    "general tire": {"display": "General Tire", "tagline": "qualidade do grupo Continental"},
-    "general": {"display": "General Tire", "tagline": "qualidade do grupo Continental"},
-    "semperit": {"display": "Semperit", "tagline": "fiabilidade austriaca"},
-    "cooper": {"display": "Cooper", "tagline": "robustez americana"},
-    "avon": {"display": "Avon", "tagline": "tradicao britanica"},
-    "debica": {"display": "Debica", "tagline": "opcao economica do grupo Goodyear"},
-    "sava": {"display": "Sava", "tagline": "qualidade europeia acessivel"},
-    "roadstone": {"display": "Roadstone", "tagline": "preco competitivo"},
+TIRE_TIER_TAGLINES = {
+    "premium": "maxima seguranca e durabilidade",
+    "mid": "excelente equilibrio entre preco e qualidade",
+    "budget": "solucao economica e funcional",
 }
 
-# Quantity patterns: "4x", "x4", "4 x", "x 4", "2x", "4 pneus", etc.
+TIRE_PRIORITY_MESSAGE = "Pneus em mau estado podem comprometer travagem e aderencia"
+
+TIRE_BRANDS = {
+    # --- PREMIUM ---
+    "michelin":     {"display": "Michelin",     "tier": "premium"},
+    "continental":  {"display": "Continental",  "tier": "premium"},
+    "bridgestone":  {"display": "Bridgestone",  "tier": "premium"},
+    "goodyear":     {"display": "Goodyear",     "tier": "premium"},
+    "pirelli":      {"display": "Pirelli",      "tier": "premium"},
+    "nokian":       {"display": "Nokian",       "tier": "premium"},
+    "vredestein":   {"display": "Vredestein",   "tier": "premium"},
+    # --- MID ---
+    "hankook":      {"display": "Hankook",      "tier": "mid"},
+    "firestone":    {"display": "Firestone",     "tier": "mid"},
+    "dunlop":       {"display": "Dunlop",       "tier": "mid"},
+    "yokohama":     {"display": "Yokohama",     "tier": "mid"},
+    "kumho":        {"display": "Kumho",        "tier": "mid"},
+    "nexen":        {"display": "Nexen",        "tier": "mid"},
+    "toyo":         {"display": "Toyo",         "tier": "mid"},
+    "falken":       {"display": "Falken",       "tier": "mid"},
+    "bf goodrich":  {"display": "BF Goodrich",  "tier": "mid"},
+    "bfgoodrich":   {"display": "BF Goodrich",  "tier": "mid"},
+    "uniroyal":     {"display": "Uniroyal",     "tier": "mid"},
+    "cooper":       {"display": "Cooper",       "tier": "mid"},
+    "general tire": {"display": "General Tire", "tier": "mid"},
+    "general":      {"display": "General Tire", "tier": "mid"},
+    "semperit":     {"display": "Semperit",     "tier": "mid"},
+    "laufenn":      {"display": "Laufenn",      "tier": "mid"},
+    "maxxis":       {"display": "Maxxis",       "tier": "mid"},
+    "avon":         {"display": "Avon",         "tier": "mid"},
+    # --- BUDGET ---
+    "barum":        {"display": "Barum",        "tier": "budget"},
+    "nankang":      {"display": "Nankang",      "tier": "budget"},
+    "imperial":     {"display": "Imperial",     "tier": "budget"},
+    "sailun":       {"display": "Sailun",       "tier": "budget"},
+    "triangle":     {"display": "Triangle",     "tier": "budget"},
+    "debica":       {"display": "Debica",       "tier": "budget"},
+    "sava":         {"display": "Sava",         "tier": "budget"},
+    "roadstone":    {"display": "Roadstone",    "tier": "budget"},
+    "massimo":      {"display": "Massimo",      "tier": "budget"},
+    "roadx":        {"display": "RoadX",        "tier": "budget"},
+    "linglong":     {"display": "Linglong",     "tier": "budget"},
+    "westlake":     {"display": "Westlake",     "tier": "budget"},
+    "hifly":        {"display": "Hifly",        "tier": "budget"},
+    "aplus":        {"display": "Aplus",        "tier": "budget"},
+    "minerva":      {"display": "Minerva",      "tier": "budget"},
+    "rotalla":      {"display": "Rotalla",      "tier": "budget"},
+    "torque":       {"display": "Torque",       "tier": "budget"},
+    "fullrun":      {"display": "Fullrun",      "tier": "budget"},
+    "fortuna":      {"display": "Fortuna",      "tier": "budget"},
+    "dayton":       {"display": "Dayton",       "tier": "budget"},
+    "radar":        {"display": "Radar",        "tier": "budget"},
+    "accelera":     {"display": "Accelera",     "tier": "budget"},
+    "goodride":     {"display": "Goodride",     "tier": "budget"},
+    "wanli":        {"display": "Wanli",        "tier": "budget"},
+    "zeetex":       {"display": "Zeetex",       "tier": "budget"},
+}
+
+# Quantity patterns
 _QTY_PATTERN = re.compile(r'(\d)\s*x\b|\bx\s*(\d)', re.IGNORECASE)
 _QTY_PNEUS_PATTERN = re.compile(r'\b(\d)\s+pneus?\b', re.IGNORECASE)
 
@@ -256,40 +284,42 @@ _QTY_PNEUS_PATTERN = re.compile(r'\b(\d)\s+pneus?\b', re.IGNORECASE)
 def _detect_tire(normalized: str) -> dict:
     """Detect tire product from normalized text.
     Returns result dict if tire detected, None otherwise."""
-    # Check for any known brand
+    # Check for any known brand (longest key first)
     found_brand = None
     for brand_key, brand_info in sorted(TIRE_BRANDS.items(), key=lambda x: -len(x[0])):
         if brand_key in normalized:
             found_brand = brand_info
             break
 
-    # Check for quantity pattern
-    qty_match = _QTY_PATTERN.search(normalized)
+    # Check for quantity
     qty = None
+    qty_match = _QTY_PATTERN.search(normalized)
     if qty_match:
         qty = int(qty_match.group(1) or qty_match.group(2))
     else:
-        # Try "4 pneus" pattern
         qty_pneus = _QTY_PNEUS_PATTERN.search(normalized)
         if qty_pneus:
             qty = int(qty_pneus.group(1))
 
-    # Also check for "pneu"/"pneus" keyword
     has_tire_word = bool(re.search(r'\bpneus?\b', normalized))
 
-    # Must have brand OR (quantity pattern + tire word) to be a tire product
+    # Must have brand OR (qty + tire word)
     if not found_brand and not (qty and has_tire_word):
         return None
 
-    # Build title
+    # Build output
+    qty_text = f" ({qty} unidades)" if qty else ""
+
     if found_brand:
+        tier = found_brand["tier"]
         brand_display = found_brand["display"]
-        tagline = found_brand["tagline"]
-        qty_text = f" ({qty} unidades)" if qty else ""
+        tagline = TIRE_TIER_TAGLINES[tier]
+        recommended = tier == "premium"
         title = f"Pneus {brand_display}{qty_text} — {tagline}"
     else:
-        # Has qty + pneu word but no brand
-        qty_text = f" ({qty} unidades)" if qty else ""
+        tier = None
+        brand_display = None
+        recommended = False
         title = f"Pneus{qty_text}"
 
     return {
@@ -297,7 +327,9 @@ def _detect_tire(normalized: str) -> dict:
         "type": "single",
         "includes": [],
         "priority": "safety",
-        "priority_message": PRIORITY_MESSAGES["safety"],
+        "priority_message": TIRE_PRIORITY_MESSAGE,
+        "recommended": recommended,
+        "brand_tier": tier,
     }
 
 
@@ -426,6 +458,7 @@ def normalize_description(raw_description: str) -> dict:
         parts = [p.strip() for p in normalized.split("+") if p.strip()]
         matched_keys = []
         matched_titles = []
+        tire_in_package = None  # Track tire part for pack title
 
         for part in parts:
             part = _apply_synonyms(part)
@@ -434,6 +467,7 @@ def normalize_description(raw_description: str) -> dict:
             if tire_part:
                 matched_titles.append(tire_part["title"])
                 matched_keys.append("pneus")
+                tire_in_package = tire_part
                 continue
             match, key = _match_single(part)
             if match:
@@ -441,13 +475,28 @@ def normalize_description(raw_description: str) -> dict:
                 if key:
                     matched_keys.append(key)
             else:
-                # Unmatched part: clean capitalize
                 cleaned = _clean_fallback(part)
                 matched_titles.append(cleaned if cleaned else part)
 
         keys_set = frozenset(matched_keys)
 
-        # a) Known package exact match
+        # a) Tire + service(s) → branded pack title takes priority
+        if tire_in_package and len(matched_titles) > 1:
+            service_titles = [t for t in matched_titles if t != tire_in_package["title"]]
+            services_text = " + ".join(service_titles)
+            tire_title_short = tire_in_package["title"].split(" — ")[0]  # "Pneus Brand (X unidades)"
+            title = f"Pack {tire_title_short} + {services_text} — solucao completa para seguranca e desgaste uniforme"
+            return {
+                "title": title,
+                "type": "package",
+                "includes": matched_titles,
+                "priority": "safety",
+                "priority_message": TIRE_PRIORITY_MESSAGE,
+                "recommended": tire_in_package.get("recommended", False),
+                "brand_tier": tire_in_package.get("brand_tier"),
+            }
+
+        # b) Known package exact match (non-tire)
         if keys_set in KNOWN_PACKAGES:
             pkg = KNOWN_PACKAGES[keys_set]
             return {
@@ -458,7 +507,7 @@ def normalize_description(raw_description: str) -> dict:
                 "priority_message": PRIORITY_MESSAGES[pkg["priority"]],
             }
 
-        # b) Compose from parts
+        # c) Generic compose from parts
         all_priorities = [
             KNOWN_ITEMS.get(k, {}).get("priority", "normal") for k in matched_keys
         ]
@@ -468,13 +517,18 @@ def normalize_description(raw_description: str) -> dict:
             matched_titles[0] if matched_titles else normalized.capitalize()
         )
 
-        return {
+        result = {
             "title": title,
             "type": "package",
             "includes": matched_titles,
             "priority": priority,
             "priority_message": PRIORITY_MESSAGES[priority],
         }
+        if tire_in_package:
+            result["priority_message"] = TIRE_PRIORITY_MESSAGE
+            result["recommended"] = tire_in_package.get("recommended", False)
+            result["brand_tier"] = tire_in_package.get("brand_tier")
+        return result
 
     # ---- SMART " e " SPLIT: only if both sides are known ----
     if " e " in normalized:

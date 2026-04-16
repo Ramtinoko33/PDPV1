@@ -436,7 +436,12 @@ const QuoteResponse = () => {
                               </p>
                             )}
                           </div>
-                          {option.display_priority && option.display_priority !== 'normal' && (
+                          {option.display_recommended && (
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              Recomendado
+                            </span>
+                          )}
+                          {option.display_priority && option.display_priority !== 'normal' && !option.display_recommended && (
                             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
                               option.display_priority === 'critical'
                                 ? 'bg-red-100 text-red-700'
