@@ -424,14 +424,25 @@ const QuoteResponse = () => {
                                 Inclui: {option.display_includes.join(' + ')}
                               </p>
                             )}
+                            {option.display_priority_message && (
+                              <p className={`text-xs mt-1 ${
+                                option.display_priority === 'critical'
+                                  ? 'text-red-600'
+                                  : option.display_priority === 'safety'
+                                    ? 'text-amber-600'
+                                    : 'text-emerald-600'
+                              }`}>
+                                {option.display_priority_message}
+                              </p>
+                            )}
                           </div>
                           {option.display_priority && option.display_priority !== 'normal' && (
-                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 ${
+                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
                               option.display_priority === 'critical'
                                 ? 'bg-red-100 text-red-700'
                                 : 'bg-amber-100 text-amber-700'
                             }`}>
-                              {option.display_priority === 'critical' ? 'Crítico' : 'Segurança'}
+                              {option.display_priority === 'critical' ? 'Urgente' : 'Seguranca'}
                             </span>
                           )}
                           <div 

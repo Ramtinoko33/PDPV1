@@ -1,0 +1,14 @@
+[
+  {
+    "original": "Tubo especial XYZ",
+    "normalized": "tubo especial xyz",
+    "matched": false,
+    "created_at": "2026-04-16T14:31:47.349203+00:00"
+  },
+  {
+    "original": "verificacao do carter inferior",
+    "normalized": "verificacao do carter inferior",
+    "matched": false,
+    "created_at": "2026-04-16T14:32:20.403508+00:00"
+  }
+]

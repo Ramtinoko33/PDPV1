@@ -3,11 +3,57 @@ Quote Description Normalizer - Display-only transformation layer.
 Never modifies stored data. Only transforms for customer-facing display.
 """
 import re
+import json
+import logging
 import unicodedata
+from datetime import datetime, timezone
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Unmatched log file
+_LOG_DIR = Path(__file__).parent.parent / "logs"
+_UNMATCHED_LOG = _LOG_DIR / "quote_normalizer_unmatched.json"
+
+
+# ============== COMMERCIAL COPY ==============
+PRIORITY_MESSAGES = {
+    "critical": "Recomendamos resolver de imediato para evitar danos graves",
+    "safety": "Pode comprometer a seguranca do veiculo",
+    "normal": "Manutencao recomendada para bom funcionamento",
+}
 
 
 # ============== SYNONYM / TYPO MAP ==============
 SYNONYMS = {
+    # Multi-word (applied first, longest match)
+    "mao de obra": "mao de obra",
+    "mão de obra": "mao de obra",
+    "filtro habitaculo": "filtro de habitaculo",
+    "filtro habitáculo": "filtro de habitaculo",
+    "filtro oleo": "filtro de oleo",
+    "filtro óleo": "filtro de oleo",
+    "filtro ar": "filtro de ar",
+    "velas ignicao": "velas de ignicao",
+    "velas ignição": "velas de ignicao",
+    "bomba agua": "bomba de agua",
+    "bomba de água": "bomba de agua",
+    "bomba água": "bomba de agua",
+    "motor arranque": "motor de arranque",
+    "fuga de agua": "fuga de agua",
+    "fuga agua": "fuga de agua",
+    "fuga de água": "fuga de agua",
+    "fuga oleo": "fuga de oleo",
+    "fuga de oleo": "fuga de oleo",
+    "fuga de óleo": "fuga de oleo",
+    "permutador da egr": "permutador egr",
+    "permutador de egr": "permutador egr",
+    "pack rosa": "pack rosa",
+    "oleo motor": "oleo motor",
+    "mudanca de oleo": "mudanca de oleo",
+    "mudança de oleo": "mudanca de oleo",
+    "mudança de óleo": "mudanca de oleo",
+    # Single-word typos
     "pstlhas": "pastilhas",
     "pastilha": "pastilhas",
     "calcos": "pastilhas",
@@ -25,61 +71,53 @@ SYNONYMS = {
     "batria": "bateria",
     "bateira": "bateria",
     "amortecedore": "amortecedores",
-    "amortecedor": "amortecedores",
-    "travao": "travoes",
     "travão": "travoes",
-    "travoes": "travoes",
+    "travao": "travoes",
     "travões": "travoes",
-    "oleo": "oleo",
     "óleo": "oleo",
     "peneu": "pneu",
     "peneus": "pneus",
-    "filtro ar": "filtro de ar",
-    "filtro oleo": "filtro de oleo",
-    "filtro óleo": "filtro de oleo",
-    "filtro habitaculo": "filtro de habitaculo",
-    "filtro habitáculo": "filtro de habitaculo",
-    "distribucao": "distribuicao",
     "distribuição": "distribuicao",
-    "distribuicao": "distribuicao",
+    "distribucao": "distribuicao",
     "embraiagen": "embraiagem",
     "embreagem": "embraiagem",
-    "suspensao": "suspensao",
     "suspensão": "suspensao",
-    "direcao": "direcao",
     "direção": "direcao",
-    "correia": "correia",
     "corrsia": "correia",
-    "vela": "velas",
-    "velas ignicao": "velas de ignicao",
-    "escape": "escape",
     "escapamento": "escape",
     "catalizador": "catalisador",
-    "mao de obra": "mao de obra",
-    "mão de obra": "mao de obra",
+    "sobreaquecimento": "sobreaquecimento",
 }
 
 
 # ============== KNOWN ITEMS (keyword → display info) ==============
 KNOWN_ITEMS = {
-    # Pneus
+    # --- CRITICAL: immediate damage risk ---
+    "fuga de agua": {"title": "Reparação de fuga de água", "priority": "critical"},
+    "fuga de oleo": {"title": "Reparação de fuga de óleo", "priority": "critical"},
+    "radiador": {"title": "Radiador", "priority": "critical"},
+    "sobreaquecimento": {"title": "Reparação de sobreaquecimento", "priority": "critical"},
+    "motor de arranque": {"title": "Motor de arranque", "priority": "critical"},
+    "turbo": {"title": "Turbo", "priority": "critical"},
+
+    # --- SAFETY: braking, tires, suspension ---
+    "pastilhas": {"title": "Pastilhas de travão", "priority": "safety"},
+    "discos": {"title": "Discos de travão", "priority": "safety"},
+    "disco": {"title": "Disco de travão", "priority": "safety"},
+    "travoes": {"title": "Sistema de travagem", "priority": "safety"},
     "pneu": {"title": "Pneu", "priority": "safety"},
     "pneus": {"title": "Pneus", "priority": "safety"},
-    # Travões
-    "pastilhas": {"title": "Pastilhas de travão", "priority": "critical"},
-    "discos": {"title": "Discos de travão", "priority": "critical"},
-    "travoes": {"title": "Sistema de travagem", "priority": "critical"},
-    "disco": {"title": "Disco de travão", "priority": "critical"},
-    # Suspensão
     "amortecedores": {"title": "Amortecedores", "priority": "safety"},
     "amortecedor": {"title": "Amortecedor", "priority": "safety"},
     "molas": {"title": "Molas de suspensão", "priority": "safety"},
     "suspensao": {"title": "Suspensão", "priority": "safety"},
-    # Direção
-    "alinhamento": {"title": "Alinhamento de direção", "priority": "normal"},
-    "equilibragem": {"title": "Equilibragem", "priority": "normal"},
+    "bracos": {"title": "Braços de suspensão", "priority": "safety"},
+    "braco": {"title": "Braço de suspensão", "priority": "safety"},
+    "distribuicao": {"title": "Kit de distribuição", "priority": "safety"},
+    "embraiagem": {"title": "Embraiagem", "priority": "safety"},
     "direcao": {"title": "Direção", "priority": "safety"},
-    # Motor / Manutenção
+
+    # --- NORMAL: routine maintenance ---
     "oleo": {"title": "Óleo do motor", "priority": "normal"},
     "oleo motor": {"title": "Óleo do motor", "priority": "normal"},
     "mudanca de oleo": {"title": "Mudança de óleo", "priority": "normal"},
@@ -90,26 +128,31 @@ KNOWN_ITEMS = {
     "velas": {"title": "Velas de ignição", "priority": "normal"},
     "velas de ignicao": {"title": "Velas de ignição", "priority": "normal"},
     "correia": {"title": "Correia", "priority": "normal"},
-    "distribuicao": {"title": "Kit de distribuição", "priority": "safety"},
-    "embraiagem": {"title": "Embraiagem", "priority": "safety"},
     "bateria": {"title": "Bateria", "priority": "normal"},
     "alternador": {"title": "Alternador", "priority": "normal"},
-    "motor arranque": {"title": "Motor de arranque", "priority": "normal"},
-    "radiador": {"title": "Radiador", "priority": "normal"},
-    "bomba agua": {"title": "Bomba de água", "priority": "normal"},
     "bomba de agua": {"title": "Bomba de água", "priority": "normal"},
     "catalisador": {"title": "Catalisador", "priority": "normal"},
     "escape": {"title": "Sistema de escape", "priority": "normal"},
     "egr": {"title": "Válvula EGR", "priority": "normal"},
+    "valvula egr": {"title": "Válvula EGR", "priority": "normal"},
     "permutador": {"title": "Permutador", "priority": "normal"},
-    "permutador da egr": {"title": "Permutador da EGR", "priority": "normal"},
-    "turbo": {"title": "Turbo", "priority": "normal"},
-    # Serviços
+    "permutador egr": {"title": "Permutador da EGR", "priority": "normal"},
+    "alinhamento": {"title": "Alinhamento de direção", "priority": "normal"},
+    "equilibragem": {"title": "Equilibragem", "priority": "normal"},
     "revisao": {"title": "Revisão", "priority": "normal"},
     "inspecao": {"title": "Inspeção", "priority": "normal"},
     "diagnostico": {"title": "Diagnóstico", "priority": "normal"},
     "mao de obra": {"title": "Mão de obra", "priority": "normal"},
     "pack rosa": {"title": "Pack Rosa", "priority": "normal"},
+    "ar condicionado": {"title": "Ar condicionado", "priority": "normal"},
+    "junta": {"title": "Junta", "priority": "normal"},
+    "rolamento": {"title": "Rolamento", "priority": "normal"},
+    "rolamentos": {"title": "Rolamentos", "priority": "normal"},
+    "sensor": {"title": "Sensor", "priority": "normal"},
+    "sensores": {"title": "Sensores", "priority": "normal"},
+    "valvula": {"title": "Válvula", "priority": "normal"},
+    "injector": {"title": "Injector", "priority": "normal"},
+    "injectores": {"title": "Injectores", "priority": "normal"},
 }
 
 
@@ -117,17 +160,21 @@ KNOWN_ITEMS = {
 KNOWN_PACKAGES = {
     frozenset(["pastilhas", "discos"]): {
         "title": "Kit de travagem (pastilhas + discos)",
-        "priority": "critical",
+        "priority": "safety",
     },
     frozenset(["pastilhas", "discos", "travoes"]): {
         "title": "Sistema de travagem completo",
-        "priority": "critical",
+        "priority": "safety",
     },
     frozenset(["alinhamento", "equilibragem"]): {
         "title": "Alinhamento e equilibragem",
         "priority": "normal",
     },
     frozenset(["oleo", "filtro de oleo"]): {
+        "title": "Mudança de óleo com filtro",
+        "priority": "normal",
+    },
+    frozenset(["mudanca de oleo", "filtro de oleo"]): {
         "title": "Mudança de óleo com filtro",
         "priority": "normal",
     },
@@ -158,7 +205,7 @@ KNOWN_PACKAGES = {
 }
 
 
-# ============== NORMALIZATION ==============
+# ============== NORMALIZATION HELPERS ==============
 def _remove_accents(text: str) -> str:
     nfkd = unicodedata.normalize("NFKD", text)
     return "".join(c for c in nfkd if not unicodedata.combining(c))
@@ -168,157 +215,43 @@ def _normalize(text: str) -> str:
     """Lowercase, remove accents, remove punctuation/prices, trim."""
     text = text.lower().strip()
     text = _remove_accents(text)
-    # Remove prices (e.g. 123.45€, 123,45 €, €123)
     text = re.sub(r'[€$]\s*[\d.,]+|[\d.,]+\s*[€$]', '', text)
-    # Remove punctuation except / + and spaces
     text = re.sub(r'[^\w\s/+]', ' ', text)
-    # Collapse whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
-def _try_split_package(normalized: str) -> list:
-    """Try to split text into package parts using + or ' e ' separator.
-    Only splits on ' e ' if both sides match known items."""
-    # Explicit "+" always splits
-    if "+" in normalized:
-        return [p.strip() for p in normalized.split("+") if p.strip()]
-
-    # Try " e " — only if both sides match known keywords
-    if " e " in normalized:
-        idx = normalized.index(" e ")
-        left = normalized[:idx].strip()
-        right = normalized[idx + 3:].strip()
-        left_match = _match_single(_apply_synonyms(left))
-        right_match = _match_single(_apply_synonyms(right))
-        if left_match and right_match:
-            return [left, right]
-
-    return None
-
-
 def _apply_synonyms(text: str) -> str:
-    """Apply synonym/typo corrections."""
-    # Try multi-word synonyms first (longest match)
+    """Apply synonym/typo corrections (longest match first)."""
     for typo, correction in sorted(SYNONYMS.items(), key=lambda x: -len(x[0])):
         if typo in text:
             text = text.replace(typo, correction)
     return text
 
 
-def _match_single(normalized: str) -> dict:
-    """Try to match a single normalized text against known items."""
-    # Exact key match
+def _match_single(normalized: str) -> tuple:
+    """Match normalized text against known items.
+    Returns (matched_info_dict, matched_keyword) or (None, None)."""
     if normalized in KNOWN_ITEMS:
-        return KNOWN_ITEMS[normalized]
+        return KNOWN_ITEMS[normalized], normalized
 
-    # Keyword containment (longest match first)
     best_match = None
+    best_key = None
     best_len = 0
     for keyword, info in KNOWN_ITEMS.items():
-        if keyword in normalized and len(keyword) > best_len:
+        if len(keyword) <= 3:
+            # Short keywords: require word boundary to avoid false matches
+            if re.search(r'\b' + re.escape(keyword) + r'\b', normalized):
+                if len(keyword) > best_len:
+                    best_match = info
+                    best_key = keyword
+                    best_len = len(keyword)
+        elif keyword in normalized and len(keyword) > best_len:
             best_match = info
+            best_key = keyword
             best_len = len(keyword)
 
-    return best_match
-
-
-# ============== MAIN ENTRY POINT ==============
-def normalize_description(raw_description: str) -> dict:
-    """
-    Transform a quote option description for display.
-    Returns: { title, type, includes, priority }
-    Never modifies stored data.
-    """
-    if not raw_description or not raw_description.strip():
-        return {
-            "title": raw_description or "",
-            "type": "single",
-            "includes": [],
-            "priority": "normal",
-        }
-
-    normalized = _normalize(raw_description)
-    normalized = _apply_synonyms(normalized)
-
-    # Detect package (explicit "+" or smart " e " split)
-    parts = _try_split_package(normalized)
-    is_package = parts is not None and len(parts) > 1
-
-    if is_package:
-        matched_keys = []
-        matched_titles = []
-
-        for part in parts:
-            part = _apply_synonyms(part)
-            match = _match_single(part)
-            if match:
-                matched_titles.append(match["title"])
-                # Find the key that matched
-                for kw in KNOWN_ITEMS:
-                    if kw in part:
-                        matched_keys.append(kw)
-                        break
-            else:
-                # Keep cleaned part as-is
-                matched_titles.append(part.strip().capitalize())
-
-        keys_set = frozenset(matched_keys)
-
-        # a) Package exact match
-        if keys_set in KNOWN_PACKAGES:
-            pkg = KNOWN_PACKAGES[keys_set]
-            return {
-                "title": pkg["title"],
-                "type": "package",
-                "includes": matched_titles,
-                "priority": pkg["priority"],
-            }
-
-        # b) Package composition — build title from parts
-        priority = _best_priority([
-            KNOWN_ITEMS.get(k, {}).get("priority", "normal") for k in matched_keys
-        ])
-
-        if len(matched_titles) > 1:
-            title = " + ".join(matched_titles)
-        else:
-            title = matched_titles[0] if matched_titles else normalized.capitalize()
-
-        return {
-            "title": title,
-            "type": "package",
-            "includes": matched_titles,
-            "priority": priority,
-        }
-
-    # Single item
-    match = _match_single(normalized)
-    if match:
-        return {
-            "title": match["title"],
-            "type": "single",
-            "includes": [],
-            "priority": match["priority"],
-        }
-
-    # Fallback: capitalize cleaned text, one sentence max
-    fallback = raw_description.strip()
-    # Truncate at first sentence boundary if multiple
-    for sep in [". ", ".\n", "\n"]:
-        if sep in fallback:
-            fallback = fallback[:fallback.index(sep)]
-            break
-    # Capitalize first letter
-    if fallback:
-        fallback = fallback[0].upper() + fallback[1:]
-
-    return {
-        "title": fallback,
-        "type": "single",
-        "includes": [],
-        "priority": "normal",
-    }
+    return best_match, best_key
 
 
 def _best_priority(priorities: list) -> str:
@@ -329,3 +262,170 @@ def _best_priority(priorities: list) -> str:
         if order.get(p, 2) < order.get(best, 2):
             best = p
     return best
+
+
+def _log_unmatched(original: str, normalized: str):
+    """Append unmatched description to log file for dictionary improvement."""
+    try:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "original": original,
+            "normalized": normalized,
+            "matched": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        entries = []
+        if _UNMATCHED_LOG.exists():
+            try:
+                entries = json.loads(_UNMATCHED_LOG.read_text(encoding="utf-8"))
+            except Exception:
+                entries = []
+        # Avoid duplicates (same normalized)
+        if not any(e.get("normalized") == normalized for e in entries):
+            entries.append(entry)
+            # Keep last 500 entries
+            entries = entries[-500:]
+            _UNMATCHED_LOG.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            logger.info(f"[QUOTE_NORM] Unmatched logged: {normalized}")
+    except Exception as e:
+        logger.debug(f"[QUOTE_NORM] Log write error: {e}")
+
+
+def _clean_fallback(raw: str) -> str:
+    """Clean raw text for fallback display title."""
+    text = raw.strip()
+    # Truncate at first sentence boundary
+    for sep in [". ", ".\n", "\n"]:
+        if sep in text:
+            text = text[:text.index(sep)]
+            break
+    # Capitalize first letter
+    if text:
+        text = text[0].upper() + text[1:]
+    return text
+
+
+# ============== MAIN ENTRY POINT ==============
+def normalize_description(raw_description: str) -> dict:
+    """
+    Transform a quote option description for display.
+    Returns: { title, type, includes, priority, priority_message }
+    Never modifies stored data.
+    """
+    if not raw_description or not raw_description.strip():
+        return {
+            "title": raw_description or "",
+            "type": "single",
+            "includes": [],
+            "priority": "normal",
+            "priority_message": PRIORITY_MESSAGES["normal"],
+        }
+
+    normalized = _normalize(raw_description)
+    normalized = _apply_synonyms(normalized)
+
+    # ---- PACKAGE DETECTION: "+" always means package ----
+    is_package = "+" in normalized
+
+    if is_package:
+        parts = [p.strip() for p in normalized.split("+") if p.strip()]
+        matched_keys = []
+        matched_titles = []
+
+        for part in parts:
+            part = _apply_synonyms(part)
+            match, key = _match_single(part)
+            if match:
+                matched_titles.append(match["title"])
+                if key:
+                    matched_keys.append(key)
+            else:
+                # Unmatched part: clean capitalize
+                cleaned = _clean_fallback(part)
+                matched_titles.append(cleaned if cleaned else part)
+
+        keys_set = frozenset(matched_keys)
+
+        # a) Known package exact match
+        if keys_set in KNOWN_PACKAGES:
+            pkg = KNOWN_PACKAGES[keys_set]
+            return {
+                "title": pkg["title"],
+                "type": "package",
+                "includes": matched_titles,
+                "priority": pkg["priority"],
+                "priority_message": PRIORITY_MESSAGES[pkg["priority"]],
+            }
+
+        # b) Compose from parts
+        all_priorities = [
+            KNOWN_ITEMS.get(k, {}).get("priority", "normal") for k in matched_keys
+        ]
+        priority = _best_priority(all_priorities) if all_priorities else "normal"
+
+        title = " + ".join(matched_titles) if len(matched_titles) > 1 else (
+            matched_titles[0] if matched_titles else normalized.capitalize()
+        )
+
+        return {
+            "title": title,
+            "type": "package",
+            "includes": matched_titles,
+            "priority": priority,
+            "priority_message": PRIORITY_MESSAGES[priority],
+        }
+
+    # ---- SMART " e " SPLIT: only if both sides are known ----
+    if " e " in normalized:
+        idx = normalized.index(" e ")
+        left = _apply_synonyms(normalized[:idx].strip())
+        right = _apply_synonyms(normalized[idx + 3:].strip())
+        left_match, left_key = _match_single(left)
+        right_match, right_key = _match_single(right)
+        if left_match and right_match:
+            keys_set = frozenset(filter(None, [left_key, right_key]))
+            titles = [left_match["title"], right_match["title"]]
+
+            if keys_set in KNOWN_PACKAGES:
+                pkg = KNOWN_PACKAGES[keys_set]
+                return {
+                    "title": pkg["title"],
+                    "type": "package",
+                    "includes": titles,
+                    "priority": pkg["priority"],
+                    "priority_message": PRIORITY_MESSAGES[pkg["priority"]],
+                }
+
+            priority = _best_priority([left_match["priority"], right_match["priority"]])
+            return {
+                "title": f"{left_match['title']} + {right_match['title']}",
+                "type": "package",
+                "includes": titles,
+                "priority": priority,
+                "priority_message": PRIORITY_MESSAGES[priority],
+            }
+
+    # ---- SINGLE ITEM ----
+    match, _ = _match_single(normalized)
+    if match:
+        return {
+            "title": match["title"],
+            "type": "single",
+            "includes": [],
+            "priority": match["priority"],
+            "priority_message": PRIORITY_MESSAGES[match["priority"]],
+        }
+
+    # ---- FALLBACK: no match ----
+    _log_unmatched(raw_description, normalized)
+
+    fallback = _clean_fallback(raw_description)
+    title = f"Intervenção identificada: {fallback}" if fallback else raw_description.strip()
+
+    return {
+        "title": title,
+        "type": "single",
+        "includes": [],
+        "priority": "normal",
+        "priority_message": PRIORITY_MESSAGES["normal"],
+    }
