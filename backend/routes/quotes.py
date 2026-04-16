@@ -842,6 +842,18 @@ async def get_public_branding():
 
 
 
+@router.get("/normalize-preview")
+async def normalize_preview(description: str = "", current_user: dict = Depends(get_current_user)):
+    """Preview how a quote option description will appear to the client."""
+    if not description or not description.strip():
+        return {"title": "", "type": "single", "includes": [], "priority": "normal",
+                "priority_message": "", "recommended": False, "brand_tier": None}
+    result = normalize_description(description)
+    return result
+
+
+
+
 async def _notify_mechanic_quote_response(ticket: dict, status_text: str, accepted_total: float = 0):
     """Send Telegram message to mechanic when client accepts/rejects quote."""
     try:

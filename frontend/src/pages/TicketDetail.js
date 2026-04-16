@@ -46,7 +46,8 @@ import {
   Calendar,
   Reply,
   RefreshCcw,
-  AlertCircle
+  AlertCircle,
+  Eye
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -632,6 +633,9 @@ const TicketDetail = () => {
   const [allStatuses, setAllStatuses] = useState([]);
   const [quoteOptions, setQuoteOptions] = useState([]);
   const [savingOptions, setSavingOptions] = useState(false);
+  const [optionPreviews, setOptionPreviews] = useState({});
+  const [showPreviews, setShowPreviews] = useState(true);
+  const previewTimers = useRef({});
 
   const fetchData = async () => {
     try {
@@ -787,6 +791,24 @@ const TicketDetail = () => {
     const updated = [...quoteOptions];
     updated[index] = { ...updated[index], [field]: value };
     setQuoteOptions(updated);
+
+    // Debounced preview fetch for description changes
+    if (field === 'description' && showPreviews) {
+      if (previewTimers.current[index]) clearTimeout(previewTimers.current[index]);
+      if (!value || value.trim().length < 2) {
+        setOptionPreviews(prev => { const n = {...prev}; delete n[index]; return n; });
+        return;
+      }
+      previewTimers.current[index] = setTimeout(async () => {
+        try {
+          const resp = await axios.get(`${API_URL}/api/normalize-preview`, {
+            params: { description: value },
+            headers: getAuthHeaders()
+          });
+          setOptionPreviews(prev => ({ ...prev, [index]: resp.data }));
+        } catch { /* silent */ }
+      }, 400);
+    }
   };
 
   const saveQuoteOptions = async () => {
@@ -1626,6 +1648,17 @@ Qualquer dúvida estamos disponíveis.`;
                           Nova Versão
                         </Button>
                       )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowPreviews(p => !p)}
+                        className={`text-xs ${showPreviews ? 'text-blue-600 bg-blue-50' : 'text-zinc-500'}`}
+                        data-testid="toggle-preview-btn"
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        {showPreviews ? 'Preview ON' : 'Preview OFF'}
+                      </Button>
                       <Checkbox
                         id="quote_sent_conv"
                         checked={ticket.quote_sent}
@@ -1685,6 +1718,40 @@ Qualquer dúvida estamos disponíveis.`;
                             </Button>
                           )}
                         </div>
+                        {/* Client Preview */}
+                        {showPreviews && optionPreviews[index] && option.description?.trim().length >= 2 && (
+                          <div className="ml-6 mt-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2" data-testid={`quote-preview-${index}`}>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Preview cliente</p>
+                            <p className="text-sm font-medium text-slate-700">{optionPreviews[index].title}</p>
+                            {optionPreviews[index].type === 'package' && optionPreviews[index].includes?.length > 1 && (
+                              <p className="text-xs text-slate-500 mt-0.5">Inclui: {optionPreviews[index].includes.join(' + ')}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              {optionPreviews[index].recommended && (
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Recomendado</span>
+                              )}
+                              {optionPreviews[index].brand_tier && (
+                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                                  optionPreviews[index].brand_tier === 'premium' ? 'bg-violet-100 text-violet-700'
+                                  : optionPreviews[index].brand_tier === 'mid' ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-zinc-100 text-zinc-600'
+                                }`}>{optionPreviews[index].brand_tier}</span>
+                              )}
+                              {optionPreviews[index].priority !== 'normal' && (
+                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                                  optionPreviews[index].priority === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                }`}>{optionPreviews[index].priority === 'critical' ? 'Urgente' : 'Seguranca'}</span>
+                              )}
+                            </div>
+                            {optionPreviews[index].priority_message && (
+                              <p className={`text-[11px] mt-1 ${
+                                optionPreviews[index].priority === 'critical' ? 'text-red-500'
+                                : optionPreviews[index].priority === 'safety' ? 'text-amber-500'
+                                : 'text-emerald-500'
+                              }`}>{optionPreviews[index].priority_message}</p>
+                            )}
+                          </div>
+                        )}
                         {/* PDFs section - show both available PDFs and already linked PDFs */}
                         {canEditQuote && (
                           <div className="ml-6 space-y-1">
