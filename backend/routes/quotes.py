@@ -18,6 +18,7 @@ from db import db
 from core.security import get_current_user
 from schemas.user import UserRole
 from schemas.ticket import TicketStatus
+from services.quote_normalizer import normalize_description
 from services.ticket_service import REJECTION_REASON_CODES
 from services.storage_service import UPLOAD_DIR, get_object
 from services.notification_service import create_notification, notify_supervisors
@@ -58,6 +59,10 @@ class QuoteOptionPublicResponse(BaseModel):
     is_accepted: bool = False
     accepted_at: Optional[str] = None
     attachments: List[AttachmentPublicInfo] = []
+    display_title: Optional[str] = None
+    display_type: Optional[str] = None
+    display_includes: List[str] = []
+    display_priority: Optional[str] = None
 
 class QuoteOptionsUpdate(BaseModel):
     options: List[QuoteOptionCreate]
@@ -331,6 +336,7 @@ async def get_public_quote(token: str):
             for att_id in opt.get("attachment_ids", [])
             if att_id in attachment_map
         ]
+        display = normalize_description(opt["description"])
         enriched_options.append(QuoteOptionPublicResponse(
             id=opt["id"],
             ticket_id=opt["ticket_id"],
@@ -338,7 +344,11 @@ async def get_public_quote(token: str):
             amount=opt["amount"],
             is_accepted=opt.get("is_accepted", False),
             accepted_at=opt.get("accepted_at"),
-            attachments=opt_attachments
+            attachments=opt_attachments,
+            display_title=display["title"],
+            display_type=display["type"],
+            display_includes=display.get("includes", []),
+            display_priority=display.get("priority", "normal"),
         ))
     
     return QuoteResponseData(

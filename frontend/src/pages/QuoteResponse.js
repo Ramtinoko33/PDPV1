@@ -416,8 +416,24 @@ const QuoteResponse = () => {
                             </div>
                           )}
                           <div className="flex-1">
-                            <p className="font-medium text-slate-800">{option.description}</p>
+                            <p className="font-medium text-slate-800">
+                              {option.display_title || option.description}
+                            </p>
+                            {option.display_type === 'package' && option.display_includes?.length > 1 && (
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Inclui: {option.display_includes.join(' + ')}
+                              </p>
+                            )}
                           </div>
+                          {option.display_priority && option.display_priority !== 'normal' && (
+                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 ${
+                              option.display_priority === 'critical'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {option.display_priority === 'critical' ? 'Crítico' : 'Segurança'}
+                            </span>
+                          )}
                           <div 
                             className="text-xl font-bold"
                             style={{ color: branding?.primary_color || '#f97316' }}
