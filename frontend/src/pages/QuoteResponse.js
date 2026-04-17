@@ -435,6 +435,9 @@ const QuoteResponse = () => {
                                 {option.display_priority_message}
                               </p>
                             )}
+                            {option.display_context_text && (
+                              <p className="text-[11px] text-zinc-400 mt-0.5 italic">{option.display_context_text}</p>
+                            )}
                           </div>
                           {option.display_recommended && (
                             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">

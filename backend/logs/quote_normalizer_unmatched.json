@@ -52,5 +52,299 @@
     "normalized": "firestone x 4",
     "matched": false,
     "created_at": "2026-04-16T15:38:00.739952+00:00"
+  },
+  {
+    "original": "pasteilhas ",
+    "normalized": "pasteilhas",
+    "matched": false,
+    "created_at": "2026-04-16T22:05:06.362677+00:00"
+  },
+  {
+    "original": "pasteilhas tras",
+    "normalized": "pasteilhas tras",
+    "matched": false,
+    "created_at": "2026-04-16T22:05:08.121809+00:00"
+  },
+  {
+    "original": "pastelhas tras",
+    "normalized": "pastelhas tras",
+    "matched": false,
+    "created_at": "2026-04-16T22:05:14.748785+00:00"
+  },
+  {
+    "original": "pastlhas tras",
+    "normalized": "pastlhas tras",
+    "matched": false,
+    "created_at": "2026-04-16T22:05:18.131297+00:00"
+  },
+  {
+    "original": "MICHELI",
+    "normalized": "micheli",
+    "matched": false,
+    "created_at": "2026-04-16T22:07:49.619874+00:00"
+  },
+  {
+    "original": "AMO",
+    "normalized": "amo",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:26.566582+00:00"
+  },
+  {
+    "original": "AMORTE",
+    "normalized": "amorte",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:27.590015+00:00"
+  },
+  {
+    "original": "AMORTECED",
+    "normalized": "amorteced",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:28.658338+00:00"
+  },
+  {
+    "original": "MAXIM",
+    "normalized": "maxim",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:48.907123+00:00"
+  },
+  {
+    "original": "MAXIMOS",
+    "normalized": "maximos",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:49.632458+00:00"
+  },
+  {
+    "original": "MAXIMS",
+    "normalized": "maxims",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:54.655830+00:00"
+  },
+  {
+    "original": "MAXIMUS",
+    "normalized": "maximus",
+    "matched": false,
+    "created_at": "2026-04-16T22:08:55.135976+00:00"
+  },
+  {
+    "original": "CONTINE",
+    "normalized": "contine",
+    "matched": false,
+    "created_at": "2026-04-16T22:09:07.348021+00:00"
+  },
+  {
+    "original": "CONTINETAL ",
+    "normalized": "continetal",
+    "matched": false,
+    "created_at": "2026-04-16T22:09:09.907917+00:00"
+  },
+  {
+    "original": "CONTINETAL  X ",
+    "normalized": "continetal x",
+    "matched": false,
+    "created_at": "2026-04-16T22:09:15.053327+00:00"
+  },
+  {
+    "original": "CONTINETAL  X 2",
+    "normalized": "continetal x 2",
+    "matched": false,
+    "created_at": "2026-04-16T22:09:15.786124+00:00"
+  },
+  {
+    "original": "CA",
+    "normalized": "ca",
+    "matched": false,
+    "created_at": "2026-04-16T22:16:50.627715+00:00"
+  },
+  {
+    "original": "FI",
+    "normalized": "fi",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:09.332625+00:00"
+  },
+  {
+    "original": "FIRE",
+    "normalized": "fire",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:10.407889+00:00"
+  },
+  {
+    "original": "FIRES",
+    "normalized": "fires",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:13.721011+00:00"
+  },
+  {
+    "original": "FIRESR",
+    "normalized": "firesr",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:14.156182+00:00"
+  },
+  {
+    "original": "FIREST",
+    "normalized": "firest",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:16.498665+00:00"
+  },
+  {
+    "original": "FIRESTO",
+    "normalized": "firesto",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:16.951653+00:00"
+  },
+  {
+    "original": "FIRESTON",
+    "normalized": "fireston",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:17.712866+00:00"
+  },
+  {
+    "original": "FU",
+    "normalized": "fu",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:33.965385+00:00"
+  },
+  {
+    "original": "FUG",
+    "normalized": "fug",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:34.438711+00:00"
+  },
+  {
+    "original": "FUGA",
+    "normalized": "fuga",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:35.219690+00:00"
+  },
+  {
+    "original": "FUGA OL",
+    "normalized": "fuga ol",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:36.951539+00:00"
+  },
+  {
+    "original": "FUGA OLE",
+    "normalized": "fuga ole",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:38.006261+00:00"
+  },
+  {
+    "original": "MI",
+    "normalized": "mi",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:53.504347+00:00"
+  },
+  {
+    "original": "MIC",
+    "normalized": "mic",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:56.599322+00:00"
+  },
+  {
+    "original": "MICH",
+    "normalized": "mich",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:57.048613+00:00"
+  },
+  {
+    "original": "MICHEL",
+    "normalized": "michel",
+    "matched": false,
+    "created_at": "2026-04-16T22:17:58.143615+00:00"
+  },
+  {
+    "original": "past",
+    "normalized": "past",
+    "matched": false,
+    "created_at": "2026-04-17T08:59:07.184434+00:00"
+  },
+  {
+    "original": " miche",
+    "normalized": "miche",
+    "matched": false,
+    "created_at": "2026-04-17T08:59:35.915399+00:00"
+  },
+  {
+    "original": "2x",
+    "normalized": "2x",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:02.469248+00:00"
+  },
+  {
+    "original": "2x firest",
+    "normalized": "2x firest",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:04.561840+00:00"
+  },
+  {
+    "original": "2x hanko",
+    "normalized": "2x hanko",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:30.858256+00:00"
+  },
+  {
+    "original": "fole de ",
+    "normalized": "fole de",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:38.165036+00:00"
+  },
+  {
+    "original": "fole de direi",
+    "normalized": "fole de direi",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:39.660604+00:00"
+  },
+  {
+    "original": "fole de direiçao",
+    "normalized": "fole de direicao",
+    "matched": false,
+    "created_at": "2026-04-17T09:00:40.358912+00:00"
+  },
+  {
+    "original": "filtro",
+    "normalized": "filtro",
+    "matched": false,
+    "created_at": "2026-04-17T09:01:48.816362+00:00"
+  },
+  {
+    "original": "filtro a",
+    "normalized": "filtro a",
+    "matched": false,
+    "created_at": "2026-04-17T09:01:55.469355+00:00"
+  },
+  {
+    "original": "re",
+    "normalized": "re",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:04.516927+00:00"
+  },
+  {
+    "original": "rev",
+    "normalized": "rev",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:05.240630+00:00"
+  },
+  {
+    "original": "alinh",
+    "normalized": "alinh",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:19.031295+00:00"
+  },
+  {
+    "original": "alinha",
+    "normalized": "alinha",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:31.904611+00:00"
+  },
+  {
+    "original": "fuh",
+    "normalized": "fuh",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:35.414826+00:00"
+  },
+  {
+    "original": "fuga de ",
+    "normalized": "fuga de",
+    "matched": false,
+    "created_at": "2026-04-17T09:02:37.252721+00:00"
   }
 ]

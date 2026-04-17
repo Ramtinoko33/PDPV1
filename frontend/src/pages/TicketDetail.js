@@ -636,6 +636,10 @@ const TicketDetail = () => {
   const [optionPreviews, setOptionPreviews] = useState({});
   const [showPreviews, setShowPreviews] = useState(true);
   const previewTimers = useRef({});
+  const [quoteContext, setQuoteContext] = useState('unknown');
+  const [contextAutoDetected, setContextAutoDetected] = useState(true);
+  const [contextSuggestion, setContextSuggestion] = useState(null);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -654,6 +658,13 @@ const TicketDetail = () => {
       setAlerts(alertsRes.data);
       setAttachments(attachmentsRes.data);
       setQuoteValue(ticketRes.data.quote_value || '');
+
+      // Fetch quote context
+      try {
+        const ctxRes = await axios.get(`${API_URL}/api/tickets/${id}/quote-context`, { headers: getAuthHeaders() });
+        setQuoteContext(ctxRes.data.quote_context || 'unknown');
+        setContextAutoDetected(ctxRes.data.auto_detected);
+      } catch { /* silent */ }
       
       // Set quote options or create default empty one
       if (optionsRes.data && optionsRes.data.length > 0) {
@@ -830,12 +841,72 @@ const TicketDetail = () => {
       setQuoteValue(total.toString());
       toast.success('Opções de orçamento guardadas');
       fetchData();
+
+      // Check for context suggestion after save
+      if (!suggestionDismissed && quoteContext !== 'diagnostic') {
+        try {
+          const sugRes = await axios.post(
+            `${API_URL}/api/tickets/${id}/quote-suggestion`,
+            { descriptions: validOptions.map(o => o.description) },
+            { headers: getAuthHeaders() }
+          );
+          if (sugRes.data.should_suggest) {
+            setContextSuggestion(sugRes.data);
+          }
+        } catch { /* silent */ }
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao guardar opções');
     } finally {
       setSavingOptions(false);
     }
   };
+
+  // Context handlers
+  const handleContextChange = async (newContext) => {
+    setQuoteContext(newContext);
+    setContextAutoDetected(false);
+    try {
+      await axios.put(
+        `${API_URL}/api/tickets/${id}/quote-context`,
+        { quote_context: newContext },
+        { headers: getAuthHeaders() }
+      );
+    } catch { /* silent */ }
+  };
+
+  const handleSuggestionAccept = async () => {
+    if (!contextSuggestion) return;
+    setQuoteContext('diagnostic');
+    setContextSuggestion(null);
+    setSuggestionDismissed(true);
+    try {
+      await axios.put(`${API_URL}/api/tickets/${id}/quote-context`, { quote_context: 'diagnostic' }, { headers: getAuthHeaders() });
+      await axios.post(`${API_URL}/api/tickets/${id}/quote-context-learn`, {
+        user_action: 'accepted',
+        descriptions: quoteOptions.filter(o => o.description).map(o => o.description),
+        suggestion_score: contextSuggestion.score,
+        signals: contextSuggestion.signals,
+        suggested_context: 'diagnostic',
+      }, { headers: getAuthHeaders() });
+      toast.success('Contexto atualizado para diagnóstico');
+    } catch { /* silent */ }
+  };
+
+  const handleSuggestionIgnore = async () => {
+    setContextSuggestion(null);
+    setSuggestionDismissed(true);
+    try {
+      await axios.post(`${API_URL}/api/tickets/${id}/quote-context-learn`, {
+        user_action: 'ignored',
+        descriptions: quoteOptions.filter(o => o.description).map(o => o.description),
+        suggestion_score: contextSuggestion?.score || 0,
+        signals: contextSuggestion?.signals || [],
+        suggested_context: 'diagnostic',
+      }, { headers: getAuthHeaders() });
+    } catch { /* silent */ }
+  };
+
 
   const getQuoteOptionsTotal = () => {
     return quoteOptions.reduce((sum, o) => sum + (parseFloat(o.amount) || 0), 0);
@@ -1672,6 +1743,66 @@ Qualquer dúvida estamos disponíveis.`;
                     </div>
                   </div>
                   
+                  {/* Context Selector */}
+                  {canEditQuote && (
+                    <div className="flex items-center gap-4 py-2 px-1" data-testid="quote-context-selector">
+                      <span className="text-xs font-semibold text-zinc-500">Contexto:</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="quoteContext"
+                          checked={quoteContext === 'customer_request'}
+                          onChange={() => handleContextChange('customer_request')}
+                          className="accent-amber-600 w-3.5 h-3.5"
+                          data-testid="context-customer-request"
+                        />
+                        <span className="text-xs text-zinc-700">Pedido do cliente</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="quoteContext"
+                          checked={quoteContext === 'diagnostic'}
+                          onChange={() => handleContextChange('diagnostic')}
+                          className="accent-amber-600 w-3.5 h-3.5"
+                          data-testid="context-diagnostic"
+                        />
+                        <span className="text-xs text-zinc-700">Diagnóstico da oficina</span>
+                      </label>
+                    </div>
+                  )}
+                  {!canEditQuote && (
+                    <p className="text-xs text-zinc-400 px-1 pb-1">
+                      Contexto: {quoteContext === 'diagnostic' ? 'Diagnóstico da oficina' : quoteContext === 'customer_request' ? 'Pedido do cliente' : 'Não definido'}
+                    </p>
+                  )}
+
+                  {/* Suggestion Banner */}
+                  {contextSuggestion && !suggestionDismissed && (
+                    <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm" data-testid="context-suggestion-banner">
+                      <AlertCircle className="h-4 w-4 text-blue-600 shrink-0" />
+                      <span className="text-blue-800 flex-1">Este orçamento pode resultar de verificação do veículo</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-blue-700 hover:bg-blue-100 h-7 px-2"
+                        onClick={handleSuggestionAccept}
+                        data-testid="suggestion-accept-btn"
+                      >
+                        Marcar como diagnóstico
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-zinc-500 hover:bg-zinc-100 h-7 px-2"
+                        onClick={handleSuggestionIgnore}
+                        data-testid="suggestion-ignore-btn"
+                      >
+                        Ignorar
+                      </Button>
+                    </div>
+                  )}
+
                   {/* Quote Options List */}
                   <div className="space-y-2">
                     {quoteOptions.map((option, index) => (

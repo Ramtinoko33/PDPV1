@@ -19,6 +19,10 @@ from core.security import get_current_user
 from schemas.user import UserRole
 from schemas.ticket import TicketStatus
 from services.quote_normalizer import normalize_description
+from services.quote_context_service import (
+    detect_context_from_source, compute_suggestion_score,
+    get_context_display_text, record_learning_event, get_learning_stats,
+)
 from services.ticket_service import REJECTION_REASON_CODES
 from services.storage_service import UPLOAD_DIR, get_object
 from services.notification_service import create_notification, notify_supervisors
@@ -66,6 +70,7 @@ class QuoteOptionPublicResponse(BaseModel):
     display_priority_message: Optional[str] = None
     display_recommended: bool = False
     display_brand_tier: Optional[str] = None
+    display_context_text: Optional[str] = None
 
 class QuoteOptionsUpdate(BaseModel):
     options: List[QuoteOptionCreate]
@@ -105,6 +110,7 @@ class QuoteResponseData(BaseModel):
     quote_decided_at: Optional[str] = None
     quote_decision: Optional[str] = None
     ticket_attachments: List[AttachmentPublicInfo] = []
+    quote_context: Optional[str] = None
 
 
 # ============== QUOTE OPTIONS ENDPOINTS ==============
@@ -332,6 +338,9 @@ async def get_public_quote(token: str):
     accepted_total = sum(o["amount"] for o in accepted_options) if accepted_options else None
     accepted_count = len(accepted_options) if accepted_options else None
     
+    quote_context = ticket.get("quote_context", "unknown")
+    context_text = get_context_display_text(quote_context)
+
     enriched_options = []
     for opt in quote_options:
         opt_attachments = [
@@ -355,6 +364,7 @@ async def get_public_quote(token: str):
             display_priority_message=display.get("priority_message"),
             display_recommended=display.get("recommended", False),
             display_brand_tier=display.get("brand_tier"),
+            display_context_text=context_text,
         ))
     
     return QuoteResponseData(
@@ -372,7 +382,8 @@ async def get_public_quote(token: str):
         quote_valid_until=ticket.get("quote_valid_until"),
         quote_decided_at=ticket.get("quote_decided_at"),
         quote_decision=ticket.get("quote_decision"),
-        ticket_attachments=[AttachmentPublicInfo(id=a["id"], original_filename=a["original_filename"]) for a in ticket_attachments_raw]
+        ticket_attachments=[AttachmentPublicInfo(id=a["id"], original_filename=a["original_filename"]) for a in ticket_attachments_raw],
+        quote_context=quote_context,
     )
 
 
@@ -850,6 +861,104 @@ async def normalize_preview(description: str = "", current_user: dict = Depends(
                 "priority_message": "", "recommended": False, "brand_tier": None}
     result = normalize_description(description)
     return result
+
+
+
+# ============== QUOTE CONTEXT ENDPOINTS ==============
+
+@router.get("/tickets/{ticket_id}/quote-context")
+async def get_quote_context(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get quote context for a ticket (auto-detected or manually set)."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    context = ticket.get("quote_context")
+    if not context:
+        context = detect_context_from_source(ticket)
+
+    return {"quote_context": context, "auto_detected": "quote_context" not in ticket}
+
+
+@router.put("/tickets/{ticket_id}/quote-context")
+async def set_quote_context(ticket_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Set quote context manually."""
+    context = data.get("quote_context", "unknown")
+    if context not in ("diagnostic", "customer_request", "unknown"):
+        raise HTTPException(status_code=400, detail="Contexto inválido")
+
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {"quote_context": context, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"status": "success", "quote_context": context}
+
+
+@router.post("/tickets/{ticket_id}/quote-suggestion")
+async def get_quote_suggestion(ticket_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Compute suggestion score for current quote options."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    descriptions = data.get("descriptions", [])
+    if not descriptions:
+        options = await db.quote_options.find({"ticket_id": ticket_id}, {"_id": 0}).to_list(50)
+        descriptions = [o.get("description", "") for o in options]
+
+    # Get attachment count
+    att_count = await db.attachments.count_documents({"ticket_id": ticket_id})
+    ticket["attachments_count"] = att_count
+
+    result = compute_suggestion_score(descriptions, ticket)
+    current_context = ticket.get("quote_context") or detect_context_from_source(ticket)
+    result["current_context"] = current_context
+    result["should_suggest"] = (
+        result["suggested_context"] == "diagnostic" and current_context != "diagnostic"
+    )
+    return result
+
+
+@router.post("/tickets/{ticket_id}/quote-context-learn")
+async def record_context_learning(ticket_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Record user's response to a context suggestion."""
+    action = data.get("user_action")
+    if action not in ("accepted", "ignored"):
+        raise HTTPException(status_code=400, detail="Ação inválida")
+
+    descriptions = data.get("descriptions", [])
+    score = data.get("suggestion_score", 0)
+    signals = data.get("signals", [])
+    suggested = data.get("suggested_context", "diagnostic")
+
+    await record_learning_event(
+        ticket_id=ticket_id,
+        descriptions=descriptions,
+        suggestion_score=score,
+        signals=signals,
+        suggested_context=suggested,
+        user_action=action,
+        user_id=current_user["id"],
+    )
+
+    # If accepted, also update the ticket context
+    if action == "accepted":
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {"$set": {"quote_context": suggested, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+
+    return {"status": "success"}
+
+
+@router.get("/admin/quote-context-stats")
+async def admin_context_stats(current_user: dict = Depends(get_current_user)):
+    """Admin view: learning stats for quote context suggestions."""
+    if current_user["role"] not in ("ADMIN", "SUPERVISOR"):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    stats = await get_learning_stats(min_suggested=1)
+    return {"stats": stats, "total": len(stats)}
+
 
 
 

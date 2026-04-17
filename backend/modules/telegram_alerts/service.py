@@ -572,6 +572,7 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         "quote_sent": False,
         "quote_value": None,
         "source_alert_id": alert_id,
+        "quote_context": "diagnostic",
     }
 
     await db.tickets.insert_one(ticket_doc)
