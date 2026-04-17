@@ -1,0 +1,81 @@
+{
+  "tiers": {
+    "premium": {
+      "tagline": "maxima seguranca e durabilidade",
+      "brands": ["michelin", "continental", "bridgestone", "goodyear", "pirelli", "nokian", "vredestein"]
+    },
+    "mid": {
+      "tagline": "excelente equilibrio entre preco e qualidade",
+      "brands": ["hankook", "firestone", "dunlop", "yokohama", "kumho", "nexen", "toyo", "uniroyal", "kleber", "maxxis", "mabor"]
+    },
+    "budget": {
+      "tagline": "solucao economica e funcional",
+      "brands": ["barum", "radar", "roadx", "comforser", "nankang", "imperial", "sailun", "triangle", "debica", "sava", "roadstone", "massimo", "linglong", "westlake", "hifly", "aplus", "minerva", "rotalla", "torque", "fullrun", "fortuna", "dayton", "accelera", "goodride", "wanli", "zeetex", "laufenn", "semperit", "cooper", "avon", "falken"]
+    }
+  },
+  "display_names": {
+    "michelin": "Michelin",
+    "hankook": "Hankook",
+    "bridgestone": "Bridgestone",
+    "firestone": "Firestone",
+    "continental": "Continental",
+    "pirelli": "Pirelli",
+    "goodyear": "Goodyear",
+    "dunlop": "Dunlop",
+    "yokohama": "Yokohama",
+    "kumho": "Kumho",
+    "nexen": "Nexen",
+    "vredestein": "Vredestein",
+    "toyo": "Toyo",
+    "mabor": "Mabor",
+    "barum": "Barum",
+    "maxxis": "Maxxis",
+    "radar": "Radar",
+    "roadx": "RoadX",
+    "comforser": "Comforser",
+    "uniroyal": "Uniroyal",
+    "kleber": "Kleber",
+    "bf": "BFGoodrich",
+    "bf goodrich": "BFGoodrich",
+    "bfgoodrich": "BFGoodrich",
+    "nokian": "Nokian",
+    "nankang": "Nankang",
+    "imperial": "Imperial",
+    "sailun": "Sailun",
+    "triangle": "Triangle",
+    "debica": "Debica",
+    "sava": "Sava",
+    "roadstone": "Roadstone",
+    "massimo": "Massimo",
+    "linglong": "Linglong",
+    "westlake": "Westlake",
+    "hifly": "Hifly",
+    "aplus": "Aplus",
+    "minerva": "Minerva",
+    "rotalla": "Rotalla",
+    "torque": "Torque",
+    "fullrun": "Fullrun",
+    "fortuna": "Fortuna",
+    "dayton": "Dayton",
+    "accelera": "Accelera",
+    "goodride": "Goodride",
+    "wanli": "Wanli",
+    "zeetex": "Zeetex",
+    "laufenn": "Laufenn",
+    "semperit": "Semperit",
+    "cooper": "Cooper",
+    "avon": "Avon",
+    "falken": "Falken"
+  },
+  "typo_corrections": {
+    "hannkook": "hankook",
+    "hankock": "hankook",
+    "hankok": "hankook"
+  },
+  "quantity_patterns": {
+    "1x": 1, "x1": 1,
+    "2x": 2, "x2": 2, "2 pneus": 2,
+    "4x": 4, "x4": 4, "4 pneus": 4
+  },
+  "priority_message": "Pneus em mau estado podem comprometer travagem e aderencia"
+}
