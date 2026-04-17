@@ -381,108 +381,133 @@ const QuoteResponse = () => {
                   {quote.quote_options.map((option) => {
                     const isSelected = selectedOptions.includes(option.id);
                     const isAccepted = option.is_accepted;
+                    const isTire = option.display_brand_tier != null;
+                    const priorityLabel = option.display_priority === 'critical'
+                      ? { text: 'Atenção prioritária', color: 'text-red-500' }
+                      : option.display_priority === 'safety'
+                        ? { text: 'Segurança', color: 'text-amber-500' }
+                        : isTire
+                          ? { text: 'Escolha', color: 'text-blue-500' }
+                          : { text: 'Manutenção', color: 'text-emerald-500' };
                     
                     return (
-                      <div 
-                        key={option.id}
-                        className={`p-4 rounded-lg border-2 transition-all ${
-                          submitted
-                            ? isAccepted 
-                              ? 'bg-emerald-50 border-emerald-300' 
-                              : 'bg-zinc-50 border-zinc-200 opacity-60'
-                            : isSelected
-                              ? 'bg-white border-emerald-400 shadow-md'
-                              : 'bg-white border-zinc-200 hover:border-zinc-300'
-                        } ${!submitted && !isExpired ? 'cursor-pointer' : ''}`}
-                        onClick={() => !submitted && !isExpired && toggleOption(option.id)}
-                        data-testid={`quote-option-${option.id}`}
-                      >
-                        <div className="flex items-center">
-                          {!submitted ? (
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => !isExpired && toggleOption(option.id)}
-                              className="mr-4 h-5 w-5"
-                              disabled={isExpired}
-                              data-testid={`quote-option-checkbox-${option.id}`}
-                            />
-                          ) : (
-                            <div className="mr-4">
-                              {isAccepted ? (
-                                <CheckCircle className="h-5 w-5 text-emerald-600" />
-                              ) : (
-                                <XCircle className="h-5 w-5 text-zinc-400" />
+                      <div key={option.id}>
+                        {/* Soft priority label */}
+                        <p className={`text-[12px] font-medium ${priorityLabel.color} mb-1 ml-1`}>
+                          {priorityLabel.text}
+                        </p>
+                        <div 
+                          className={`p-4 rounded-lg border-2 transition-all ${
+                            submitted
+                              ? isAccepted 
+                                ? 'bg-emerald-50 border-emerald-300' 
+                                : 'bg-zinc-50 border-zinc-200 opacity-60'
+                              : isSelected
+                                ? 'bg-white border-emerald-400 shadow-md'
+                                : 'bg-white border-zinc-200 hover:border-zinc-300'
+                          } ${!submitted && !isExpired ? 'cursor-pointer' : ''}`}
+                          onClick={() => !submitted && !isExpired && toggleOption(option.id)}
+                          data-testid={`quote-option-${option.id}`}
+                        >
+                          <div className="flex items-center">
+                            {!submitted ? (
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => !isExpired && toggleOption(option.id)}
+                                className="mr-4 h-5 w-5"
+                                disabled={isExpired}
+                                data-testid={`quote-option-checkbox-${option.id}`}
+                              />
+                            ) : (
+                              <div className="mr-4">
+                                {isAccepted ? (
+                                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                ) : (
+                                  <XCircle className="h-5 w-5 text-zinc-400" />
+                                )}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-medium text-slate-800">
+                                {option.display_title || option.description}
+                              </p>
+                              {option.display_type === 'package' && option.display_includes?.length > 1 && (
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  Inclui: {option.display_includes.join(' + ')}
+                                </p>
+                              )}
+                              {option.display_priority_message && (
+                                <p className={`text-xs mt-1 ${
+                                  option.display_priority === 'critical'
+                                    ? 'text-red-500'
+                                    : option.display_priority === 'safety'
+                                      ? 'text-amber-500'
+                                      : 'text-emerald-600'
+                                }`}>
+                                  {option.display_priority === 'critical'
+                                    ? 'Recomendamos resolver de imediato para evitar danos graves'
+                                    : option.display_priority === 'safety'
+                                      ? 'Pode afetar a segurança do carro'
+                                      : 'Ajuda a evitar problemas futuros'
+                                  }
+                                </p>
+                              )}
+                              {option.display_context_text && (
+                                <p className="text-[11px] text-zinc-400 mt-0.5 italic">{option.display_context_text}</p>
                               )}
                             </div>
-                          )}
-                          <div className="flex-1">
-                            <p className="font-medium text-slate-800">
-                              {option.display_title || option.description}
-                            </p>
-                            {option.display_type === 'package' && option.display_includes?.length > 1 && (
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                Inclui: {option.display_includes.join(' + ')}
-                              </p>
+                            {option.display_recommended && (
+                              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                Recomendado
+                              </span>
                             )}
-                            {option.display_priority_message && (
-                              <p className={`text-xs mt-1 ${
+                            {option.display_priority && option.display_priority !== 'normal' && !option.display_recommended && (
+                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
                                 option.display_priority === 'critical'
-                                  ? 'text-red-600'
-                                  : option.display_priority === 'safety'
-                                    ? 'text-amber-600'
-                                    : 'text-emerald-600'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700'
                               }`}>
-                                {option.display_priority_message}
-                              </p>
+                                {option.display_priority === 'critical' ? 'Atenção prioritária' : 'Segurança'}
+                              </span>
                             )}
-                            {option.display_context_text && (
-                              <p className="text-[11px] text-zinc-400 mt-0.5 italic">{option.display_context_text}</p>
-                            )}
+                            <div 
+                              className="text-xl font-bold"
+                              style={{ color: branding?.primary_color || '#f97316' }}
+                            >
+                              {formatCurrency(option.amount)}
+                            </div>
                           </div>
-                          {option.display_recommended && (
-                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
-                              Recomendado
-                            </span>
+                          {option.attachments?.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-zinc-200 flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                              {option.attachments.map((att) => (
+                                <button
+                                  key={att.id}
+                                  onClick={() => openAttachmentPDF(att.id)}
+                                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 transition-colors"
+                                  data-testid={`pdf-option-${att.id}`}
+                                >
+                                  <FileDown className="h-3.5 w-3.5 text-red-500" />
+                                  Ver detalhes (PDF)
+                                </button>
+                              ))}
+                            </div>
                           )}
-                          {option.display_priority && option.display_priority !== 'normal' && !option.display_recommended && (
-                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
-                              option.display_priority === 'critical'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {option.display_priority === 'critical' ? 'Urgente' : 'Seguranca'}
-                            </span>
-                          )}
-                          <div 
-                            className="text-xl font-bold"
-                            style={{ color: branding?.primary_color || '#f97316' }}
-                          >
-                            {formatCurrency(option.amount)}
-                          </div>
                         </div>
-                        {option.attachments?.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-zinc-200 flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
-                            {option.attachments.map((att) => (
-                              <button
-                                key={att.id}
-                                onClick={() => openAttachmentPDF(att.id)}
-                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 transition-colors"
-                                data-testid={`pdf-option-${att.id}`}
-                              >
-                                <FileDown className="h-3.5 w-3.5 text-red-500" />
-                                Ver detalhes (PDF)
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     );
                   })}
+
+                  {/* Critical items unselected warning */}
+                  {!submitted && quote.quote_options.some(o => o.display_priority === 'critical' && !selectedOptions.includes(o.id)) && selectedOptions.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-2" data-testid="critical-unselected-warning">
+                      Existe um ponto importante por resolver
+                    </p>
+                  )}
                   
                   {/* Total */}
                   <div className="pt-4 mt-4 border-t-2 border-dashed flex justify-between items-center">
                     <span className="text-lg font-semibold text-slate-700">
-                      {submitted ? 'Total Aceite:' : 'Total Selecionado:'}
+                      {submitted ? 'Total aceite:' : 'Total dos serviços escolhidos:'}
                     </span>
                     <span 
                       className="text-3xl font-black"
@@ -589,8 +614,8 @@ const QuoteResponse = () => {
                       <CheckCircle className="h-5 w-5 mr-2" />
                     )}
                     {hasOptions 
-                      ? `Aceitar${selectedOptions.length > 0 ? ` (${selectedOptions.length})` : ''}`
-                      : 'Aceitar'
+                      ? `Confirmar serviços${selectedOptions.length > 0 ? ` (${selectedOptions.length})` : ''}`
+                      : 'Confirmar serviços'
                     }
                   </Button>
                 </div>
