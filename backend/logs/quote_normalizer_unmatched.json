@@ -346,5 +346,77 @@
     "normalized": "fuga de",
     "matched": false,
     "created_at": "2026-04-17T09:02:37.252721+00:00"
+  },
+  {
+    "original": "pas",
+    "normalized": "pas",
+    "matched": false,
+    "created_at": "2026-04-17T14:04:32.445612+00:00"
+  },
+  {
+    "original": "mudar ",
+    "normalized": "mudar",
+    "matched": false,
+    "created_at": "2026-04-17T14:17:31.272889+00:00"
+  },
+  {
+    "original": "mudar oleio",
+    "normalized": "mudar oleio",
+    "matched": false,
+    "created_at": "2026-04-17T14:17:32.785679+00:00"
+  },
+  {
+    "original": "mudar olei",
+    "normalized": "mudar olei",
+    "matched": false,
+    "created_at": "2026-04-17T14:17:34.676172+00:00"
+  },
+  {
+    "original": "mudar ole",
+    "normalized": "mudar ole",
+    "matched": false,
+    "created_at": "2026-04-17T14:17:35.168346+00:00"
+  },
+  {
+    "original": "FUA A",
+    "normalized": "fua a",
+    "matched": false,
+    "created_at": "2026-04-17T14:18:37.202678+00:00"
+  },
+  {
+    "original": "FUA AGUA",
+    "normalized": "fua agua",
+    "matched": false,
+    "created_at": "2026-04-17T14:18:38.288910+00:00"
+  },
+  {
+    "original": "4X",
+    "normalized": "4x",
+    "matched": false,
+    "created_at": "2026-04-17T16:10:10.892318+00:00"
+  },
+  {
+    "original": "4XMI",
+    "normalized": "4xmi",
+    "matched": false,
+    "created_at": "2026-04-17T16:10:12.093867+00:00"
+  },
+  {
+    "original": "4XYO",
+    "normalized": "4xyo",
+    "matched": false,
+    "created_at": "2026-04-17T16:10:35.141666+00:00"
+  },
+  {
+    "original": "4XY",
+    "normalized": "4xy",
+    "matched": false,
+    "created_at": "2026-04-17T16:10:37.258110+00:00"
+  },
+  {
+    "original": "KLEBER",
+    "normalized": "kleber",
+    "matched": false,
+    "created_at": "2026-04-17T16:10:58.610228+00:00"
   }
 ]

@@ -339,6 +339,18 @@ const QuoteResponse = () => {
               )}
             </div>
 
+            {/* Context text — single line below client info */}
+            {quote.quote_context && (
+              <p className="text-[12px] text-zinc-400 -mt-2 mb-1">
+                {quote.quote_context === 'diagnostic'
+                  ? 'Identificado na verificação do veículo'
+                  : quote.quote_context === 'customer_request'
+                    ? 'Com base no seu pedido'
+                    : 'Sujeito a verificação em oficina'
+                }
+              </p>
+            )}
+
             {/* Quote Options or Single Value */}
             <div 
               className="rounded-lg p-6"
@@ -378,124 +390,155 @@ const QuoteResponse = () => {
 
               {hasOptions ? (
                 <div className="space-y-3">
-                  {quote.quote_options.map((option) => {
-                    const isSelected = selectedOptions.includes(option.id);
-                    const isAccepted = option.is_accepted;
-                    const isTire = option.display_brand_tier != null;
-                    const priorityLabel = option.display_priority === 'critical'
-                      ? { text: 'Atenção prioritária', color: 'text-red-500' }
-                      : option.display_priority === 'safety'
-                        ? { text: 'Segurança', color: 'text-amber-500' }
-                        : isTire
-                          ? { text: 'Escolha', color: 'text-blue-500' }
-                          : { text: 'Manutenção', color: 'text-emerald-500' };
-                    
-                    return (
-                      <div key={option.id}>
-                        {/* Soft priority label */}
-                        <p className={`text-[12px] font-medium ${priorityLabel.color} mb-1 ml-1`}>
-                          {priorityLabel.text}
-                        </p>
-                        <div 
-                          className={`p-4 rounded-lg border-2 transition-all ${
-                            submitted
-                              ? isAccepted 
-                                ? 'bg-emerald-50 border-emerald-300' 
-                                : 'bg-zinc-50 border-zinc-200 opacity-60'
-                              : isSelected
-                                ? 'bg-white border-emerald-400 shadow-md'
-                                : 'bg-white border-zinc-200 hover:border-zinc-300'
-                          } ${!submitted && !isExpired ? 'cursor-pointer' : ''}`}
-                          onClick={() => !submitted && !isExpired && toggleOption(option.id)}
-                          data-testid={`quote-option-${option.id}`}
-                        >
-                          <div className="flex items-center">
-                            {!submitted ? (
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => !isExpired && toggleOption(option.id)}
-                                className="mr-4 h-5 w-5"
-                                disabled={isExpired}
-                                data-testid={`quote-option-checkbox-${option.id}`}
-                              />
-                            ) : (
-                              <div className="mr-4">
-                                {isAccepted ? (
-                                  <CheckCircle className="h-5 w-5 text-emerald-600" />
-                                ) : (
-                                  <XCircle className="h-5 w-5 text-zinc-400" />
+                  {/* Soft recommendation if critical items exist */}
+                  {!submitted && quote.quote_options.some(o => o.display_priority === 'critical') && (
+                    <p className="text-[12px] text-zinc-500 leading-relaxed mb-1">
+                      <span className="font-medium">Recomendação:</span> Resolva primeiro o ponto prioritário. Pode adicionar os restantes serviços se desejar.
+                    </p>
+                  )}
+
+                  {(() => {
+                    // Sort by priority: critical > safety > normal > tires
+                    const priorityOrder = { critical: 0, safety: 1, normal: 2 };
+                    const sorted = [...quote.quote_options].sort((a, b) => {
+                      const pa = priorityOrder[a.display_priority] ?? 2;
+                      const pb = priorityOrder[b.display_priority] ?? 2;
+                      if (pa !== pb) return pa - pb;
+                      // Tires last within same priority
+                      const tireA = a.display_brand_tier != null ? 1 : 0;
+                      const tireB = b.display_brand_tier != null ? 1 : 0;
+                      return tireA - tireB;
+                    });
+
+                    let lastLabel = null;
+
+                    return sorted.map((option) => {
+                      const isSelected = selectedOptions.includes(option.id);
+                      const isAccepted = option.is_accepted;
+                      const isTire = option.display_brand_tier != null;
+                      const labelKey = option.display_priority === 'critical'
+                        ? 'critical'
+                        : option.display_priority === 'safety'
+                          ? (isTire ? 'tire' : 'safety')
+                          : (isTire ? 'tire' : 'normal');
+                      const labels = {
+                        critical: { text: 'Atenção prioritária', color: 'text-red-500' },
+                        safety: { text: 'Segurança', color: 'text-amber-500' },
+                        tire: { text: 'Escolha', color: 'text-blue-500' },
+                        normal: { text: 'Manutenção', color: 'text-emerald-500' },
+                      };
+                      const priorityLabel = labels[labelKey];
+                      const showLabel = labelKey !== lastLabel;
+                      lastLabel = labelKey;
+
+                      // Tire-specific copy
+                      const getMessage = () => {
+                        if (isTire) return 'Melhora aderência e segurança na condução';
+                        if (option.display_priority === 'critical') return 'Recomendamos resolver de imediato para evitar danos graves';
+                        if (option.display_priority === 'safety') return 'Pode afetar a segurança do carro';
+                        return 'Ajuda a evitar problemas futuros';
+                      };
+
+                      return (
+                        <div key={option.id}>
+                          {showLabel && (
+                            <p className={`text-[12px] font-medium ${priorityLabel.color} mb-1 ml-1 ${lastLabel !== labelKey ? '' : 'mt-2'}`}>
+                              {priorityLabel.text}
+                            </p>
+                          )}
+                          <div 
+                            className={`p-4 rounded-lg border-2 transition-all ${
+                              submitted
+                                ? isAccepted 
+                                  ? 'bg-emerald-50 border-emerald-300' 
+                                  : 'bg-zinc-50 border-zinc-200 opacity-60'
+                                : isSelected
+                                  ? 'bg-white border-emerald-400 shadow-md'
+                                  : 'bg-white border-zinc-200 hover:border-zinc-300'
+                            } ${!submitted && !isExpired ? 'cursor-pointer' : ''}`}
+                            onClick={() => !submitted && !isExpired && toggleOption(option.id)}
+                            data-testid={`quote-option-${option.id}`}
+                          >
+                            <div className="flex items-center">
+                              {!submitted ? (
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => !isExpired && toggleOption(option.id)}
+                                  className="mr-4 h-5 w-5"
+                                  disabled={isExpired}
+                                  data-testid={`quote-option-checkbox-${option.id}`}
+                                />
+                              ) : (
+                                <div className="mr-4">
+                                  {isAccepted ? (
+                                    <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                  ) : (
+                                    <XCircle className="h-5 w-5 text-zinc-400" />
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex-1">
+                                <p className="font-medium text-slate-800">
+                                  {option.display_title || option.description}
+                                </p>
+                                {option.display_type === 'package' && option.display_includes?.length > 1 && (
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Inclui: {option.display_includes.join(' + ')}
+                                  </p>
+                                )}
+                                {option.display_priority_message && (
+                                  <p className={`text-xs mt-1 ${
+                                    option.display_priority === 'critical'
+                                      ? 'text-red-500'
+                                      : option.display_priority === 'safety'
+                                        ? 'text-amber-500'
+                                        : 'text-emerald-600'
+                                  }`}>
+                                    {getMessage()}
+                                  </p>
                                 )}
                               </div>
-                            )}
-                            <div className="flex-1">
-                              <p className="font-medium text-slate-800">
-                                {option.display_title || option.description}
-                              </p>
-                              {option.display_type === 'package' && option.display_includes?.length > 1 && (
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                  Inclui: {option.display_includes.join(' + ')}
-                                </p>
+                              {option.display_recommended && (
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                  Recomendado
+                                </span>
                               )}
-                              {option.display_priority_message && (
-                                <p className={`text-xs mt-1 ${
+                              {option.display_priority && option.display_priority !== 'normal' && !option.display_recommended && (
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
                                   option.display_priority === 'critical'
-                                    ? 'text-red-500'
-                                    : option.display_priority === 'safety'
-                                      ? 'text-amber-500'
-                                      : 'text-emerald-600'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-amber-100 text-amber-700'
                                 }`}>
-                                  {option.display_priority === 'critical'
-                                    ? 'Recomendamos resolver de imediato para evitar danos graves'
-                                    : option.display_priority === 'safety'
-                                      ? 'Pode afetar a segurança do carro'
-                                      : 'Ajuda a evitar problemas futuros'
-                                  }
-                                </p>
+                                  {option.display_priority === 'critical' ? 'Atenção prioritária' : 'Segurança'}
+                                </span>
                               )}
-                              {option.display_context_text && (
-                                <p className="text-[11px] text-zinc-400 mt-0.5 italic">{option.display_context_text}</p>
-                              )}
+                              <div 
+                                className="text-xl font-bold"
+                                style={{ color: branding?.primary_color || '#f97316' }}
+                              >
+                                {formatCurrency(option.amount)}
+                              </div>
                             </div>
-                            {option.display_recommended && (
-                              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-2 shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                Recomendado
-                              </span>
+                            {option.attachments?.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-zinc-200 flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                                {option.attachments.map((att) => (
+                                  <button
+                                    key={att.id}
+                                    onClick={() => openAttachmentPDF(att.id)}
+                                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 transition-colors"
+                                    data-testid={`pdf-option-${att.id}`}
+                                  >
+                                    <FileDown className="h-3.5 w-3.5 text-red-500" />
+                                    Ver detalhes (PDF)
+                                  </button>
+                                ))}
+                              </div>
                             )}
-                            {option.display_priority && option.display_priority !== 'normal' && !option.display_recommended && (
-                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full mr-3 shrink-0 ${
-                                option.display_priority === 'critical'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                {option.display_priority === 'critical' ? 'Atenção prioritária' : 'Segurança'}
-                              </span>
-                            )}
-                            <div 
-                              className="text-xl font-bold"
-                              style={{ color: branding?.primary_color || '#f97316' }}
-                            >
-                              {formatCurrency(option.amount)}
-                            </div>
                           </div>
-                          {option.attachments?.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-zinc-200 flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
-                              {option.attachments.map((att) => (
-                                <button
-                                  key={att.id}
-                                  onClick={() => openAttachmentPDF(att.id)}
-                                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 transition-colors"
-                                  data-testid={`pdf-option-${att.id}`}
-                                >
-                                  <FileDown className="h-3.5 w-3.5 text-red-500" />
-                                  Ver detalhes (PDF)
-                                </button>
-                              ))}
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
 
                   {/* Critical items unselected warning */}
                   {!submitted && quote.quote_options.some(o => o.display_priority === 'critical' && !selectedOptions.includes(o.id)) && selectedOptions.length > 0 && (
