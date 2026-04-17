@@ -25,6 +25,30 @@ PRIORITY_MESSAGES = {
 
 
 # ============== SYNONYM / TYPO MAP ==============
+# Location/position abbreviations → extracted and appended as "(location)"
+LOCATION_ABBREVS = {
+    # Front
+    "frt": "frente", "ft": "frente", "fr": "frente",
+    "diant": "dianteiros", "dianteiro": "dianteiros", "dianteira": "dianteiros", "dianteiras": "dianteiros", "dianteiros": "dianteiros",
+    # Rear
+    "trs": "traseiros", "tr": "traseiros", "rr": "traseiros",
+    "traseiro": "traseiros", "traseira": "traseiros", "traseiras": "traseiros", "traseiros": "traseiros",
+    # Left / Right
+    "esq": "esquerda", "lh": "esquerda", "esquerdo": "esquerda", "esquerda": "esquerda",
+    "dir": "direita", "rh": "direita", "direito": "direita", "direita": "direita",
+    # Position
+    "sup": "superior", "superior": "superior",
+    "inf": "inferior", "inferior": "inferior",
+    "int": "interior", "interior": "interior",
+    "ext": "exterior", "exterior": "exterior",
+}
+
+# Prepositions to strip — "c/" and "s/"
+PREPOSITION_ABBREVS = {
+    "c/": "com",
+    "s/": "sem",
+}
+
 SYNONYMS = {
     # Multi-word (applied first, longest match)
     "mao de obra": "mao de obra",
@@ -211,6 +235,35 @@ def _remove_accents(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _extract_locations(normalized: str) -> tuple:
+    """Extract location abbreviations from normalized text.
+    Returns (cleaned_text, location_suffix) e.g. ("pastilhas", "frente")"""
+    locations_found = []
+    remaining = normalized
+
+    # Extract location words/abbreviations (word boundary match, longest first)
+    for abbrev, full in sorted(LOCATION_ABBREVS.items(), key=lambda x: -len(x[0])):
+        pattern = re.compile(r'\b' + re.escape(abbrev) + r'\b')
+        if pattern.search(remaining):
+            remaining = pattern.sub('', remaining).strip()
+            if full not in locations_found:
+                locations_found.append(full)
+
+    # Collapse whitespace
+    remaining = re.sub(r'\s+', ' ', remaining).strip()
+
+    # Build suffix: "frente" or "frente, esquerda"
+    suffix = ", ".join(locations_found) if locations_found else ""
+    return remaining, suffix
+
+
+def _expand_prepositions(text: str) -> str:
+    """Expand c/ → com, s/ → sem before normalization."""
+    for abbrev, full in PREPOSITION_ABBREVS.items():
+        text = text.replace(abbrev, full)
+    return text
+
+
 # ============== TIRE BRANDS & DETECTION ==============
 TIRE_TIER_TAGLINES = {
     "premium": "maxima seguranca e durabilidade",
@@ -336,6 +389,7 @@ def _detect_tire(normalized: str) -> dict:
 def _normalize(text: str) -> str:
     """Lowercase, remove accents, remove punctuation/prices, trim."""
     text = text.lower().strip()
+    text = _expand_prepositions(text)
     text = _remove_accents(text)
     text = re.sub(r'[€$]\s*[\d.,]+|[\d.,]+\s*[€$]', '', text)
     text = re.sub(r'[^\w\s/+]', ' ', text)
@@ -446,6 +500,16 @@ def normalize_description(raw_description: str) -> dict:
     normalized = _normalize(raw_description)
     normalized = _apply_synonyms(normalized)
 
+    # ---- EXTRACT LOCATION ABBREVIATIONS ----
+    text_no_loc, location_suffix = _extract_locations(normalized)
+    text_no_loc = _apply_synonyms(text_no_loc)  # Re-apply after stripping locations
+
+    def _append_location(title: str) -> str:
+        """Append location suffix to title if present."""
+        if location_suffix:
+            return f"{title} ({location_suffix})"
+        return title
+
     # ---- TIRE PRODUCT DETECTION (before general matching) ----
     tire_result = _detect_tire(normalized)
     if tire_result and "+" not in normalized:
@@ -458,10 +522,17 @@ def normalize_description(raw_description: str) -> dict:
         parts = [p.strip() for p in normalized.split("+") if p.strip()]
         matched_keys = []
         matched_titles = []
-        tire_in_package = None  # Track tire part for pack title
+        tire_in_package = None
+        package_locations = []  # Collect locations from all parts
 
         for part in parts:
             part = _apply_synonyms(part)
+            # Extract locations from this part
+            part_clean, part_loc = _extract_locations(part)
+            part_clean = _apply_synonyms(part_clean)
+            if part_loc:
+                package_locations.append(part_loc)
+
             # Try tire detection for this part first
             tire_part = _detect_tire(part)
             if tire_part:
@@ -469,9 +540,14 @@ def normalize_description(raw_description: str) -> dict:
                 matched_keys.append("pneus")
                 tire_in_package = tire_part
                 continue
-            match, key = _match_single(part)
+            match, key = _match_single(part_clean)
+            if not match:
+                match, key = _match_single(part)  # Fallback with locations
             if match:
-                matched_titles.append(match["title"])
+                title = match["title"]
+                if part_loc:
+                    title = f"{title} ({part_loc})"
+                matched_titles.append(title)
                 if key:
                     matched_keys.append(key)
             else:
@@ -480,11 +556,18 @@ def normalize_description(raw_description: str) -> dict:
 
         keys_set = frozenset(matched_keys)
 
+        # Shared location suffix for package titles
+        shared_loc = ""
+        if package_locations:
+            unique_locs = list(dict.fromkeys(package_locations))
+            if len(unique_locs) == 1:
+                shared_loc = unique_locs[0]
+
         # a) Tire + service(s) → branded pack title takes priority
         if tire_in_package and len(matched_titles) > 1:
             service_titles = [t for t in matched_titles if t != tire_in_package["title"]]
             services_text = " + ".join(service_titles)
-            tire_title_short = tire_in_package["title"].split(" — ")[0]  # "Pneus Brand (X unidades)"
+            tire_title_short = tire_in_package["title"].split(" — ")[0]
             title = f"Pack {tire_title_short} + {services_text} — solucao completa para seguranca e desgaste uniforme"
             return {
                 "title": title,
@@ -499,8 +582,11 @@ def normalize_description(raw_description: str) -> dict:
         # b) Known package exact match (non-tire)
         if keys_set in KNOWN_PACKAGES:
             pkg = KNOWN_PACKAGES[keys_set]
+            pkg_title = pkg["title"]
+            if shared_loc:
+                pkg_title = f"{pkg_title} ({shared_loc})"
             return {
-                "title": pkg["title"],
+                "title": pkg_title,
                 "type": "package",
                 "includes": matched_titles,
                 "priority": pkg["priority"],
@@ -531,10 +617,10 @@ def normalize_description(raw_description: str) -> dict:
         return result
 
     # ---- SMART " e " SPLIT: only if both sides are known ----
-    if " e " in normalized:
-        idx = normalized.index(" e ")
-        left = _apply_synonyms(normalized[:idx].strip())
-        right = _apply_synonyms(normalized[idx + 3:].strip())
+    if " e " in text_no_loc:
+        idx = text_no_loc.index(" e ")
+        left = _apply_synonyms(text_no_loc[:idx].strip())
+        right = _apply_synonyms(text_no_loc[idx + 3:].strip())
         left_match, left_key = _match_single(left)
         right_match, right_key = _match_single(right)
         if left_match and right_match:
@@ -561,10 +647,12 @@ def normalize_description(raw_description: str) -> dict:
             }
 
     # ---- SINGLE ITEM ----
-    match, _ = _match_single(normalized)
+    match, _ = _match_single(text_no_loc)
+    if not match:
+        match, _ = _match_single(normalized)  # Fallback: try with locations included
     if match:
         return {
-            "title": match["title"],
+            "title": _append_location(match["title"]),
             "type": "single",
             "includes": [],
             "priority": match["priority"],
@@ -575,10 +663,15 @@ def normalize_description(raw_description: str) -> dict:
     _log_unmatched(raw_description, normalized)
 
     fallback = _clean_fallback(raw_description)
-    title = f"Intervenção identificada: {fallback}" if fallback else raw_description.strip()
+    if not fallback:
+        fallback = raw_description.strip()
+    # Capitalize first letter, clean spacing
+    fallback = re.sub(r'\s+', ' ', fallback).strip()
+    if fallback:
+        fallback = fallback[0].upper() + fallback[1:]
 
     return {
-        "title": title,
+        "title": fallback,
         "type": "single",
         "includes": [],
         "priority": "normal",
