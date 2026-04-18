@@ -1,36 +1,38 @@
 {
-  "frt": "frente",
-  "ft": "frente",
-  "fr": "frente",
-  "trs": "traseiros",
-  "tras": "traseiros",
-  "rh": "direita",
-  "lh": "esquerda",
-  "dir": "direita",
-  "esq": "esquerda",
-  "dta": "direita",
-  "drt": "direita",
-  "sup": "superior",
-  "inf": "inferior",
-  "int": "interior",
-  "ext": "exterior",
-  "comp": "completo",
-  "diant": "dianteiros",
-  "dianteiro": "dianteiros",
-  "dianteira": "dianteiros",
-  "dianteiras": "dianteiros",
-  "dianteiros": "dianteiros",
-  "traseiro": "traseiros",
-  "traseira": "traseiros",
-  "traseiras": "traseiros",
-  "traseiros": "traseiros",
-  "esquerdo": "esquerda",
-  "esquerda": "esquerda",
-  "direito": "direita",
-  "direita": "direita",
-  "superior": "superior",
-  "inferior": "inferior",
-  "interior": "interior",
-  "exterior": "exterior",
-  "completo": "completo"
+  "axis": {
+    "front": ["frt", "ft", "fr", "frente", "diant", "dianteiro", "dianteira", "dianteiros", "dianteiras"],
+    "rear": ["trs", "tras", "traseiro", "traseira", "traseiros", "traseiras"]
+  },
+  "side": {
+    "left": ["esq", "esquerda", "esquerdo", "lh", "left"],
+    "right": ["dir", "direita", "direito", "dta", "drt", "rh", "right"]
+  },
+  "combos": {
+    "rr": { "axis": "rear", "side": "right" },
+    "rl": { "axis": "rear", "side": "left" }
+  },
+  "other": {
+    "sup": "superior",
+    "inf": "inferior",
+    "int": "interior",
+    "ext": "exterior",
+    "comp": "completo",
+    "superior": "superior",
+    "inferior": "inferior",
+    "interior": "interior",
+    "exterior": "exterior",
+    "completo": "completo"
+  },
+  "position_services": [
+    "calc", "pastilh", "disco", "amortecedor", "braco", "bracos",
+    "rolamento", "pendural", "pendurais", "fole", "cabecot", "mola"
+  ],
+  "output": {
+    "axis_front": "frente",
+    "axis_rear": "traseira",
+    "side_left": "esquerda",
+    "side_right": "direita",
+    "side_only_left": "lado esquerdo",
+    "side_only_right": "lado direito"
+  }
 }

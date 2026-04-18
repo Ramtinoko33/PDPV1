@@ -28,8 +28,32 @@ _abbrev_cfg = _load_json("normalizer_abbreviations.json")
 _svc_cfg = _load_json("normalizer_services.json")
 _tire_cfg = _load_json("normalizer_tires.json")
 
-# --- Abbreviations (location) ---
-LOCATION_ABBREVS: dict = _abbrev_cfg  # key→translated
+# --- Position tokens (axis / side / combos) ---
+_AXIS_TOKENS = {}  # token → "front" | "rear"
+for axis_name, tokens in _abbrev_cfg.get("axis", {}).items():
+    for t in tokens:
+        _AXIS_TOKENS[t] = axis_name
+
+_SIDE_TOKENS = {}  # token → "left" | "right"
+for side_name, tokens in _abbrev_cfg.get("side", {}).items():
+    for t in tokens:
+        _SIDE_TOKENS[t] = side_name
+
+_COMBO_TOKENS = _abbrev_cfg.get("combos", {})  # "rr" → {axis, side}
+_OTHER_TOKENS = _abbrev_cfg.get("other", {})    # "sup" → "superior"
+
+# Service roots that activate position detection
+_POSITION_SERVICES = _abbrev_cfg.get("position_services", [])
+
+# Output labels
+_POS_OUTPUT = _abbrev_cfg.get("output", {})
+
+# All position tokens for stripping (sorted longest first)
+_ALL_POSITION_TOKENS = set()
+_ALL_POSITION_TOKENS.update(_AXIS_TOKENS.keys())
+_ALL_POSITION_TOKENS.update(_SIDE_TOKENS.keys())
+_ALL_POSITION_TOKENS.update(_COMBO_TOKENS.keys())
+_ALL_POSITION_TOKENS.update(_OTHER_TOKENS.keys())
 
 # --- Prepositions ---
 PREPOSITION_ABBREVS: dict = _svc_cfg.get("prepositions", {})
@@ -114,19 +138,79 @@ def _apply_synonyms(text: str) -> str:
     return text
 
 
-def _extract_locations(normalized: str) -> tuple:
-    """Extract location abbreviations. Returns (cleaned_text, location_suffix)."""
-    locations_found = []
-    remaining = normalized
-    for abbrev, full in sorted(LOCATION_ABBREVS.items(), key=lambda x: -len(x[0])):
-        pattern = re.compile(r'\b' + re.escape(abbrev) + r'\b')
-        if pattern.search(remaining):
-            remaining = pattern.sub('', remaining).strip()
-            if full not in locations_found:
-                locations_found.append(full)
-    remaining = re.sub(r'\s+', ' ', remaining).strip()
-    suffix = ", ".join(locations_found) if locations_found else ""
-    return remaining, suffix
+def _has_position_service(text: str) -> bool:
+    """Check if text contains a service keyword that supports position annotation."""
+    for root in _POSITION_SERVICES:
+        if root in text:
+            return True
+    return False
+
+
+def _extract_positions(normalized: str) -> tuple:
+    """Production-ready position extraction.
+    Returns (cleaned_text, position_suffix).
+    Position is only extracted if a valid service keyword is present."""
+    if not _has_position_service(normalized):
+        return normalized, ""
+
+    tokens = normalized.split()
+    axis_detected = None  # "front" | "rear"
+    side_detected = None  # "left" | "right"
+    other_detected = None  # "superior", "interior", etc.
+    tokens_to_remove = set()
+
+    for i, tok in enumerate(tokens):
+        # Combo tokens first (rr, rl)
+        if tok in _COMBO_TOKENS and axis_detected is None:
+            combo = _COMBO_TOKENS[tok]
+            axis_detected = combo.get("axis")
+            side_detected = combo.get("side")
+            tokens_to_remove.add(i)
+            continue
+        # Axis tokens
+        if tok in _AXIS_TOKENS and axis_detected is None:
+            axis_detected = _AXIS_TOKENS[tok]
+            tokens_to_remove.add(i)
+            continue
+        # Side tokens
+        if tok in _SIDE_TOKENS and side_detected is None:
+            side_detected = _SIDE_TOKENS[tok]
+            tokens_to_remove.add(i)
+            continue
+        # Other tokens (sup, inf, int, ext, comp)
+        if tok in _OTHER_TOKENS and other_detected is None:
+            other_detected = _OTHER_TOKENS[tok]
+            tokens_to_remove.add(i)
+            continue
+
+    # Build cleaned text (remove matched position tokens)
+    cleaned_tokens = [tok for i, tok in enumerate(tokens) if i not in tokens_to_remove]
+    cleaned = " ".join(cleaned_tokens).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+
+    # Build position suffix
+    suffix = _build_position_suffix(axis_detected, side_detected, other_detected)
+
+    return cleaned, suffix
+
+
+def _build_position_suffix(axis: str, side: str, other: str) -> str:
+    """Build consistent position suffix string."""
+    if other:
+        return other
+
+    if axis and side:
+        axis_label = _POS_OUTPUT.get(f"axis_{axis}", axis)
+        side_label = _POS_OUTPUT.get(f"side_{side}", side)
+        return f"{axis_label} {side_label}"
+
+    if axis:
+        return _POS_OUTPUT.get(f"axis_{axis}", axis)
+
+    if side:
+        return _POS_OUTPUT.get(f"side_only_{side}", side)
+
+    return ""
 
 
 def _get_priority(key: str) -> str:
@@ -250,8 +334,8 @@ def normalize_description(raw_description: str) -> dict:
     normalized = _normalize(raw_description)
     normalized = _apply_synonyms(normalized)
 
-    # Extract locations
-    text_no_loc, location_suffix = _extract_locations(normalized)
+    # Extract positions
+    text_no_loc, location_suffix = _extract_positions(normalized)
     text_no_loc = _apply_synonyms(text_no_loc)
 
     def _append_loc(title: str) -> str:
@@ -271,7 +355,7 @@ def normalize_description(raw_description: str) -> dict:
 
         for part in parts:
             part = _apply_synonyms(part)
-            part_clean, part_loc = _extract_locations(part)
+            part_clean, part_loc = _extract_positions(part)
             part_clean = _apply_synonyms(part_clean)
             if part_loc:
                 package_locations.append(part_loc)
