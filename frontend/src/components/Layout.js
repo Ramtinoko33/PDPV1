@@ -162,6 +162,12 @@ const Layout = ({ children }) => {
       icon: Settings,
       roles: ['ADMIN']
     },
+    { 
+      path: '/settings/normalization', 
+      label: 'Normalização', 
+      icon: Wrench,
+      roles: ['ADMIN', 'SUPERVISOR']
+    },
   ];
 
   const filteredNavItems = navItems.filter(item => {

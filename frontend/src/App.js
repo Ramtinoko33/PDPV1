@@ -18,6 +18,7 @@ import TicketReplyPage from "./pages/TicketReplyPage";
 import IntakePage from "./pages/IntakePage";
 import TelegramPage from "./pages/TelegramPage";
 import AlertsPage from "./pages/AlertsPage";
+import NormalizationSettings from "./pages/NormalizationSettings";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -109,6 +110,12 @@ function AppRoutes() {
       <Route path="/settings" element={
         <ProtectedRoute allowedRoles={['ADMIN']}>
           <AdminSettings />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/settings/normalization" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+          <NormalizationSettings />
         </ProtectedRoute>
       } />
       

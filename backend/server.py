@@ -50,6 +50,7 @@ from routes.vehicles import router as vehicles_router
 from routes.tickets import router as tickets_router
 from routes.admin import router as admin_router
 from routes.quotes import router as quotes_router
+from routes.normalization_config import router as norm_config_router
 
 # Helper function to convert URLs in text to clickable links
 def convert_urls_to_links(text: str) -> str:
@@ -1678,6 +1679,7 @@ api_router.include_router(vehicles_router)
 api_router.include_router(tickets_router)
 api_router.include_router(admin_router)
 api_router.include_router(quotes_router)
+api_router.include_router(norm_config_router)
 
 # Load optional modules (intake, telegram, whatsapp, etc.)
 # Modules are only loaded if enabled in config/modules.json
