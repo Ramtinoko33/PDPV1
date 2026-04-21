@@ -240,3 +240,18 @@ def _reload_normalizer():
         importlib.reload(qn)
     except Exception:
         pass  # Hot reload will catch file change
+
+
+@router.post("/normalization-learning")
+async def record_normalization_learning(data: dict, current_user: dict = Depends(get_current_user)):
+    """Record a normalization learning event (implicit_accept, modified, rejected)."""
+    event = {
+        "original": data.get("original", ""),
+        "suggested": data.get("suggested", ""),
+        "final": data.get("final", ""),
+        "action": data.get("action", "implicit_accept"),
+        "user_id": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.normalization_learning_events.insert_one(event)
+    return {"status": "success"}

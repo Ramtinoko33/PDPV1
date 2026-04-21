@@ -636,6 +636,8 @@ const TicketDetail = () => {
   const [optionPreviews, setOptionPreviews] = useState({});
   const [showPreviews, setShowPreviews] = useState(true);
   const previewTimers = useRef({});
+  const [suggestionStates, setSuggestionStates] = useState({});
+  // suggestionStates[index] = { mode: 'preview'|'editing'|'ignored', editText: '' }
   const [quoteContext, setQuoteContext] = useState('unknown');
   const [contextAutoDetected, setContextAutoDetected] = useState(true);
   const [contextSuggestion, setContextSuggestion] = useState(null);
@@ -822,6 +824,69 @@ const TicketDetail = () => {
     }
   };
 
+  const startEditSuggestion = (index) => {
+    const preview = optionPreviews[index];
+    setSuggestionStates(prev => ({
+      ...prev,
+      [index]: { mode: 'editing', editText: preview?.title || '' }
+    }));
+  };
+
+  const ignoreSuggestion = (index) => {
+    setSuggestionStates(prev => ({ ...prev, [index]: { mode: 'ignored' } }));
+  };
+
+  const updateSuggestionEdit = (index, text) => {
+    setSuggestionStates(prev => ({
+      ...prev,
+      [index]: { ...prev[index], editText: text }
+    }));
+  };
+
+  const saveSuggestionEdit = (index) => {
+    setSuggestionStates(prev => ({
+      ...prev,
+      [index]: { ...prev[index], mode: 'edited' }
+    }));
+  };
+
+  // Send learning events for all options with suggestions
+  const sendLearningEvents = async (options) => {
+    for (let i = 0; i < options.length; i++) {
+      const preview = optionPreviews[i];
+      if (!preview || !options[i]?.description) continue;
+
+      const state = suggestionStates[i];
+      const original = options[i].description;
+      const suggested = preview.title || '';
+
+      let action = 'implicit_accept';
+      let finalText = suggested;
+
+      if (state?.mode === 'ignored') {
+        action = 'rejected';
+        finalText = original;
+      } else if (state?.mode === 'edited') {
+        finalText = state.editText || '';
+        // Similarity check: <30% different = modified, >=30% = rejected
+        const maxLen = Math.max(suggested.length, finalText.length, 1);
+        let diff = 0;
+        for (let c = 0; c < maxLen; c++) {
+          if ((suggested[c] || '') !== (finalText[c] || '')) diff++;
+        }
+        action = (diff / maxLen) < 0.3 ? 'modified' : 'rejected';
+      }
+
+      try {
+        await axios.post(`${API_URL}/api/normalization-learning`, {
+          original, suggested, final: finalText, action,
+        }, { headers: getAuthHeaders() });
+      } catch { /* silent */ }
+    }
+  };
+
+
+
   const saveQuoteOptions = async () => {
     const validOptions = quoteOptions.filter(o => o.description && o.amount);
     if (validOptions.length === 0) {
@@ -841,6 +906,11 @@ const TicketDetail = () => {
       setQuoteValue(total.toString());
       toast.success('Opções de orçamento guardadas');
       fetchData();
+
+      // Send learning events silently
+      sendLearningEvents(validOptions);
+      // Reset suggestion states
+      setSuggestionStates({});
 
       // Check for context suggestion after save
       if (!suggestionDismissed && quoteContext !== 'diagnostic') {
@@ -1849,39 +1919,81 @@ Qualquer dúvida estamos disponíveis.`;
                             </Button>
                           )}
                         </div>
-                        {/* Client Preview */}
-                        {showPreviews && optionPreviews[index] && option.description?.trim().length >= 2 && (
+                        {/* Client Preview / Suggestion */}
+                        {showPreviews && optionPreviews[index] && option.description?.trim().length >= 2 && suggestionStates[index]?.mode !== 'ignored' && (
                           <div className="ml-6 mt-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2" data-testid={`quote-preview-${index}`}>
-                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Preview cliente</p>
-                            <p className="text-sm font-medium text-slate-700">{optionPreviews[index].title}</p>
-                            {optionPreviews[index].type === 'package' && optionPreviews[index].includes?.length > 1 && (
-                              <p className="text-xs text-slate-500 mt-0.5">Inclui: {optionPreviews[index].includes.join(' + ')}</p>
-                            )}
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              {optionPreviews[index].recommended && (
-                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Recomendado</span>
-                              )}
-                              {optionPreviews[index].brand_tier && (
-                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
-                                  optionPreviews[index].brand_tier === 'premium' ? 'bg-violet-100 text-violet-700'
-                                  : optionPreviews[index].brand_tier === 'mid' ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-zinc-100 text-zinc-600'
-                                }`}>{optionPreviews[index].brand_tier}</span>
-                              )}
-                              {optionPreviews[index].priority !== 'normal' && (
-                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
-                                  optionPreviews[index].priority === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                                }`}>{optionPreviews[index].priority === 'critical' ? 'Urgente' : 'Seguranca'}</span>
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Sugestão automática</p>
+                              {suggestionStates[index]?.mode !== 'editing' && suggestionStates[index]?.mode !== 'edited' && (
+                                <div className="flex gap-1">
+                                  <button onClick={() => startEditSuggestion(index)}
+                                    className="text-[10px] text-blue-600 hover:text-blue-800 font-medium px-1.5 py-0.5 rounded hover:bg-blue-50"
+                                    data-testid={`suggestion-edit-${index}`}>
+                                    Editar
+                                  </button>
+                                  <button onClick={() => ignoreSuggestion(index)}
+                                    className="text-[10px] text-zinc-400 hover:text-zinc-600 font-medium px-1.5 py-0.5 rounded hover:bg-zinc-100"
+                                    data-testid={`suggestion-ignore-${index}`}>
+                                    Ignorar
+                                  </button>
+                                </div>
                               )}
                             </div>
-                            {optionPreviews[index].priority_message && (
-                              <p className={`text-[11px] mt-1 ${
-                                optionPreviews[index].priority === 'critical' ? 'text-red-500'
-                                : optionPreviews[index].priority === 'safety' ? 'text-amber-500'
-                                : 'text-emerald-500'
-                              }`}>{optionPreviews[index].priority_message}</p>
+                            {suggestionStates[index]?.mode === 'editing' ? (
+                              <div className="flex gap-2 items-center">
+                                <input
+                                  value={suggestionStates[index]?.editText || ''}
+                                  onChange={e => updateSuggestionEdit(index, e.target.value)}
+                                  className="flex-1 text-sm border border-slate-300 rounded px-2 py-1 bg-white"
+                                  data-testid={`suggestion-edit-input-${index}`}
+                                />
+                                <button onClick={() => saveSuggestionEdit(index)}
+                                  className="text-[11px] text-emerald-600 hover:text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-emerald-50"
+                                  data-testid={`suggestion-save-edit-${index}`}>
+                                  OK
+                                </button>
+                              </div>
+                            ) : suggestionStates[index]?.mode === 'edited' ? (
+                              <p className="text-sm font-medium text-slate-700">{suggestionStates[index]?.editText}</p>
+                            ) : (
+                              <p className="text-sm font-medium text-slate-700">{optionPreviews[index].title}</p>
+                            )}
+                            {suggestionStates[index]?.mode !== 'editing' && (
+                              <>
+                                {optionPreviews[index].type === 'package' && optionPreviews[index].includes?.length > 1 && (
+                                  <p className="text-xs text-slate-500 mt-0.5">Inclui: {optionPreviews[index].includes.join(' + ')}</p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  {optionPreviews[index].recommended && (
+                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Recomendado</span>
+                                  )}
+                                  {optionPreviews[index].brand_tier && (
+                                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                                      optionPreviews[index].brand_tier === 'premium' ? 'bg-violet-100 text-violet-700'
+                                      : optionPreviews[index].brand_tier === 'mid' ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-zinc-100 text-zinc-600'
+                                    }`}>{optionPreviews[index].brand_tier}</span>
+                                  )}
+                                  {optionPreviews[index].priority !== 'normal' && (
+                                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                                      optionPreviews[index].priority === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                    }`}>{optionPreviews[index].priority === 'critical' ? 'Urgente' : 'Seguranca'}</span>
+                                  )}
+                                </div>
+                                {optionPreviews[index].priority_message && (
+                                  <p className={`text-[11px] mt-1 ${
+                                    optionPreviews[index].priority === 'critical' ? 'text-red-500'
+                                    : optionPreviews[index].priority === 'safety' ? 'text-amber-500'
+                                    : 'text-emerald-500'
+                                  }`}>{optionPreviews[index].priority_message}</p>
+                                )}
+                              </>
                             )}
                           </div>
+                        )}
+                        {/* Ignored indicator */}
+                        {showPreviews && suggestionStates[index]?.mode === 'ignored' && option.description?.trim().length >= 2 && (
+                          <p className="ml-6 mt-1 text-[11px] text-zinc-400 italic">Sugestão ignorada — texto original será usado</p>
                         )}
                         {/* PDFs section - show both available PDFs and already linked PDFs */}
                         {canEditQuote && (
