@@ -18,7 +18,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def list_users(user: dict = Depends(get_current_user)):
     """List all users (admin/supervisor only)."""
     if user["role"] not in [UserRole.ADMIN.value, UserRole.SUPERVISOR.value]:
-        raise HTTPException(status_code=403, detail="Acesso negado")
+        # Allow agents with can_create_tickets to list users (for assignment)
+        if not user.get("can_create_tickets"):
+            raise HTTPException(status_code=403, detail="Acesso negado")
     
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return [UserResponse(**u) for u in users]
