@@ -40,8 +40,8 @@ const CreateTicket = () => {
     channel: 'TELEFONE',
     priority: 'NORMAL',
     description: '',
-    // Auto-assign to self for agents
-    assigned_to_user_id: user?.role === 'AGENT' ? user.id : ''
+    // Auto-assign to self only for agents without can_create_tickets
+    assigned_to_user_id: (user?.role === 'AGENT' && !user?.can_create_tickets) ? user.id : ''
   });
 
   useEffect(() => {
@@ -57,10 +57,9 @@ const CreateTicket = () => {
 
   const fetchUsers = async () => {
     try {
-      // Agents can only assign to themselves
-      if (user?.role === 'AGENT') {
+      // Agents without can_create_tickets can only assign to themselves
+      if (user?.role === 'AGENT' && !user?.can_create_tickets) {
         setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
-        // Auto-assign to self for agents
         setFormData(prev => ({ ...prev, assigned_to_user_id: user.id }));
         return;
       }
@@ -68,7 +67,6 @@ const CreateTicket = () => {
       setAvailableUsers(response.data.filter(u => u.role !== 'FINANCEIRO'));
     } catch (error) {
       console.error('Error fetching users:', error);
-      // If agent gets 403, show only self
       if (user?.role === 'AGENT') {
         setAvailableUsers([{ id: user.id, name: user.name, role: user.role }]);
         setFormData(prev => ({ ...prev, assigned_to_user_id: user.id }));

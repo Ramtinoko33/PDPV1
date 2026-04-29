@@ -42,6 +42,11 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     if user["role"] == UserRole.INTERNAL_CREATOR.value and ticket_data.type != TicketType.INTERNO:
         raise HTTPException(status_code=403, detail="Apenas pode criar tickets internos")
     
+    # AGENT without can_create_tickets cannot assign to other users
+    if user["role"] == UserRole.AGENT.value and not user.get("can_create_tickets"):
+        if ticket_data.assigned_to_user_id and ticket_data.assigned_to_user_id != user["id"]:
+            raise HTTPException(status_code=403, detail="Sem permissão para atribuir tickets a outros utilizadores")
+    
     now = datetime.now(timezone.utc)
     ticket_id = str(uuid.uuid4())
     ticket_number = generate_ticket_number()

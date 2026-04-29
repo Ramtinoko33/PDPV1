@@ -36,6 +36,7 @@ class UserResponse(BaseModel):
     dashboard_default_states: List[str] = []
     dashboard_only_mine: bool = False
     has_alerts_access: bool = False
+    can_create_tickets: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -43,6 +44,7 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     password: Optional[str] = None
     has_alerts_access: Optional[bool] = None
+    can_create_tickets: Optional[bool] = None
 
 
 class DashboardConfigUpdate(BaseModel):
