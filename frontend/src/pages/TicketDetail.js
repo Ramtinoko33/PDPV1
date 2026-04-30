@@ -47,7 +47,8 @@ import {
   Reply,
   RefreshCcw,
   AlertCircle,
-  Eye
+  Eye,
+  Camera
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -2366,6 +2367,9 @@ Qualquer dúvida estamos disponíveis.`;
           {/* Quote History */}
           <QuoteHistorySection ticketId={id} getAuthHeaders={getAuthHeaders} formatDate={formatDate} />
 
+          {/* Problem Images (from Telegram Alerts) */}
+          <ProblemImagesSection ticketId={id} getAuthHeaders={getAuthHeaders} canEdit={canEdit} />
+
           {/* Attachments */}
           <Card>
             <CardHeader className="border-b">
@@ -2819,6 +2823,151 @@ Qualquer dúvida estamos disponíveis.`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+};
+
+// ============== Problem Images Section ==============
+const ProblemImagesSection = ({ ticketId, getAuthHeaders, canEdit }) => {
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [enlarged, setEnlarged] = useState(null);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const resp = await axios.get(`${API_URL}/api/telegram-alerts/tickets/${ticketId}/problem-images`, {
+          headers: getAuthHeaders()
+        });
+        setImages(resp.data.problem_images || []);
+      } catch { /* silent - ticket may not have problem images */ }
+      finally { setLoading(false); }
+    };
+    fetch();
+  }, [ticketId, getAuthHeaders]);
+
+  const toggleVisibility = async (imageId, currentVisible) => {
+    try {
+      await axios.put(
+        `${API_URL}/api/telegram-alerts/tickets/${ticketId}/problem-images/${imageId}/visibility`,
+        { visible_to_customer: !currentVisible },
+        { headers: getAuthHeaders() }
+      );
+      setImages(prev => prev.map(img =>
+        img.id === imageId ? { ...img, visible_to_customer: !currentVisible } : img
+      ));
+    } catch { /* silent */ }
+  };
+
+  const removeImage = async (imageId) => {
+    if (!window.confirm('Remover esta foto do ticket?')) return;
+    try {
+      await axios.delete(
+        `${API_URL}/api/telegram-alerts/tickets/${ticketId}/problem-images/${imageId}`,
+        { headers: getAuthHeaders() }
+      );
+      setImages(prev => prev.filter(img => img.id !== imageId));
+    } catch { /* silent */ }
+  };
+
+  if (loading || images.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Camera className="h-5 w-5 text-orange-600" />
+          Fotos do problema
+          <Badge variant="secondary" className="ml-1">{images.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {images.map((img) => (
+            <ProblemImageCard
+              key={img.id}
+              ticketId={ticketId}
+              image={img}
+              getAuthHeaders={getAuthHeaders}
+              canEdit={canEdit}
+              onToggleVisibility={() => toggleVisibility(img.id, img.visible_to_customer)}
+              onRemove={() => removeImage(img.id)}
+              onEnlarge={(src) => setEnlarged(src)}
+            />
+          ))}
+        </div>
+        <p className="text-xs text-zinc-400 mt-3">
+          Apenas fotos marcadas como "Mostrar ao cliente" ficam visíveis no link público do orçamento.
+        </p>
+      </CardContent>
+      {enlarged && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4" onClick={() => setEnlarged(null)}>
+          <img src={enlarged} alt="Foto do problema" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
+    </Card>
+  );
+};
+
+const ProblemImageCard = ({ ticketId, image, getAuthHeaders, canEdit, onToggleVisibility, onRemove, onEnlarge }) => {
+  const [src, setSrc] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/tickets/${ticketId}/problem-images/${image.id}/data`,
+          { headers: getAuthHeaders() }
+        );
+        if (cancelled) return;
+        if (resp.data.base64) setSrc(`data:${resp.data.file_type || 'image/jpeg'};base64,${resp.data.base64}`);
+      } catch { /* silent */ }
+      finally { if (!cancelled) setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ticketId, image.id, getAuthHeaders]);
+
+  return (
+    <div className="relative group rounded-lg overflow-hidden border-2 border-zinc-200 bg-zinc-100" data-testid={`problem-img-${image.id}`}>
+      <div className="aspect-square">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="w-5 h-5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : src ? (
+          <img src={src} alt="Foto do problema" className="w-full h-full object-cover cursor-pointer" onClick={() => onEnlarge(src)} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-zinc-300">
+            <Camera className="h-6 w-6" />
+          </div>
+        )}
+      </div>
+      {/* Visibility badge */}
+      <div className="absolute top-1.5 right-1.5">
+        {image.visible_to_customer ? (
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Visível</span>
+        ) : (
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-zinc-200 text-zinc-500">Oculta</span>
+        )}
+      </div>
+      {/* Actions */}
+      {canEdit && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-center">
+          <button
+            onClick={onToggleVisibility}
+            className={`text-[10px] font-semibold px-2 py-1 rounded ${image.visible_to_customer ? 'bg-white/90 text-zinc-700' : 'bg-emerald-500 text-white'}`}
+            data-testid={`toggle-visibility-${image.id}`}
+          >
+            {image.visible_to_customer ? 'Ocultar' : 'Mostrar ao cliente'}
+          </button>
+          <button onClick={onRemove} className="text-white/80 hover:text-red-400 p-1" data-testid={`remove-img-${image.id}`}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -753,7 +753,26 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         "quote_value": None,
         "source_alert_id": alert_id,
         "quote_context": "diagnostic",
+        "problem_images": [],
     }
+
+    # Transfer problem_images to ticket (NOT alert_image)
+    problem_imgs = alert.get("problem_images", [])
+    if problem_imgs:
+        ticket_problem_images = []
+        for img in problem_imgs:
+            ticket_problem_images.append({
+                "id": img.get("id", str(uuid.uuid4())),
+                "url": img.get("storage_path") or "",
+                "base64_data": img.get("base64_data"),
+                "file_type": img.get("file_type", "image/jpeg"),
+                "file_size": img.get("file_size", 0),
+                "telegram_file_id": img.get("telegram_file_id"),
+                "source": "telegram_alerts",
+                "visible_to_customer": False,
+                "created_at": img.get("stored_at", now.isoformat()),
+            })
+        ticket_doc["problem_images"] = ticket_problem_images
 
     await db.tickets.insert_one(ticket_doc)
 

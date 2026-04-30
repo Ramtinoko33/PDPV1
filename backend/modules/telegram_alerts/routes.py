@@ -4,6 +4,7 @@ Endpoints for webhook, alert CRUD, conversion, and stats.
 """
 import logging
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from db import db
@@ -332,4 +333,142 @@ async def get_alert_photo(alert_id: str, attachment_id: str, current_user: dict 
                     import base64
                     return {"base64": base64.b64encode(image_bytes).decode("utf-8"), "file_type": "image/jpeg"}
 
+    raise HTTPException(status_code=404, detail="Foto não encontrada")
+
+
+# ============== TICKET PROBLEM IMAGES ==============
+
+@router.get("/tickets/{ticket_id}/problem-images")
+async def get_ticket_problem_images(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get problem images for a ticket."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "problem_images": 1})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    return {"problem_images": ticket.get("problem_images", [])}
+
+
+@router.get("/tickets/{ticket_id}/problem-images/{image_id}/data")
+async def get_problem_image_data(ticket_id: str, image_id: str, current_user: dict = Depends(get_current_user)):
+    """Get problem image binary data (base64)."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "problem_images": 1, "source_alert_id": 1})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    for img in ticket.get("problem_images", []):
+        if img.get("id") == image_id:
+            # Try storage_path first
+            if img.get("url"):
+                try:
+                    from services.storage_service import get_object
+                    data, content_type = get_object(img["url"])
+                    import base64
+                    return {"base64": base64.b64encode(data).decode("utf-8"), "file_type": content_type}
+                except Exception:
+                    pass
+            # Try base64 from ticket
+            if img.get("base64_data"):
+                return {"base64": img["base64_data"], "file_type": img.get("file_type", "image/jpeg")}
+            # Try loading from alert
+            if ticket.get("source_alert_id"):
+                alert = await db.alerts.find_one({"id": ticket["source_alert_id"]}, {"_id": 0, "problem_images": 1, "attachments": 1})
+                if alert:
+                    for att in (alert.get("problem_images") or alert.get("attachments", [])):
+                        if att.get("id") == image_id:
+                            if att.get("base64_data"):
+                                return {"base64": att["base64_data"], "file_type": att.get("file_type", "image/jpeg")}
+                            if att.get("telegram_file_id"):
+                                image_bytes = await service.download_telegram_photo(att["telegram_file_id"])
+                                if image_bytes:
+                                    import base64
+                                    return {"base64": base64.b64encode(image_bytes).decode("utf-8"), "file_type": "image/jpeg"}
+            # Try telegram_file_id directly
+            if img.get("telegram_file_id"):
+                image_bytes = await service.download_telegram_photo(img["telegram_file_id"])
+                if image_bytes:
+                    import base64
+                    return {"base64": base64.b64encode(image_bytes).decode("utf-8"), "file_type": "image/jpeg"}
+
+    raise HTTPException(status_code=404, detail="Foto não encontrada")
+
+
+@router.put("/tickets/{ticket_id}/problem-images/{image_id}/visibility")
+async def toggle_problem_image_visibility(ticket_id: str, image_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Toggle visibility of a problem image for customer."""
+    _check_alerts_access(current_user)
+    visible = data.get("visible_to_customer", False)
+
+    result = await db.tickets.update_one(
+        {"id": ticket_id, "problem_images.id": image_id},
+        {"$set": {"problem_images.$.visible_to_customer": visible, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+
+    # Log the change
+    await db.photo_visibility_logs.insert_one({
+        "ticket_id": ticket_id,
+        "photo_id": image_id,
+        "visible_to_customer": visible,
+        "changed_by": current_user["id"],
+        "changed_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {"status": "success", "visible_to_customer": visible}
+
+
+@router.delete("/tickets/{ticket_id}/problem-images/{image_id}")
+async def remove_problem_image(ticket_id: str, image_id: str, current_user: dict = Depends(get_current_user)):
+    """Remove a problem image from ticket."""
+    _check_alerts_access(current_user)
+    result = await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$pull": {"problem_images": {"id": image_id}}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    return {"status": "success"}
+
+
+# Public endpoint: get visible problem images for quote link
+@router.get("/public/tickets/{ticket_id}/problem-images")
+async def get_public_problem_images(ticket_id: str):
+    """Get customer-visible problem images (no auth - for public quote page)."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "problem_images": 1})
+    if not ticket:
+        return {"images": []}
+    visible = [img for img in ticket.get("problem_images", []) if img.get("visible_to_customer")]
+    # Return only id and file_type (data fetched separately)
+    return {"images": [{"id": img["id"], "file_type": img.get("file_type", "image/jpeg")} for img in visible]}
+
+
+@router.get("/public/tickets/{ticket_id}/problem-images/{image_id}")
+async def get_public_problem_image_data(ticket_id: str, image_id: str):
+    """Get a customer-visible problem image data (no auth - for public quote page)."""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0, "problem_images": 1, "source_alert_id": 1})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Não encontrado")
+    for img in ticket.get("problem_images", []):
+        if img.get("id") == image_id and img.get("visible_to_customer"):
+            if img.get("url"):
+                try:
+                    from services.storage_service import get_object
+                    data, content_type = get_object(img["url"])
+                    import base64
+                    return {"base64": base64.b64encode(data).decode("utf-8"), "file_type": content_type}
+                except Exception:
+                    pass
+            if img.get("base64_data"):
+                return {"base64": img["base64_data"], "file_type": img.get("file_type", "image/jpeg")}
+            if ticket.get("source_alert_id"):
+                alert = await db.alerts.find_one({"id": ticket["source_alert_id"]}, {"_id": 0, "problem_images": 1, "attachments": 1})
+                if alert:
+                    for att in (alert.get("problem_images") or alert.get("attachments", [])):
+                        if att.get("id") == image_id:
+                            if att.get("base64_data"):
+                                return {"base64": att["base64_data"], "file_type": att.get("file_type", "image/jpeg")}
+                            if att.get("telegram_file_id"):
+                                image_bytes = await service.download_telegram_photo(att["telegram_file_id"])
+                                if image_bytes:
+                                    import base64
+                                    return {"base64": base64.b64encode(image_bytes).decode("utf-8"), "file_type": "image/jpeg"}
     raise HTTPException(status_code=404, detail="Foto não encontrada")

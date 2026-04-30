@@ -60,6 +60,7 @@ const QuoteResponse = () => {
   const [comments, setComments] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState([]);
+  const [problemImages, setProblemImages] = useState([]);
   
   // Rejection reason state
   const [showRejectionModal, setShowRejectionModal] = useState(false);
@@ -85,6 +86,16 @@ const QuoteResponse = () => {
       
       setQuote(quoteRes.data);
       setBranding(brandingRes.data);
+
+      // Fetch visible problem images
+      if (quoteRes.data.ticket_id) {
+        try {
+          const imgRes = await axios.get(`${API_URL}/api/telegram-alerts/public/tickets/${quoteRes.data.ticket_id}/problem-images`);
+          if (imgRes.data.images?.length > 0) {
+            setProblemImages(imgRes.data.images);
+          }
+        } catch { /* silent */ }
+      }
       
       // Check if decision already made (use quote_decided_at for definitive status)
       if (quoteRes.data.quote_decided_at || quoteRes.data.response_status) {
@@ -389,6 +400,7 @@ const QuoteResponse = () => {
               )}
 
               {hasOptions ? (
+                <>
                 <div className="space-y-3">
                   {/* Soft recommendation if critical items exist */}
                   {!submitted && quote.quote_options.some(o => o.display_priority === 'critical') && (
@@ -565,6 +577,19 @@ const QuoteResponse = () => {
                     </p>
                   )}
                 </div>
+
+                {/* Problem Images Section (visible to customer) */}
+                {problemImages.length > 0 && (
+                  <div className="mt-6 pt-4 border-t">
+                    <h4 className="text-sm font-semibold text-slate-600 mb-3">Fotos do problema</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {problemImages.map((img) => (
+                        <PublicProblemImage key={img.id} ticketId={quote.ticket_id} imageId={img.id} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                </>
               ) : (
                 <>
                   <div 
@@ -990,6 +1015,55 @@ const QuoteResponse = () => {
         </div>
       )}
     </div>
+  );
+};
+
+// Sub-component: Public problem image with lazy load
+const PublicProblemImage = ({ ticketId, imageId }) => {
+  const [src, setSrc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [enlarged, setEnlarged] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/public/tickets/${ticketId}/problem-images/${imageId}`
+        );
+        if (cancelled) return;
+        if (resp.data.base64) {
+          setSrc(`data:${resp.data.file_type || 'image/jpeg'};base64,${resp.data.base64}`);
+        }
+      } catch { /* silent */ }
+      finally { if (!cancelled) setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ticketId, imageId]);
+
+  if (!loading && !src) return null;
+
+  return (
+    <>
+      <div
+        className="rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 aspect-square cursor-pointer hover:ring-2 hover:ring-orange-300 transition-all"
+        onClick={() => src && setEnlarged(true)}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <img src={src} alt="Foto do problema" className="w-full h-full object-cover" />
+        )}
+      </div>
+      {enlarged && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4" onClick={() => setEnlarged(false)}>
+          <img src={src} alt="Foto do problema" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
+    </>
   );
 };
 
