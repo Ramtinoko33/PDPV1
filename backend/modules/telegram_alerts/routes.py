@@ -25,27 +25,46 @@ async def telegram_alerts_webhook(request: Request):
     except Exception:
         return {"ok": True}
 
-    # Handle callback query (assignee selection)
+    # Handle callback query (assignee selection + photo choice)
     callback = payload.get("callback_query")
     if callback:
         data = callback.get("data", "")
         chat_id = callback.get("message", {}).get("chat", {}).get("id")
+        callback_id = callback.get("id")
+
         if data.startswith("assign:") and chat_id:
             parts = data.split(":", 2)
             if len(parts) == 3:
                 user_id = parts[1]
                 user_name = parts[2]
                 await service.handle_assign_callback(chat_id, user_id, user_name)
-                # Answer callback to remove loading indicator
                 try:
                     import httpx
                     async with httpx.AsyncClient(timeout=5) as client:
                         await client.post(
                             f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
-                            json={"callback_query_id": callback["id"], "text": f"Atribuído a {user_name}"}
+                            json={"callback_query_id": callback_id, "text": f"Atribuído a {user_name}"}
                         )
                 except Exception:
                     pass
+
+        elif data.startswith("photos_") and chat_id:
+            # Handle "Sim" / "Não" for problem photos
+            parts = data.split(":", 1)
+            action = "yes" if "yes" in parts[0] else "no"
+            alert_id = parts[1] if len(parts) > 1 else ""
+            await service.handle_photos_callback(chat_id, action, alert_id)
+            try:
+                import httpx
+                answer_text = "A aguardar fotos..." if action == "yes" else "OK"
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": answer_text}
+                    )
+            except Exception:
+                pass
+
         return {"ok": True}
 
     # Handle message
@@ -95,6 +114,14 @@ async def telegram_alerts_webhook(request: Request):
             await service.send_message(chat_id, f"⚠️ Foto demasiado grande (max {MAX_PHOTO_SIZE_MB}MB)")
             return {"ok": True}
 
+        # Check if in photo collection mode
+        handled = await service.collect_problem_photo(
+            chat_id, {"file_id": best["file_id"], "file_size": file_size}
+        )
+        if handled:
+            return {"ok": True}
+
+        # Normal buffer flow
         caption = message.get("caption", "")
         service.buffer_message(
             chat_id,
@@ -119,6 +146,12 @@ async def telegram_alerts_webhook(request: Request):
     if doc and doc.get("mime_type", "").startswith("image/"):
         file_size = doc.get("file_size", 0)
         if file_size <= MAX_PHOTO_SIZE_MB * 1024 * 1024:
+            # Check if in photo collection mode
+            handled = await service.collect_problem_photo(
+                chat_id, {"file_id": doc["file_id"], "file_size": file_size}
+            )
+            if handled:
+                return {"ok": True}
             service.buffer_message(
                 chat_id,
                 user_info,

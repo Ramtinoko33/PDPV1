@@ -216,13 +216,13 @@ const AlertsPage = () => {
     setPhotoUrl(null);
     setDetailOpen(true);
 
-    // Load photo
-    if (alert.attachments?.length > 0) {
+    // Load alert image (main GENES screenshot)
+    const alertImg = alert.alert_image || (alert.attachments?.length > 0 ? alert.attachments[0] : null);
+    if (alertImg?.id) {
       setLoadingPhoto(true);
       try {
-        const att = alert.attachments[0];
         const resp = await axios.get(
-          `${API_URL}/api/telegram-alerts/alerts/${alert.id}/photo/${att.id}`,
+          `${API_URL}/api/telegram-alerts/alerts/${alert.id}/photo/${alertImg.id}`,
           { headers: getAuthHeaders() }
         );
         if (resp.data.url) {
@@ -734,26 +734,63 @@ const AlertsPage = () => {
                 </div>
               )}
 
-              {/* Photo */}
-              {detailAlert.attachments?.length > 0 && (
-                <div className="bg-zinc-100 rounded-lg overflow-hidden border-2 border-zinc-200">
-                  {loadingPhoto ? (
-                    <div className="flex items-center justify-center h-48">
-                      <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  ) : photoUrl ? (
-                    <img
-                      src={photoUrl}
-                      alt="Foto do alerta"
-                      className="w-full max-h-80 object-contain"
-                      data-testid="alert-photo"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-48 text-zinc-400">
-                      <Image className="h-8 w-8 mr-2" />
-                      <span>Foto não disponível</span>
-                    </div>
-                  )}
+              {/* Alert Image */}
+              {detailAlert.alert_image && (
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 mb-1.5">Imagem do alerta</p>
+                  <div className="bg-zinc-100 rounded-lg overflow-hidden border-2 border-zinc-200">
+                    {loadingPhoto ? (
+                      <div className="flex items-center justify-center h-48">
+                        <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : photoUrl ? (
+                      <img
+                        src={photoUrl}
+                        alt="Imagem do alerta"
+                        className="w-full max-h-80 object-contain"
+                        data-testid="alert-photo"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-48 text-zinc-400">
+                        <Image className="h-8 w-8 mr-2" />
+                        <span>Foto não disponível</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback: show first attachment if no alert_image field */}
+              {!detailAlert.alert_image && detailAlert.attachments?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 mb-1.5">Imagem do alerta</p>
+                  <div className="bg-zinc-100 rounded-lg overflow-hidden border-2 border-zinc-200">
+                    {loadingPhoto ? (
+                      <div className="flex items-center justify-center h-48">
+                        <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : photoUrl ? (
+                      <img src={photoUrl} alt="Foto do alerta" className="w-full max-h-80 object-contain" data-testid="alert-photo" />
+                    ) : (
+                      <div className="flex items-center justify-center h-48 text-zinc-400">
+                        <Image className="h-8 w-8 mr-2" /><span>Foto não disponível</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Problem Images */}
+              {detailAlert.problem_images?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 mb-1.5">
+                    Fotos do problema ({detailAlert.problem_images.length})
+                  </p>
+                  <div className="grid grid-cols-3 gap-2" data-testid="problem-images-grid">
+                    {detailAlert.problem_images.map((img, idx) => (
+                      <ProblemImageThumb key={img.id || idx} alert={detailAlert} attachment={img} />
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1030,6 +1067,63 @@ const AlertsPage = () => {
         </DialogContent>
       </Dialog>
     </div>
+  );
+};
+
+// Sub-component: Problem image thumbnail with lazy load
+const ProblemImageThumb = ({ alert, attachment }) => {
+  const { getAuthHeaders } = useAuth();
+  const [src, setSrc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [enlarged, setEnlarged] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/alerts/${alert.id}/photo/${attachment.id}`,
+          { headers: getAuthHeaders() }
+        );
+        if (cancelled) return;
+        if (resp.data.url) setSrc(resp.data.url);
+        else if (resp.data.base64) setSrc(`data:${resp.data.file_type || 'image/jpeg'};base64,${resp.data.base64}`);
+      } catch { /* silent */ }
+      finally { if (!cancelled) setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [alert.id, attachment.id, getAuthHeaders]);
+
+  return (
+    <>
+      <div
+        className="relative rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 aspect-square cursor-pointer hover:ring-2 hover:ring-orange-400 transition-all"
+        onClick={() => src && setEnlarged(true)}
+        data-testid={`problem-image-${attachment.id}`}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="w-5 h-5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : src ? (
+          <img src={src} alt="Foto do problema" className="w-full h-full object-cover" />
+        ) : (
+          <div className="flex items-center justify-center h-full text-zinc-300">
+            <Image className="h-6 w-6" />
+          </div>
+        )}
+      </div>
+      {/* Enlarged view */}
+      {enlarged && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setEnlarged(false)}
+        >
+          <img src={src} alt="Foto do problema" className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
+      )}
+    </>
   );
 };
 
