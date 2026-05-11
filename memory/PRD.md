@@ -12,6 +12,7 @@
 - [x] Ticket CRUD, SLA engine, Quote management, PDF generation
 - [x] Public quote links (accept/reject), Acceptance questionnaire
 - [x] Telegram Alerts module (bot, Vision, convert, notifications)
+- [x] Telegram Alerts flow refined (Feb 2026): GENES screenshot → alert only (no ticket), explicit [Sim]/[Não] for problem photos, up to 4 problem_images compressed, then assignee. Conversion transfers problem_images to ticket (alert_image stays internal).
 - [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
 - [x] Client preview in quote creation (real-time debounced)
 - [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge

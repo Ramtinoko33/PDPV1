@@ -27,7 +27,7 @@ BUFFER_TIMEOUT_SECONDS = 10
 PHOTO_COLLECTION_TIMEOUT = 10
 MAX_MESSAGES_PER_MIN = 10
 MAX_PHOTO_SIZE_MB = 3
-MAX_PROBLEM_PHOTOS = 3
+MAX_PROBLEM_PHOTOS = 4
 IMAGE_MAX_WIDTH = 1200
 IMAGE_QUALITY = 75
 
@@ -304,14 +304,14 @@ async def _process_buffer(chat_id: int):
     if not combined_text and not photos:
         return
 
-    # Process photos: first = alert_image, rest = problem_images
+    # Process photos: only the first photo is used as alert_image (GENES screenshot)
+    # Additional photos in the same burst are ignored — problem photos must go through
+    # the explicit [Sim]/[Não] flow so the mechanic confirms intent.
     alert_image = None
-    problem_images = []
     vision_result = {}
     extraction_failed = False
 
     if photos:
-        # First photo is the alert image (GENES screenshot)
         first_photo = photos[0]
         image_bytes = await download_telegram_photo(first_photo["file_id"])
         if image_bytes:
@@ -324,18 +324,6 @@ async def _process_buffer(chat_id: int):
             vision_result = await analyze_image(image_bytes)
             if not vision_result.get("success"):
                 extraction_failed = True
-
-        # Additional photos sent before buffer timeout = problem_images
-        for extra_photo in photos[1:MAX_PROBLEM_PHOTOS + 1]:
-            extra_bytes = await download_telegram_photo(extra_photo["file_id"])
-            if extra_bytes:
-                prob_att = await store_photo(
-                    extra_bytes,
-                    f"problema_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{len(problem_images)}.jpg",
-                    extra_photo["file_id"],
-                    role="problem"
-                )
-                problem_images.append(prob_att)
 
     # Create alert in DB
     now = datetime.now(timezone.utc).isoformat()
@@ -359,9 +347,9 @@ async def _process_buffer(chat_id: int):
         },
         "telegram_chat_id": chat_id,
         "alert_image": alert_image,
-        "problem_images": problem_images,
-        "has_problem_images": len(problem_images) > 0,
-        "attachments": ([alert_image] if alert_image else []) + problem_images,
+        "problem_images": [],
+        "has_problem_images": False,
+        "attachments": ([alert_image] if alert_image else []),
         "extraction_failed": extraction_failed,
         "raw_text": combined_text or None,
         "raw_vision_output": vision_result.get("raw_response"),
@@ -381,28 +369,19 @@ async def _process_buffer(chat_id: int):
     items_text = f"\nItens: {', '.join(alert_doc['items'])}" if alert_doc.get("items") else ""
     warn_text = "\n⚠️ Não consegui ler a imagem, mas o alerta foi criado." if extraction_failed else ""
 
-    # If mechanic already sent multiple photos, skip the question
-    if len(problem_images) > 0:
-        await send_message(
-            chat_id,
-            f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n"
-            f"📸 {len(problem_images)} foto(s) do problema incluída(s).\n\nEscolha o rececionista:"
-        )
-        await send_assignee_buttons(chat_id)
-        _pending_assignments[chat_id] = alert_id
-    else:
-        await send_message(
-            chat_id,
-            f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
-            f"Quer adicionar fotos do problema para enviar ao cliente?",
-            reply_markup={
-                "inline_keyboard": [[
-                    {"text": "📸 Sim", "callback_data": f"photos_yes:{alert_id}"},
-                    {"text": "❌ Não", "callback_data": f"photos_no:{alert_id}"},
-                ]]
-            }
-        )
-        _pending_assignments[chat_id] = alert_id
+    # Always ask about problem photos (intent must be explicit)
+    await send_message(
+        chat_id,
+        f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
+        f"Quer adicionar fotos das avarias para anexar ao orçamento?",
+        reply_markup={
+            "inline_keyboard": [[
+                {"text": "📸 Sim", "callback_data": f"photos_yes:{alert_id}"},
+                {"text": "❌ Não", "callback_data": f"photos_no:{alert_id}"},
+            ]]
+        }
+    )
+    _pending_assignments[chat_id] = alert_id
 
 
 # Temporary mapping: chat_id -> alert_id waiting for assignee
@@ -421,7 +400,7 @@ async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
         }
         await send_message(
             chat_id,
-            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos do problema. Quando terminar, aguarde alguns segundos."
+            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos das avarias. Quando terminar, aguarde alguns segundos."
         )
         # Start inactivity timer
         _photo_collection[chat_id]["timer_task"] = asyncio.create_task(
@@ -503,7 +482,7 @@ async def _finalize_photo_collection(chat_id: int):
                 "$push": {"attachments": {"$each": photos}},
             }
         )
-        await send_message(chat_id, f"📸 {len(photos)} foto(s) do problema adicionada(s).\n\nEscolha o rececionista:")
+        await send_message(chat_id, f"📸 {len(photos)} foto(s) das avarias adicionada(s).\n\nEscolha o rececionista:")
     else:
         await send_message(chat_id, "Nenhuma foto recebida.\n\nEscolha o rececionista:")
 
