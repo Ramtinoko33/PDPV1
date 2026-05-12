@@ -1847,23 +1847,39 @@ async def shutdown_db_client():
 
 @app.on_event("startup")
 async def startup_event():
-    """Start background tasks on application startup"""
-    # Initialize object storage
-    storage_key = init_storage()
-    if storage_key:
-        logger.info("[STARTUP] Object storage initialized successfully")
-    else:
-        logger.warning("[STARTUP] Object storage not available - using local storage only")
-    
-    # Load SLA configuration from database
-    await load_sla_config_from_db()
-    logger.info("[STARTUP] SLA configuration loaded from database")
-    
-    # Load holidays from database
-    await load_holidays_from_db()
-    logger.info("[STARTUP] Holidays loaded from database")
-    
-    # Create TTL index for login attempts cleanup (30 days)
+    """Start background tasks on application startup.
+
+    ALL blocking I/O (DB, HTTP) is deferred to a background task so the
+    FastAPI server becomes ready immediately and the K8s /health probe passes
+    even if MongoDB Atlas / Emergent Object Storage are slow to connect.
+    """
+    asyncio.create_task(_deferred_startup())
+
+
+async def _deferred_startup():
+    """Run blocking startup tasks (DB, storage init, indices) in background."""
+    # Object storage init (synchronous HTTP, can take up to 30s) — run in thread
+    try:
+        storage_key = await asyncio.to_thread(init_storage)
+        if storage_key:
+            logger.info("[STARTUP] Object storage initialized successfully")
+        else:
+            logger.warning("[STARTUP] Object storage not available - using local storage only")
+    except Exception as e:
+        logger.error(f"[STARTUP] Object storage init failed: {e}")
+
+    try:
+        await load_sla_config_from_db()
+        logger.info("[STARTUP] SLA configuration loaded from database")
+    except Exception as e:
+        logger.error(f"[STARTUP] SLA config load failed: {e}")
+
+    try:
+        await load_holidays_from_db()
+        logger.info("[STARTUP] Holidays loaded from database")
+    except Exception as e:
+        logger.error(f"[STARTUP] Holidays load failed: {e}")
+
     try:
         await db.auth_login_attempts.create_index(
             "updated_at",
@@ -1872,10 +1888,13 @@ async def startup_event():
         logger.info("[STARTUP] TTL index created for auth_login_attempts (30 days)")
     except Exception as e:
         logger.warning(f"[STARTUP] TTL index may already exist: {e}")
-    
+
     # Start SLA check background task
     asyncio.create_task(run_sla_check())
     logger.info("[STARTUP] SLA background check started (runs every 15 minutes)")
-    # Load/validate VAPID keys (DB fallback + auto-generate if missing)
-    await load_and_validate_vapid_keys()
-    logger.info(f"[STARTUP] Web Push status: {'enabled' if VAPID_KEYS_VALID else 'disabled'}")
+
+    try:
+        await load_and_validate_vapid_keys()
+        logger.info(f"[STARTUP] Web Push status: {'enabled' if VAPID_KEYS_VALID else 'disabled'}")
+    except Exception as e:
+        logger.error(f"[STARTUP] VAPID validation failed: {e}")

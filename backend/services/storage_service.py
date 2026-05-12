@@ -29,7 +29,7 @@ def init_storage():
         return None
     try:
         import requests as req
-        resp = req.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        resp = req.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=10)
         resp.raise_for_status()
         _storage_key = resp.json()["storage_key"]
         return _storage_key
