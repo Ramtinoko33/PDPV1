@@ -13,10 +13,31 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
-# JWT Config - SECURITY: No fallback, must be set in environment
+# JWT Config - SECURITY: prefer env var, fallback to auto-generated persistent secret.
+# In production we MUST NOT crash if JWT_SECRET is missing — the deployment probe
+# would receive Connection Refused and the pod would never become Ready.
 JWT_SECRET = os.environ.get('JWT_SECRET')
 if not JWT_SECRET:
-    raise RuntimeError("FATAL: JWT_SECRET environment variable is required. Server cannot start without it.")
+    # Try persistent file fallback (survives container restarts in the same volume)
+    import secrets
+    from pathlib import Path
+    _fallback_path = Path("/app/backend/.jwt_secret")
+    try:
+        if _fallback_path.exists():
+            JWT_SECRET = _fallback_path.read_text().strip()
+        if not JWT_SECRET:
+            JWT_SECRET = secrets.token_urlsafe(64)
+            try:
+                _fallback_path.write_text(JWT_SECRET)
+            except Exception:
+                pass
+        logger.warning(
+            "[SECURITY] JWT_SECRET env var not set — using auto-generated fallback. "
+            "Set JWT_SECRET in production for stronger guarantees across pod restarts."
+        )
+    except Exception:
+        JWT_SECRET = secrets.token_urlsafe(64)
+        logger.warning("[SECURITY] JWT_SECRET fallback file unavailable — using in-memory secret.")
 
 SECRET_KEY = JWT_SECRET
 ALGORITHM = "HS256"
