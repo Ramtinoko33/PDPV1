@@ -55,11 +55,16 @@ def _parse_yes_no(text: str) -> Optional[str]:
 
 # Conversation states (per chat_id)
 STATE_IDLE = "IDLE"
-STATE_WAIT_PROBLEM_PHOTO_CONF = "WAITING_PROBLEM_PHOTO_CONFIRMATION"
-STATE_COLLECTING_PROBLEM_IMAGES = "COLLECTING_PROBLEM_IMAGES"
-STATE_WAIT_NOTE_CONF = "WAITING_MECHANIC_NOTE_CONFIRMATION"
-STATE_COLLECTING_NOTE = "COLLECTING_MECHANIC_NOTE"
+STATE_WAIT_PROBLEM_PHOTO_CONF = "WAITING_PROBLEM_PHOTOS_CONFIRMATION"
+STATE_COLLECTING_PROBLEM_IMAGES = "COLLECTING_PROBLEM_PHOTOS"
+STATE_WAIT_COMMENT = "WAITING_MECHANIC_COMMENT"
+STATE_COLLECTING_TEXT_COMMENT = "COLLECTING_TEXT_COMMENT"
+STATE_COLLECTING_AUDIO_COMMENT = "COLLECTING_AUDIO_COMMENT"
 STATE_WAIT_ASSIGNEE = "WAITING_ASSIGNEE_SELECTION"
+
+# Backward-compat aliases (legacy code paths)
+STATE_WAIT_NOTE_CONF = STATE_WAIT_COMMENT
+STATE_COLLECTING_NOTE = STATE_COLLECTING_TEXT_COMMENT
 
 # Per-chat conversation state.
 # Shape: {
@@ -563,7 +568,7 @@ async def _create_alert_from_buffer(chat_id: int):
     await send_message(
         chat_id,
         f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
-        f"Quer adicionar fotos das avarias para anexar ao orçamento?",
+        f"Quer adicionar fotos da avaria para anexar ao alerta?",
         reply_markup={
             "inline_keyboard": [[
                 {"text": "📸 Sim", "callback_data": f"photos_yes:{alert_id}"},
@@ -618,30 +623,39 @@ async def handle_incoming_text(chat_id: int, user_info: dict, text: str):
         )
         return
 
-    # Text in WAITING_MECHANIC_NOTE_CONFIRMATION → parse yes/no
-    if current == STATE_WAIT_NOTE_CONF:
-        decision = _parse_yes_no(text)
-        if decision == "yes":
-            await handle_note_callback(chat_id, "yes", state.get("active_alert_id"))
+    # Text in WAITING_MECHANIC_COMMENT → parse "texto"/"audio"/"sem comentário" or fall through
+    if current == STATE_WAIT_COMMENT:
+        t = text.strip().lower()
+        if t in ("texto", "text", "📝 texto"):
+            await handle_comment_callback(chat_id, "text", state.get("active_alert_id"))
             return
-        if decision == "no":
-            await handle_note_callback(chat_id, "no", state.get("active_alert_id"))
+        if t in ("audio", "áudio", "🎤 áudio", "🎤 audio"):
+            await handle_comment_callback(chat_id, "audio", state.get("active_alert_id"))
             return
-        # If user immediately types a longer message, treat as the note directly
-        if len(text.strip()) >= 5:
-            await handle_note_callback(chat_id, "yes", state.get("active_alert_id"))
-            # Now state should be COLLECTING_NOTE — save the text
+        if t in ("sem comentário", "sem comentario", "sem", "nenhum", "não", "nao", "n"):
+            await handle_comment_callback(chat_id, "none", state.get("active_alert_id"))
+            return
+        # User typed a longer free-form text → treat as the comment directly
+        if len(text.strip()) >= 3:
+            await handle_comment_callback(chat_id, "text", state.get("active_alert_id"))
             await _save_mechanic_note(chat_id, comment_type="text", text=text[:MAX_NOTE_TEXT_LEN])
             return
         await send_message(
             chat_id,
-            "Responda com <b>Sim</b> ou <b>Não</b>, ou use os botões acima."
+            "Escolha <b>Texto</b>, <b>Áudio</b> ou <b>Sem comentário</b>, ou use os botões acima."
         )
         return
 
-    if current == STATE_COLLECTING_NOTE:
+    if current == STATE_COLLECTING_TEXT_COMMENT:
         text = text[:MAX_NOTE_TEXT_LEN]
         await _save_mechanic_note(chat_id, comment_type="text", text=text)
+        return
+
+    if current == STATE_COLLECTING_AUDIO_COMMENT:
+        await send_message(
+            chat_id,
+            "A aguardar mensagem de <b>áudio</b>. Envie um áudio, ou use /reset."
+        )
         return
 
     if current == STATE_COLLECTING_PROBLEM_IMAGES:
@@ -715,10 +729,20 @@ async def handle_incoming_voice(chat_id: int, user_info: dict, voice: dict):
     """Route a voice/audio message based on current state."""
     state = _get_state(chat_id)
     _touch(state)
+    _arm_watchdog(chat_id)
     current = state["state"]
 
-    if current != STATE_COLLECTING_NOTE:
-        await send_message(chat_id, "Áudios só são aceites no passo de nota do mecânico.")
+    # Allow audio only in COLLECTING_AUDIO_COMMENT.
+    # If user is in WAIT_COMMENT and sends audio directly, treat as YES + audio.
+    if current == STATE_WAIT_COMMENT:
+        # Transition to audio collection then process this audio
+        await handle_comment_callback(chat_id, "audio", state.get("active_alert_id"))
+        # State is now COLLECTING_AUDIO_COMMENT — fall through
+
+    state = _get_state(chat_id)
+    current = state["state"]
+    if current != STATE_COLLECTING_AUDIO_COMMENT:
+        await send_message(chat_id, "Áudios só são aceites no passo de comentário do mecânico.")
         return
 
     duration = voice.get("duration", 0)
@@ -776,6 +800,7 @@ async def _save_mechanic_note(
         "text": text or None,
         "audio": audio,
         "transcription_status": transcription_status,
+        "internal_only": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": {
             "user_id": user_info.get("user_id", 0),
@@ -865,34 +890,41 @@ async def _problem_photos_timer(chat_id: int):
 
 
 async def _end_problem_photos(chat_id: int):
+    """Transition to mechanic comment step (Text/Audio/None choice)."""
     state = _get_state(chat_id)
     _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_NOTE_CONF, action="photos_collection_ended")
+    _transition(chat_id, STATE_WAIT_COMMENT, action="photos_collection_ended")
     await send_message(
         chat_id,
-        "Quer adicionar alguma nota para a receção?",
+        "Quer adicionar algum comentário para a receção?",
         reply_markup={
             "inline_keyboard": [[
-                {"text": "📝 Adicionar nota", "callback_data": f"note_yes:{state['active_alert_id']}"},
-                {"text": "Sem nota", "callback_data": f"note_no:{state['active_alert_id']}"},
+                {"text": "📝 Texto", "callback_data": f"comment_text:{state['active_alert_id']}"},
+                {"text": "🎤 Áudio", "callback_data": f"comment_audio:{state['active_alert_id']}"},
+            ], [
+                {"text": "Sem comentário", "callback_data": f"comment_none:{state['active_alert_id']}"},
             ]]
         }
     )
 
 
-async def _note_collection_timer(chat_id: int):
-    """If user clicks 'Adicionar nota' but never sends, time out and continue to assignee."""
+async def _comment_collection_timer(chat_id: int):
+    """If user enters a collection state but never sends, time out and continue to assignee."""
     try:
         await asyncio.sleep(NOTE_COLLECTION_TIMEOUT)
     except asyncio.CancelledError:
         return
     state = _conversation_states.get(chat_id)
-    if not state or state.get("state") != STATE_COLLECTING_NOTE:
+    if not state or state.get("state") not in (STATE_COLLECTING_TEXT_COMMENT, STATE_COLLECTING_AUDIO_COMMENT):
         return
     _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_timeout")
-    await send_message(chat_id, "⏱️ Sem nota recebida. A prosseguir...")
+    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_timeout")
+    await send_message(chat_id, "⏱️ Sem comentário recebido. A prosseguir...")
     await send_assignee_buttons(chat_id)
+
+
+# Legacy alias kept to avoid breaking other references
+_note_collection_timer = _comment_collection_timer
 
 
 # ============== CALLBACK HANDLERS ==============
@@ -906,31 +938,59 @@ async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
         _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="photos_yes")
         await send_message(
             chat_id,
-            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos das avarias. Quando terminar, aguarde alguns segundos.",
+            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos da avaria. Estas fotos serão apenas anexadas ao alerta.",
         )
         state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
     else:
         await _end_problem_photos(chat_id)
 
 
-async def handle_note_callback(chat_id: int, action: str, alert_id: str):
+async def handle_comment_callback(chat_id: int, action: str, alert_id: str):
+    """Handle [Texto]/[Áudio]/[Sem comentário] callbacks in WAIT_COMMENT state.
+
+    action: 'text' | 'audio' | 'none'
+    """
     state = _get_state(chat_id)
-    if state.get("state") != STATE_WAIT_NOTE_CONF or state.get("active_alert_id") != alert_id:
+    if state.get("state") != STATE_WAIT_COMMENT or state.get("active_alert_id") != alert_id:
         return
 
-    if action == "yes":
+    if action == "text":
         _cancel_timer(state)
-        _transition(chat_id, STATE_COLLECTING_NOTE, action="note_yes")
+        _transition(chat_id, STATE_COLLECTING_TEXT_COMMENT, action="comment_choose_text")
         await send_message(
             chat_id,
-            f"Envie uma mensagem de <b>texto</b> ou <b>áudio</b> com a explicação para a receção. "
-            f"(máx {MAX_NOTE_TEXT_LEN} caracteres ou {MAX_AUDIO_DURATION_SEC}s de áudio)"
+            f"Envie o comentário em texto. (máx {MAX_NOTE_TEXT_LEN} caracteres)"
         )
-        state["timer_task"] = asyncio.create_task(_note_collection_timer(chat_id))
-    else:
+        state["timer_task"] = asyncio.create_task(_comment_collection_timer(chat_id))
+        return
+
+    if action == "audio":
         _cancel_timer(state)
-        _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_no")
-        await send_assignee_buttons(chat_id)
+        _transition(chat_id, STATE_COLLECTING_AUDIO_COMMENT, action="comment_choose_audio")
+        await send_message(
+            chat_id,
+            f"Envie o áudio com a explicação. (máx {MAX_AUDIO_DURATION_SEC}s)"
+        )
+        state["timer_task"] = asyncio.create_task(_comment_collection_timer(chat_id))
+        return
+
+    # action == 'none' → mechanic_comment stays null; proceed to assignee
+    _cancel_timer(state)
+    await db.alerts.update_one(
+        {"id": alert_id},
+        {"$set": {"mechanic_comment": None, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_none")
+    await send_assignee_buttons(chat_id)
+
+
+# Legacy alias used by older code paths in this module
+async def handle_note_callback(chat_id: int, action: str, alert_id: str):
+    """Compatibility shim: map legacy 'yes'/'no' to new comment flow."""
+    if action == "yes":
+        await handle_comment_callback(chat_id, "text", alert_id)
+    else:
+        await handle_comment_callback(chat_id, "none", alert_id)
 
 
 async def handle_add_photo_callback(chat_id: int, alert_id: str):

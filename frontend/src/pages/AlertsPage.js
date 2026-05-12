@@ -784,7 +784,7 @@ const AlertsPage = () => {
               {detailAlert.problem_images?.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-zinc-500 mb-1.5">
-                    Fotos das avarias ({detailAlert.problem_images.length})
+                    Fotos da avaria ({detailAlert.problem_images.length})
                   </p>
                   <div className="grid grid-cols-3 gap-2" data-testid="problem-images-grid">
                     {detailAlert.problem_images.map((img, idx) => (

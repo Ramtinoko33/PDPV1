@@ -66,17 +66,36 @@ async def telegram_alerts_webhook(request: Request):
                 pass
 
         elif data.startswith("note_") and chat_id:
+            # Legacy alias for old buttons
             parts = data.split(":", 1)
             action = "yes" if "yes" in parts[0] else "no"
             alert_id = parts[1] if len(parts) > 1 else ""
             await service.handle_note_callback(chat_id, action, alert_id)
             try:
                 import httpx
-                answer_text = "A aguardar nota..." if action == "yes" else "OK"
                 async with httpx.AsyncClient(timeout=5) as client:
                     await client.post(
                         f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
-                        json={"callback_query_id": callback_id, "text": answer_text}
+                        json={"callback_query_id": callback_id, "text": "OK"}
+                    )
+            except Exception:
+                pass
+
+        elif data.startswith("comment_") and chat_id:
+            # comment_text:<id>, comment_audio:<id>, comment_none:<id>
+            parts = data.split(":", 1)
+            verb = parts[0]  # "comment_text" etc
+            alert_id = parts[1] if len(parts) > 1 else ""
+            action_map = {"comment_text": "text", "comment_audio": "audio", "comment_none": "none"}
+            action = action_map.get(verb, "none")
+            await service.handle_comment_callback(chat_id, action, alert_id)
+            try:
+                import httpx
+                answer_map = {"text": "Texto", "audio": "Áudio", "none": "Sem comentário"}
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": answer_map.get(action, "OK")}
                     )
             except Exception:
                 pass
