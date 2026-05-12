@@ -81,6 +81,32 @@ async def telegram_alerts_webhook(request: Request):
             except Exception:
                 pass
 
+        elif data.startswith("add_photo:") and chat_id:
+            alert_id = data.split(":", 1)[1]
+            await service.handle_add_photo_callback(chat_id, alert_id)
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": "Adicionada"}
+                    )
+            except Exception:
+                pass
+
+        elif data.startswith("new_alert:") and chat_id:
+            alert_id = data.split(":", 1)[1]
+            await service.handle_new_alert_callback(chat_id, alert_id)
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": "Novo alerta"}
+                    )
+            except Exception:
+                pass
+
         return {"ok": True}
 
     # Handle message
@@ -113,7 +139,7 @@ async def telegram_alerts_webhook(request: Request):
         )
         return {"ok": True}
 
-    if text == "/reset":
+    if text.lower() in ("/reset", "/restart", "/cancel"):
         await service.handle_reset_command(chat_id)
         return {"ok": True}
 

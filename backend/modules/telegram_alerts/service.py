@@ -34,6 +34,24 @@ MAX_AUDIO_DURATION_SEC = 60
 MAX_NOTE_TEXT_LEN = 1000
 IMAGE_MAX_WIDTH = 1200
 IMAGE_QUALITY = 75
+INACTIVITY_TIMEOUT_SEC = 600  # 10 minutes — clears stuck state
+
+# Text fallback parsing for Yes/No questions
+_YES_TOKENS = {"sim", "s", "yes", "ok", "okay", "quero", "adicionar", "adic", "y"}
+_NO_TOKENS = {"não", "nao", "n", "no", "nao quero", "não quero", "sem fotos", "sem nota"}
+
+
+def _parse_yes_no(text: str) -> Optional[str]:
+    """Return 'yes', 'no' or None based on user-typed text."""
+    if not text:
+        return None
+    t = text.strip().lower()
+    if t in _YES_TOKENS:
+        return "yes"
+    if t in _NO_TOKENS:
+        return "no"
+    return None
+
 
 # Conversation states (per chat_id)
 STATE_IDLE = "IDLE"
@@ -49,6 +67,8 @@ STATE_WAIT_ASSIGNEE = "WAITING_ASSIGNEE_SELECTION"
 #   "active_alert_id": str | None,
 #   "problem_images_count": int,
 #   "timer_task": asyncio.Task | None,
+#   "watchdog_task": asyncio.Task | None,
+#   "pending_photo": dict | None,
 #   "user_info": dict,
 #   "last_activity": float,
 #   "initial_buffer": {"texts": [str], "photos": [dict]} | None,
@@ -356,6 +376,8 @@ def _get_state(chat_id: int) -> dict:
             "active_alert_id": None,
             "problem_images_count": 0,
             "timer_task": None,
+            "watchdog_task": None,
+            "pending_photo": None,
             "user_info": {},
             "last_activity": datetime.now(timezone.utc).timestamp(),
             "initial_buffer": None,
@@ -370,15 +392,25 @@ def _cancel_timer(state: dict):
     state["timer_task"] = None
 
 
+def _cancel_watchdog(state: dict):
+    t = state.get("watchdog_task")
+    if t and not t.done():
+        t.cancel()
+    state["watchdog_task"] = None
+
+
 def _reset_state(chat_id: int):
     state = _conversation_states.get(chat_id)
     if state:
         _cancel_timer(state)
+        _cancel_watchdog(state)
     _conversation_states[chat_id] = {
         "state": STATE_IDLE,
         "active_alert_id": None,
         "problem_images_count": 0,
         "timer_task": None,
+        "watchdog_task": None,
+        "pending_photo": None,
         "user_info": {},
         "last_activity": datetime.now(timezone.utc).timestamp(),
         "initial_buffer": None,
@@ -387,6 +419,62 @@ def _reset_state(chat_id: int):
 
 def _touch(state: dict):
     state["last_activity"] = datetime.now(timezone.utc).timestamp()
+
+
+async def _inactivity_watchdog(chat_id: int):
+    """Clear state after INACTIVITY_TIMEOUT_SEC of inactivity (10 minutes)."""
+    try:
+        await asyncio.sleep(INACTIVITY_TIMEOUT_SEC)
+    except asyncio.CancelledError:
+        return
+    state = _conversation_states.get(chat_id)
+    if not state or state.get("state") == STATE_IDLE:
+        return
+    prev = state.get("state")
+    alert_id = state.get("active_alert_id")
+    await send_message(
+        chat_id,
+        "⏱️ Processo anterior cancelado por inatividade. Envie nova foto do alerta para começar novamente."
+    )
+    _reset_state(chat_id)
+    asyncio.create_task(_log_transition(chat_id, prev, STATE_IDLE, action="inactivity_timeout", alert_id=alert_id))
+
+
+def _arm_watchdog(chat_id: int):
+    """Re-arm the 10-minute inactivity watchdog. Called on every state change/activity."""
+    state = _get_state(chat_id)
+    _cancel_watchdog(state)
+    if state.get("state") == STATE_IDLE:
+        return
+    state["watchdog_task"] = asyncio.create_task(_inactivity_watchdog(chat_id))
+
+
+async def _log_transition(chat_id: int, previous_state: str, new_state: str, action: str = None, alert_id: str = None):
+    """Insert state transition log to telegram_alerts_state_logs. Fire-and-forget."""
+    try:
+        state = _conversation_states.get(chat_id) or {}
+        user_info = state.get("user_info") or {}
+        await db.telegram_alerts_state_logs.insert_one({
+            "chat_id": chat_id,
+            "user_id": user_info.get("user_id"),
+            "previous_state": previous_state,
+            "new_state": new_state,
+            "action": action,
+            "active_alert_id": alert_id if alert_id is not None else state.get("active_alert_id"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f"[ALERTS_LOG] State log failed: {e}")
+
+
+def _transition(chat_id: int, new_state: str, action: str = None):
+    """Synchronously change state and fire-and-forget log + watchdog re-arm."""
+    state = _get_state(chat_id)
+    prev = state.get("state")
+    state["state"] = new_state
+    _touch(state)
+    asyncio.create_task(_log_transition(chat_id, prev, new_state, action=action))
+    _arm_watchdog(chat_id)
 
 
 # ============== ALERT CREATION (FROM INITIAL BUFFER) ==============
@@ -463,11 +551,10 @@ async def _create_alert_from_buffer(chat_id: int):
 
     # Transition state
     state["active_alert_id"] = alert_id
-    state["state"] = STATE_WAIT_PROBLEM_PHOTO_CONF
     state["problem_images_count"] = 0
     state["initial_buffer"] = None
     _cancel_timer(state)
-    _touch(state)
+    _transition(chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, action="alert_created")
 
     plate_text = f"\nMatrícula: <b>{alert_doc['license_plate']}</b>" if alert_doc.get("license_plate") else ""
     items_text = f"\nItens: {', '.join(alert_doc['items'])}" if alert_doc.get("items") else ""
@@ -503,10 +590,11 @@ async def handle_incoming_text(chat_id: int, user_info: dict, text: str):
     """Route a text message based on current conversation state."""
     state = _get_state(chat_id)
     _touch(state)
+    _arm_watchdog(chat_id)
     current = state["state"]
 
     if current == STATE_IDLE:
-        # Buffer text and wait for possible photo. If nothing else arrives, create text-only alert.
+        # Buffer text and wait for possible photo.
         if not state.get("initial_buffer"):
             state["initial_buffer"] = {"texts": [], "photos": []}
         state["initial_buffer"]["texts"].append(text)
@@ -515,25 +603,64 @@ async def handle_incoming_text(chat_id: int, user_info: dict, text: str):
         state["timer_task"] = asyncio.create_task(_idle_buffer_timer(chat_id))
         return
 
+    # Text in WAITING_PROBLEM_PHOTO_CONFIRMATION → parse yes/no
+    if current == STATE_WAIT_PROBLEM_PHOTO_CONF:
+        decision = _parse_yes_no(text)
+        if decision == "yes":
+            await handle_photos_callback(chat_id, "yes", state.get("active_alert_id"))
+            return
+        if decision == "no":
+            await handle_photos_callback(chat_id, "no", state.get("active_alert_id"))
+            return
+        await send_message(
+            chat_id,
+            "Não percebi. Responda com <b>Sim</b> ou <b>Não</b>, ou use os botões acima."
+        )
+        return
+
+    # Text in WAITING_MECHANIC_NOTE_CONFIRMATION → parse yes/no
+    if current == STATE_WAIT_NOTE_CONF:
+        decision = _parse_yes_no(text)
+        if decision == "yes":
+            await handle_note_callback(chat_id, "yes", state.get("active_alert_id"))
+            return
+        if decision == "no":
+            await handle_note_callback(chat_id, "no", state.get("active_alert_id"))
+            return
+        # If user immediately types a longer message, treat as the note directly
+        if len(text.strip()) >= 5:
+            await handle_note_callback(chat_id, "yes", state.get("active_alert_id"))
+            # Now state should be COLLECTING_NOTE — save the text
+            await _save_mechanic_note(chat_id, comment_type="text", text=text[:MAX_NOTE_TEXT_LEN])
+            return
+        await send_message(
+            chat_id,
+            "Responda com <b>Sim</b> ou <b>Não</b>, ou use os botões acima."
+        )
+        return
+
     if current == STATE_COLLECTING_NOTE:
-        # Save as mechanic note (text)
         text = text[:MAX_NOTE_TEXT_LEN]
         await _save_mechanic_note(chat_id, comment_type="text", text=text)
         return
 
-    if current in (STATE_WAIT_PROBLEM_PHOTO_CONF, STATE_WAIT_NOTE_CONF, STATE_WAIT_ASSIGNEE):
-        await send_message(chat_id, "Por favor use os botões acima para continuar.")
+    if current == STATE_COLLECTING_PROBLEM_IMAGES:
+        await send_message(
+            chat_id,
+            "Neste momento estou a recolher fotos. Envie fotos ou aguarde alguns segundos para continuar."
+        )
         return
 
-    if current == STATE_COLLECTING_PROBLEM_IMAGES:
-        await send_message(chat_id, "A aguardar fotos das avarias. Envie imagens ou aguarde para terminar.")
+    if current == STATE_WAIT_ASSIGNEE:
+        await send_message(chat_id, "Escolha o rececionista nos botões acima para concluir.")
         return
 
 
 async def handle_incoming_photo(chat_id: int, user_info: dict, photo: dict, caption: str = None):
-    """Route a photo based on current state."""
+    """Route a photo based on current state. Tolerant to out-of-order behavior."""
     state = _get_state(chat_id)
     _touch(state)
+    _arm_watchdog(chat_id)
     current = state["state"]
 
     if current == STATE_IDLE:
@@ -552,17 +679,36 @@ async def handle_incoming_photo(chat_id: int, user_info: dict, photo: dict, capt
         await _append_problem_photo(chat_id, photo)
         return
 
+    # WAITING_PROBLEM_PHOTO_CONFIRMATION + photo → assume YES + append immediately
     if current == STATE_WAIT_PROBLEM_PHOTO_CONF:
-        await send_message(chat_id, "Por favor responda Sim/Não acima antes de enviar fotos.")
+        _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="auto_yes_via_photo")
+        _cancel_timer(state)
+        state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
+        await _append_problem_photo(chat_id, photo, silent=True)
+        await send_message(
+            chat_id,
+            "📸 Foto adicionada ao alerta atual. Pode enviar mais fotos até ao limite de 4."
+        )
         return
 
-    if current == STATE_COLLECTING_NOTE:
-        await send_message(chat_id, "A aguardar nota (texto ou áudio). As fotos não são guardadas neste passo.")
+    # Any other non-IDLE state → ask user explicitly
+    if state.get("active_alert_id"):
+        state["pending_photo"] = photo
+        await send_message(
+            chat_id,
+            "📸 Recebi uma nova imagem. O que pretende fazer?",
+            reply_markup={
+                "inline_keyboard": [[
+                    {"text": "Adicionar ao alerta atual", "callback_data": f"add_photo:{state['active_alert_id']}"},
+                    {"text": "Criar novo alerta", "callback_data": f"new_alert:{state['active_alert_id']}"},
+                ]]
+            }
+        )
         return
 
-    if current in (STATE_WAIT_NOTE_CONF, STATE_WAIT_ASSIGNEE):
-        await send_message(chat_id, "Por favor use os botões acima para continuar.")
-        return
+    # Safety net: no active alert — treat as IDLE
+    _reset_state(chat_id)
+    await handle_incoming_photo(chat_id, user_info, photo, caption)
 
 
 async def handle_incoming_voice(chat_id: int, user_info: dict, voice: dict):
@@ -642,9 +788,8 @@ async def _save_mechanic_note(
         {"$set": {"mechanic_comment": comment, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
 
-    state["state"] = STATE_WAIT_ASSIGNEE
     _cancel_timer(state)
-    _touch(state)
+    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_saved")
 
     if comment_type == "audio":
         if transcription_status == "success":
@@ -658,7 +803,7 @@ async def _save_mechanic_note(
 
 
 # ============== PROBLEM PHOTO COLLECTION ==============
-async def _append_problem_photo(chat_id: int, photo: dict):
+async def _append_problem_photo(chat_id: int, photo: dict, silent: bool = False):
     state = _get_state(chat_id)
     alert_id = state.get("active_alert_id")
     if not alert_id:
@@ -667,13 +812,15 @@ async def _append_problem_photo(chat_id: int, photo: dict):
         return
 
     if state["problem_images_count"] >= MAX_PROBLEM_PHOTOS:
-        await send_message(chat_id, f"Máximo de {MAX_PROBLEM_PHOTOS} fotos atingido. A continuar...")
+        if not silent:
+            await send_message(chat_id, f"Máximo de {MAX_PROBLEM_PHOTOS} fotos atingido. A continuar...")
         await _end_problem_photos(chat_id)
         return
 
     image_bytes = await download_telegram_photo(photo["file_id"])
     if not image_bytes:
-        await send_message(chat_id, "⚠️ Não consegui baixar a foto. Envie novamente.")
+        if not silent:
+            await send_message(chat_id, "⚠️ Não consegui baixar a foto. Envie novamente.")
         return
 
     att = await store_photo(
@@ -682,7 +829,6 @@ async def _append_problem_photo(chat_id: int, photo: dict):
         photo["file_id"],
         role="problem",
     )
-    # Append to alert
     await db.alerts.update_one(
         {"id": alert_id},
         {
@@ -695,12 +841,14 @@ async def _append_problem_photo(chat_id: int, photo: dict):
 
     remaining = MAX_PROBLEM_PHOTOS - state["problem_images_count"]
     if remaining > 0:
-        await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Pode enviar mais {remaining}.")
+        if not silent:
+            await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Pode enviar mais {remaining}.")
         # Reset inactivity timer
         _cancel_timer(state)
         state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
     else:
-        await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Máximo atingido.")
+        if not silent:
+            await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Máximo atingido.")
         await _end_problem_photos(chat_id)
 
 
@@ -718,9 +866,8 @@ async def _problem_photos_timer(chat_id: int):
 
 async def _end_problem_photos(chat_id: int):
     state = _get_state(chat_id)
-    state["state"] = STATE_WAIT_NOTE_CONF
     _cancel_timer(state)
-    _touch(state)
+    _transition(chat_id, STATE_WAIT_NOTE_CONF, action="photos_collection_ended")
     await send_message(
         chat_id,
         "Quer adicionar alguma nota para a receção?",
@@ -742,8 +889,8 @@ async def _note_collection_timer(chat_id: int):
     state = _conversation_states.get(chat_id)
     if not state or state.get("state") != STATE_COLLECTING_NOTE:
         return
-    state["state"] = STATE_WAIT_ASSIGNEE
     _cancel_timer(state)
+    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_timeout")
     await send_message(chat_id, "⏱️ Sem nota recebida. A prosseguir...")
     await send_assignee_buttons(chat_id)
 
@@ -752,13 +899,11 @@ async def _note_collection_timer(chat_id: int):
 async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
     state = _get_state(chat_id)
     if state.get("state") != STATE_WAIT_PROBLEM_PHOTO_CONF or state.get("active_alert_id") != alert_id:
-        # State drifted — ignore softly
         return
 
     if action == "yes":
-        state["state"] = STATE_COLLECTING_PROBLEM_IMAGES
         _cancel_timer(state)
-        _touch(state)
+        _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="photos_yes")
         await send_message(
             chat_id,
             f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos das avarias. Quando terminar, aguarde alguns segundos.",
@@ -774,9 +919,8 @@ async def handle_note_callback(chat_id: int, action: str, alert_id: str):
         return
 
     if action == "yes":
-        state["state"] = STATE_COLLECTING_NOTE
         _cancel_timer(state)
-        _touch(state)
+        _transition(chat_id, STATE_COLLECTING_NOTE, action="note_yes")
         await send_message(
             chat_id,
             f"Envie uma mensagem de <b>texto</b> ou <b>áudio</b> com a explicação para a receção. "
@@ -784,10 +928,43 @@ async def handle_note_callback(chat_id: int, action: str, alert_id: str):
         )
         state["timer_task"] = asyncio.create_task(_note_collection_timer(chat_id))
     else:
-        state["state"] = STATE_WAIT_ASSIGNEE
         _cancel_timer(state)
-        _touch(state)
+        _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_no")
         await send_assignee_buttons(chat_id)
+
+
+async def handle_add_photo_callback(chat_id: int, alert_id: str):
+    """Append the pending photo to active alert's problem_images and return to state."""
+    state = _get_state(chat_id)
+    if state.get("active_alert_id") != alert_id:
+        await send_message(chat_id, "⚠️ Sessão expirou. Use /reset para começar.")
+        return
+    photo = state.get("pending_photo")
+    if not photo:
+        await send_message(chat_id, "⚠️ Foto pendente não encontrada. Envie novamente.")
+        return
+    state["pending_photo"] = None
+    prev = state.get("state")
+    # Append (silent), keep current state
+    await _append_problem_photo(chat_id, photo, silent=True)
+    await send_message(chat_id, "📸 Foto adicionada ao alerta atual.")
+    asyncio.create_task(_log_transition(chat_id, prev, state.get("state"), action="add_photo_to_current"))
+
+
+async def handle_new_alert_callback(chat_id: int, alert_id: str):
+    """Discard current state and process pending_photo as a brand-new GENES alert."""
+    state = _get_state(chat_id)
+    photo = state.get("pending_photo")
+    if not photo:
+        await send_message(chat_id, "⚠️ Foto pendente não encontrada. Envie novamente.")
+        return
+    user_info = state.get("user_info", {}) or {}
+    prev = state.get("state")
+    asyncio.create_task(_log_transition(chat_id, prev, STATE_IDLE, action="user_chose_new_alert", alert_id=alert_id))
+    # Reset and process as new IDLE photo
+    _reset_state(chat_id)
+    await send_message(chat_id, "🆕 A criar novo alerta com a foto recebida...")
+    await handle_incoming_photo(chat_id, user_info, photo)
 
 
 async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> bool:
@@ -815,8 +992,10 @@ async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> 
         {"$set": {"assigned_to": user_id, "assigned_to_name": user_name, "updated_at": now}}
     )
 
+    prev = state.get("state")
     # Reset conversation state — IDLE
     _reset_state(chat_id)
+    asyncio.create_task(_log_transition(chat_id, prev, STATE_IDLE, action="assigned", alert_id=alert_id))
 
     await send_message(
         chat_id,
