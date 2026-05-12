@@ -392,14 +392,26 @@ def _get_state(chat_id: int) -> dict:
 
 def _cancel_timer(state: dict):
     t = state.get("timer_task")
-    if t and not t.done():
+    # CRITICAL: never cancel the task that is currently executing this function
+    # (e.g. when the buffer timer itself calls _create_alert_from_buffer which
+    # in turn calls _cancel_timer — self-cancellation would raise CancelledError
+    # at the next await and silently abort the flow).
+    try:
+        current = asyncio.current_task()
+    except RuntimeError:
+        current = None
+    if t and not t.done() and t is not current:
         t.cancel()
     state["timer_task"] = None
 
 
 def _cancel_watchdog(state: dict):
     t = state.get("watchdog_task")
-    if t and not t.done():
+    try:
+        current = asyncio.current_task()
+    except RuntimeError:
+        current = None
+    if t and not t.done() and t is not current:
         t.cancel()
     state["watchdog_task"] = None
 
@@ -553,29 +565,58 @@ async def _create_alert_from_buffer(chat_id: int):
 
     await db.alerts.insert_one(alert_doc)
     logger.info(f"[ALERTS] Created alert {alert_id} from chat {chat_id}")
+    asyncio.create_task(_log_transition(chat_id, STATE_IDLE, STATE_IDLE, action="alert_created", alert_id=alert_id))
 
-    # Transition state
-    state["active_alert_id"] = alert_id
-    state["problem_images_count"] = 0
-    state["initial_buffer"] = None
-    _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, action="alert_created")
+    # Transition state — robust against self-cancellation
+    try:
+        state["active_alert_id"] = alert_id
+        state["problem_images_count"] = 0
+        state["initial_buffer"] = None
+        _cancel_timer(state)
+        _transition(chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, action="state_set_waiting_problem_photos")
+    except Exception as e:
+        logger.error(f"[ALERTS] State transition failed after alert creation: {e}")
+        try:
+            await send_message(
+                chat_id,
+                "✅ Alerta criado, mas houve erro ao continuar o fluxo. "
+                "Abra o alerta no sistema para completar manualmente."
+            )
+        except Exception:
+            pass
+        return
 
     plate_text = f"\nMatrícula: <b>{alert_doc['license_plate']}</b>" if alert_doc.get("license_plate") else ""
     items_text = f"\nItens: {', '.join(alert_doc['items'])}" if alert_doc.get("items") else ""
     warn_text = "\n⚠️ Não consegui ler a imagem, mas o alerta foi criado." if extraction_failed else ""
 
-    await send_message(
-        chat_id,
-        f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
-        f"Quer adicionar fotos da avaria para anexar ao alerta?",
-        reply_markup={
-            "inline_keyboard": [[
-                {"text": "📸 Sim", "callback_data": f"photos_yes:{alert_id}"},
-                {"text": "❌ Não", "callback_data": f"photos_no:{alert_id}"},
-            ]]
-        }
-    )
+    # Ask photo confirmation question. Catch any send error so the in-memory state
+    # remains consistent and the user can still recover via /reset or direct text.
+    try:
+        sent = await send_message(
+            chat_id,
+            f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
+            f"Quer adicionar fotos da avaria para anexar ao alerta?",
+            reply_markup={
+                "inline_keyboard": [[
+                    {"text": "📸 Sim", "callback_data": f"photos_yes:{alert_id}"},
+                    {"text": "❌ Não", "callback_data": f"photos_no:{alert_id}"},
+                ]]
+            }
+        )
+        if sent:
+            asyncio.create_task(_log_transition(
+                chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, STATE_WAIT_PROBLEM_PHOTO_CONF,
+                action="problem_photo_question_sent", alert_id=alert_id
+            ))
+        else:
+            logger.warning(f"[ALERTS] Photo confirmation message FAILED to send for alert {alert_id}")
+    except asyncio.CancelledError:
+        # Should not happen now (self-cancellation is prevented), but defensive
+        logger.error(f"[ALERTS] CancelledError while sending photo question for alert {alert_id}")
+        raise
+    except Exception as e:
+        logger.error(f"[ALERTS] Error sending photo question: {e}")
 
 
 async def _idle_buffer_timer(chat_id: int):
