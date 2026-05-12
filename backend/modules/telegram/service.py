@@ -306,27 +306,36 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
         
         print(f"[WHISPER] Audio saved to: {ogg_path}")
         
-        # Check if ffmpeg is available for conversion
-        ffmpeg_available = shutil.which("ffmpeg") is not None
-        print(f"[WHISPER] ffmpeg available: {ffmpeg_available}")
-        
+        # Check if ffmpeg is available for conversion. Prefer system ffmpeg,
+        # then fall back to the static binary shipped by imageio-ffmpeg (pip-installed).
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            try:
+                import imageio_ffmpeg
+                ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception as _e:
+                ffmpeg_bin = None
+        ffmpeg_available = ffmpeg_bin is not None
+        print(f"[WHISPER] ffmpeg available: {ffmpeg_available} ({ffmpeg_bin})")
+
         if file_extension.lower() == "ogg" and ffmpeg_available:
             # Convert OGG to MP3 using ffmpeg (Whisper doesn't support OGG)
             mp3_path = ogg_path.replace(f".{file_extension}", ".mp3")
             print(f"[WHISPER] Converting to MP3: {mp3_path}")
-            
+
             convert_result = subprocess.run(
-                ["ffmpeg", "-i", ogg_path, "-y", "-acodec", "libmp3lame", "-ab", "128k", mp3_path],
+                [ffmpeg_bin, "-i", ogg_path, "-y", "-acodec", "libmp3lame", "-ab", "128k", mp3_path],
                 capture_output=True,
                 timeout=30
             )
-            
+
             if convert_result.returncode == 0:
                 final_path = mp3_path
                 mp3_size = os_module.path.getsize(mp3_path)
                 print(f"[WHISPER] MP3 created: {mp3_size} bytes")
             else:
-                print(f"[WHISPER] WARNING: ffmpeg conversion failed, trying webm rename")
+                stderr_msg = convert_result.stderr.decode("utf-8", errors="replace")[:500] if convert_result.stderr else ""
+                print(f"[WHISPER] WARNING: ffmpeg conversion failed: {stderr_msg}")
                 # Fallback: OGG is actually Opus in OGG container, try as webm
                 final_path = ogg_path.replace(".ogg", ".webm")
                 os_module.rename(ogg_path, final_path)

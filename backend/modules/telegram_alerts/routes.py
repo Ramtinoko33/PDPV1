@@ -420,6 +420,139 @@ async def get_alert_audio(alert_id: str, current_user: dict = Depends(get_curren
     raise HTTPException(status_code=404, detail="Áudio não encontrado")
 
 
+@router.get("/tickets/{ticket_id}/mechanic-comment")
+async def get_ticket_mechanic_comment(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the mechanic_comment (text/audio metadata + transcription) for a ticket."""
+    ticket = await db.tickets.find_one(
+        {"id": ticket_id},
+        {"_id": 0, "mechanic_comment": 1, "source_alert_id": 1}
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    mc = ticket.get("mechanic_comment")
+    if not mc:
+        return {"mechanic_comment": None}
+    # Strip raw binary fields for safety; only metadata
+    safe_mc = {
+        "type": mc.get("type"),
+        "text": mc.get("text"),
+        "transcription_status": mc.get("transcription_status"),
+        "internal_only": mc.get("internal_only", True),
+        "created_at": mc.get("created_at"),
+        "created_by": mc.get("created_by"),
+        "has_audio": bool(mc.get("audio")) if mc.get("type") == "audio" else False,
+    }
+    return {"mechanic_comment": safe_mc, "source_alert_id": ticket.get("source_alert_id")}
+
+
+@router.get("/tickets/{ticket_id}/audio")
+async def get_ticket_audio(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the mechanic's audio (base64) for a ticket. Falls back to source alert if needed."""
+    ticket = await db.tickets.find_one(
+        {"id": ticket_id},
+        {"_id": 0, "mechanic_comment": 1, "source_alert_id": 1}
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    mc = ticket.get("mechanic_comment") or {}
+    audio = mc.get("audio") if mc.get("type") == "audio" else None
+
+    # Fallback: load from source alert if ticket copy is missing audio metadata
+    if not audio and ticket.get("source_alert_id"):
+        alert = await db.alerts.find_one(
+            {"id": ticket["source_alert_id"]},
+            {"_id": 0, "mechanic_comment": 1}
+        )
+        if alert:
+            alert_mc = alert.get("mechanic_comment") or {}
+            if alert_mc.get("type") == "audio":
+                audio = alert_mc.get("audio")
+
+    if not audio:
+        raise HTTPException(status_code=404, detail="Áudio não encontrado")
+
+    if audio.get("storage_path"):
+        try:
+            from services.storage_service import get_object
+            data, content_type = get_object(audio["storage_path"])
+            import base64
+            return {"base64": base64.b64encode(data).decode("utf-8"), "file_type": content_type}
+        except Exception:
+            pass
+    if audio.get("base64_data"):
+        return {"base64": audio["base64_data"], "file_type": audio.get("file_type", "audio/ogg")}
+    if audio.get("telegram_file_id"):
+        audio_bytes, ext = await service.download_telegram_file(audio["telegram_file_id"])
+        if audio_bytes:
+            import base64
+            return {"base64": base64.b64encode(audio_bytes).decode("utf-8"), "file_type": f"audio/{ext or 'ogg'}"}
+    raise HTTPException(status_code=404, detail="Áudio não encontrado")
+
+
+@router.post("/tickets/{ticket_id}/retranscribe-audio")
+async def retranscribe_ticket_audio(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Re-run Whisper transcription on the mechanic's audio for a ticket."""
+    _check_alerts_access(current_user)
+    ticket = await db.tickets.find_one(
+        {"id": ticket_id},
+        {"_id": 0, "mechanic_comment": 1, "source_alert_id": 1}
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+
+    mc = ticket.get("mechanic_comment") or {}
+    audio = mc.get("audio") if mc.get("type") == "audio" else None
+    if not audio and ticket.get("source_alert_id"):
+        alert = await db.alerts.find_one({"id": ticket["source_alert_id"]}, {"_id": 0, "mechanic_comment": 1})
+        if alert:
+            alert_mc = alert.get("mechanic_comment") or {}
+            if alert_mc.get("type") == "audio":
+                audio = alert_mc.get("audio")
+    if not audio:
+        raise HTTPException(status_code=404, detail="Áudio não encontrado")
+
+    # Load audio bytes
+    audio_bytes = None
+    ext = "ogg"
+    if audio.get("storage_path"):
+        try:
+            from services.storage_service import get_object
+            data, content_type = get_object(audio["storage_path"])
+            audio_bytes = data
+            if content_type and "/" in content_type:
+                ext = content_type.split("/")[-1]
+        except Exception:
+            pass
+    if not audio_bytes and audio.get("base64_data"):
+        import base64
+        audio_bytes = base64.b64decode(audio["base64_data"])
+        if audio.get("file_type"):
+            ext = audio["file_type"].split("/")[-1]
+    if not audio_bytes and audio.get("telegram_file_id"):
+        b, e = await service.download_telegram_file(audio["telegram_file_id"])
+        audio_bytes = b
+        if e:
+            ext = e
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="Bytes de áudio não disponíveis")
+
+    from modules.telegram.service import transcribe_audio_with_whisper
+    transcript = await transcribe_audio_with_whisper(audio_bytes, ext)
+    status_val = "success" if transcript else "failed"
+
+    new_mc = dict(mc)
+    new_mc["text"] = transcript or mc.get("text") or ""
+    new_mc["transcription_status"] = status_val
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {"mechanic_comment": new_mc, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"status": status_val, "text": transcript}
+
+
+
+
 
 
 # ============== TICKET PROBLEM IMAGES ==============

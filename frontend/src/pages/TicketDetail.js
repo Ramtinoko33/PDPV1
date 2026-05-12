@@ -2370,6 +2370,9 @@ Qualquer dúvida estamos disponíveis.`;
           {/* Problem Images (from Telegram Alerts) */}
           <ProblemImagesSection ticketId={id} getAuthHeaders={getAuthHeaders} canEdit={canEdit} />
 
+          {/* Mechanic Comment (from Telegram Alerts — internal) */}
+          <MechanicCommentSection ticketId={id} getAuthHeaders={getAuthHeaders} canEdit={canEdit} />
+
           {/* Attachments */}
           <Card>
             <CardHeader className="border-b">
@@ -2969,6 +2972,130 @@ const ProblemImageCard = ({ ticketId, image, getAuthHeaders, canEdit, onToggleVi
         </div>
       )}
     </div>
+  );
+};
+
+// Mechanic Comment Section (text or audio + transcription) — internal only
+const MechanicCommentSection = ({ ticketId, getAuthHeaders, canEdit }) => {
+  const [mc, setMc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [audioSrc, setAudioSrc] = useState(null);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/tickets/${ticketId}/mechanic-comment`,
+          { headers: getAuthHeaders() }
+        );
+        if (!cancelled) setMc(resp.data.mechanic_comment);
+      } catch { /* silent */ }
+      finally { if (!cancelled) setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ticketId, getAuthHeaders]);
+
+  useEffect(() => {
+    if (!mc || mc.type !== 'audio' || !mc.has_audio || audioSrc) return;
+    let cancelled = false;
+    const load = async () => {
+      setAudioLoading(true);
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/tickets/${ticketId}/audio`,
+          { headers: getAuthHeaders() }
+        );
+        if (!cancelled && resp.data.base64) {
+          setAudioSrc(`data:${resp.data.file_type || 'audio/ogg'};base64,${resp.data.base64}`);
+        }
+      } catch { /* silent */ }
+      finally { if (!cancelled) setAudioLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ticketId, mc, audioSrc, getAuthHeaders]);
+
+  const handleRetranscribe = async () => {
+    setRetranscribing(true);
+    try {
+      const resp = await axios.post(
+        `${API_URL}/api/telegram-alerts/tickets/${ticketId}/retranscribe-audio`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      toast.success(resp.data.status === 'success' ? 'Transcrição atualizada' : 'Transcrição falhou');
+      setMc((prev) => prev ? { ...prev, text: resp.data.text || prev.text, transcription_status: resp.data.status } : prev);
+    } catch (e) {
+      toast.error('Erro ao re-transcrever');
+    } finally {
+      setRetranscribing(false);
+    }
+  };
+
+  if (loading) return null;
+  if (!mc) return null;
+
+  return (
+    <Card data-testid="ticket-mechanic-comment">
+      <CardHeader className="border-b">
+        <CardTitle className="text-lg flex items-center gap-2">
+          {mc.type === 'audio' ? '🎤' : '📝'} Comentário do mecânico
+          <span className="text-xs font-normal text-zinc-500 ml-1">(interno)</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        {mc.type === 'text' && (
+          <p className="text-sm text-zinc-700 whitespace-pre-wrap" data-testid="mc-text-body">
+            {mc.text || '(vazio)'}
+          </p>
+        )}
+        {mc.type === 'audio' && (
+          <>
+            {audioLoading ? (
+              <p className="text-xs text-zinc-500">A carregar áudio...</p>
+            ) : audioSrc ? (
+              <audio controls src={audioSrc} className="w-full" data-testid="mc-audio-player" />
+            ) : (
+              <p className="text-xs text-zinc-500">Áudio indisponível</p>
+            )}
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] uppercase tracking-wide text-zinc-400">Transcrição</p>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleRetranscribe}
+                    disabled={retranscribing}
+                    className="text-xs text-orange-600 hover:underline disabled:opacity-50"
+                    data-testid="mc-retranscribe-btn"
+                  >
+                    {retranscribing ? 'A transcrever...' : 'Re-transcrever'}
+                  </button>
+                )}
+              </div>
+              {mc.transcription_status === 'success' && mc.text ? (
+                <p className="text-sm text-zinc-700 whitespace-pre-wrap">{mc.text}</p>
+              ) : (
+                <p className="text-xs text-amber-600">
+                  {mc.transcription_status === 'failed'
+                    ? 'Transcrição falhou — pode tentar novamente.'
+                    : 'Sem transcrição disponível.'}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+        {mc.created_by?.name && (
+          <p className="text-xs text-zinc-400 pt-2 border-t">
+            Enviado por: {mc.created_by.name}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 
