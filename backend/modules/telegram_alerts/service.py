@@ -1,6 +1,7 @@
 """
 Telegram Alerts Module - Service Layer
-Handles: message buffering, image processing, alert CRUD, Telegram bot interaction.
+Handles: explicit conversation state machine, image processing, alert CRUD,
+Telegram bot interaction, optional mechanic note (text or audio).
 """
 import os
 import re
@@ -25,18 +26,37 @@ TELEGRAM_API = "https://api.telegram.org/bot"
 
 BUFFER_TIMEOUT_SECONDS = 10
 PHOTO_COLLECTION_TIMEOUT = 10
+NOTE_COLLECTION_TIMEOUT = 60
 MAX_MESSAGES_PER_MIN = 10
 MAX_PHOTO_SIZE_MB = 3
 MAX_PROBLEM_PHOTOS = 4
+MAX_AUDIO_DURATION_SEC = 60
+MAX_NOTE_TEXT_LEN = 1000
 IMAGE_MAX_WIDTH = 1200
 IMAGE_QUALITY = 75
 
-# In-memory message buffer: {chat_id: {messages: [], photos: [], timer_task: Task, ...}}
-_message_buffers = {}
+# Conversation states (per chat_id)
+STATE_IDLE = "IDLE"
+STATE_WAIT_PROBLEM_PHOTO_CONF = "WAITING_PROBLEM_PHOTO_CONFIRMATION"
+STATE_COLLECTING_PROBLEM_IMAGES = "COLLECTING_PROBLEM_IMAGES"
+STATE_WAIT_NOTE_CONF = "WAITING_MECHANIC_NOTE_CONFIRMATION"
+STATE_COLLECTING_NOTE = "COLLECTING_MECHANIC_NOTE"
+STATE_WAIT_ASSIGNEE = "WAITING_ASSIGNEE_SELECTION"
+
+# Per-chat conversation state.
+# Shape: {
+#   "state": str,
+#   "active_alert_id": str | None,
+#   "problem_images_count": int,
+#   "timer_task": asyncio.Task | None,
+#   "user_info": dict,
+#   "last_activity": float,
+#   "initial_buffer": {"texts": [str], "photos": [dict]} | None,
+# }
+_conversation_states = {}
+
 # Rate limiting: {chat_id: [timestamps]}
 _rate_limits = {}
-# Photo collection mode: {chat_id: {alert_id, photos: [], timer_task}}
-_photo_collection = {}
 
 
 # ============== TELEGRAM API HELPERS ==============
@@ -78,8 +98,29 @@ async def download_telegram_photo(file_id: str) -> Optional[bytes]:
     return None
 
 
+async def download_telegram_file(file_id: str) -> Tuple[Optional[bytes], Optional[str]]:
+    """Download any Telegram file. Returns (bytes, file_path_extension)."""
+    if not BOT_TOKEN:
+        return None, None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"{TELEGRAM_API}{BOT_TOKEN}/getFile", params={"file_id": file_id})
+            if r.status_code != 200:
+                return None, None
+            file_path = r.json().get("result", {}).get("file_path")
+            if not file_path:
+                return None, None
+            ext = file_path.split(".")[-1].lower() if "." in file_path else "bin"
+            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
+            if r2.status_code == 200:
+                return r2.content, ext
+    except Exception as e:
+        logger.error(f"[ALERTS_BOT] download file error: {e}")
+    return None, None
+
+
 async def get_system_users() -> List[dict]:
-    """Get active AGENT users with alerts access to show as assignee options in Telegram bot."""
+    """Get active AGENT users with alerts access to show as assignee options."""
     users = await db.users.find(
         {"is_active": {"$ne": False}, "role": "AGENT", "has_alerts_access": True},
         {"_id": 0, "id": 1, "name": 1, "role": 1}
@@ -173,7 +214,6 @@ Regras:
 
         extracted = json.loads(result_text)
 
-        # Normalize new format: items may be [{description: ...}] -> flatten to strings
         if isinstance(extracted.get("items"), list):
             normalized_items = []
             for item in extracted["items"]:
@@ -183,7 +223,6 @@ Regras:
                     normalized_items.append(str(item))
             extracted["items"] = normalized_items
 
-        # If is_alert is False, mark as extraction failed
         if extracted.get("is_alert") is False:
             extracted["success"] = False
             extracted["error"] = "Image is not a CEINOR GENES alert"
@@ -206,7 +245,7 @@ Regras:
         return {"success": False, "error": str(e)}
 
 
-# ============== STORAGE ==============
+# ============== IMAGE PROCESSING & STORAGE ==============
 def _process_image(image_bytes: bytes) -> bytes:
     """Resize, compress, strip EXIF. Returns optimized JPEG bytes."""
     try:
@@ -215,24 +254,20 @@ def _process_image(image_bytes: bytes) -> bytes:
 
         img = Image.open(io.BytesIO(image_bytes))
 
-        # Strip EXIF by converting to RGB
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
         elif img.mode != "RGB":
             img = img.convert("RGB")
 
-        # Resize if wider than max
         if img.width > IMAGE_MAX_WIDTH:
             ratio = IMAGE_MAX_WIDTH / img.width
             new_height = int(img.height * ratio)
             img = img.resize((IMAGE_MAX_WIDTH, new_height), Image.LANCZOS)
 
-        # Save as JPEG with quality
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=IMAGE_QUALITY, optimize=True)
         result = buf.getvalue()
 
-        # If still too large (>300KB), reduce quality
         if len(result) > 300 * 1024:
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=55, optimize=True)
@@ -246,8 +281,7 @@ def _process_image(image_bytes: bytes) -> bytes:
 
 
 async def store_photo(image_bytes: bytes, original_filename: str, telegram_file_id: str = None, role: str = "alert") -> dict:
-    """Store photo using Object Storage (preferred) or base64 fallback."""
-    # Process image (resize, compress, strip EXIF)
+    """Store photo. Compress and strip EXIF first. role: 'alert' (GENES) or 'problem' (faults)."""
     image_bytes = _process_image(image_bytes)
 
     attachment_id = str(uuid.uuid4())
@@ -265,7 +299,6 @@ async def store_photo(image_bytes: bytes, original_filename: str, telegram_file_
         "stored_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Try Object Storage
     try:
         from services.storage_service import put_object
         path = f"alerts/{attachment_id}.jpg"
@@ -276,37 +309,101 @@ async def store_photo(image_bytes: bytes, original_filename: str, telegram_file_
     except Exception as e:
         logger.warning(f"[ALERTS_STORAGE] Object Storage failed: {e}")
 
-    # Fallback: base64 if <5MB
     if file_size < 5 * 1024 * 1024:
         attachment["base64_data"] = base64.b64encode(image_bytes).decode("utf-8")
         logger.info("[ALERTS_STORAGE] Stored as base64")
         return attachment
 
-    # Fallback: telegram_file_id only
     logger.info("[ALERTS_STORAGE] Using telegram_file_id fallback")
     return attachment
 
 
-# ============== MESSAGE BUFFER ==============
-async def _process_buffer(chat_id: int):
-    """Process buffered messages after timeout. Creates alert, then asks about problem photos."""
-    await asyncio.sleep(BUFFER_TIMEOUT_SECONDS)
+async def store_audio(audio_bytes: bytes, ext: str, telegram_file_id: str = None) -> dict:
+    """Store audio in object storage or fallback base64."""
+    audio_id = str(uuid.uuid4())
+    file_size = len(audio_bytes)
+    content_type = f"audio/{ext}" if ext in ("ogg", "mp3", "m4a", "wav", "webm") else "audio/ogg"
+    record = {
+        "id": audio_id,
+        "filename": f"{audio_id}.{ext}",
+        "file_type": content_type,
+        "file_size": file_size,
+        "storage_path": None,
+        "telegram_file_id": telegram_file_id,
+        "base64_data": None,
+        "stored_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        from services.storage_service import put_object
+        path = f"alerts/audio/{audio_id}.{ext}"
+        put_object(path, audio_bytes, content_type)
+        record["storage_path"] = path
+        logger.info(f"[ALERTS_STORAGE] Audio stored: {path}")
+        return record
+    except Exception as e:
+        logger.warning(f"[ALERTS_STORAGE] Audio Object Storage failed: {e}")
 
-    buf = _message_buffers.pop(chat_id, None)
-    if not buf:
-        return
+    if file_size < 5 * 1024 * 1024:
+        record["base64_data"] = base64.b64encode(audio_bytes).decode("utf-8")
+    return record
 
+
+# ============== CONVERSATION STATE HELPERS ==============
+def _get_state(chat_id: int) -> dict:
+    if chat_id not in _conversation_states:
+        _conversation_states[chat_id] = {
+            "state": STATE_IDLE,
+            "active_alert_id": None,
+            "problem_images_count": 0,
+            "timer_task": None,
+            "user_info": {},
+            "last_activity": datetime.now(timezone.utc).timestamp(),
+            "initial_buffer": None,
+        }
+    return _conversation_states[chat_id]
+
+
+def _cancel_timer(state: dict):
+    t = state.get("timer_task")
+    if t and not t.done():
+        t.cancel()
+    state["timer_task"] = None
+
+
+def _reset_state(chat_id: int):
+    state = _conversation_states.get(chat_id)
+    if state:
+        _cancel_timer(state)
+    _conversation_states[chat_id] = {
+        "state": STATE_IDLE,
+        "active_alert_id": None,
+        "problem_images_count": 0,
+        "timer_task": None,
+        "user_info": {},
+        "last_activity": datetime.now(timezone.utc).timestamp(),
+        "initial_buffer": None,
+    }
+
+
+def _touch(state: dict):
+    state["last_activity"] = datetime.now(timezone.utc).timestamp()
+
+
+# ============== ALERT CREATION (FROM INITIAL BUFFER) ==============
+async def _create_alert_from_buffer(chat_id: int):
+    """Build the alert from the initial IDLE buffer and move to WAITING_PROBLEM_PHOTO_CONFIRMATION."""
+    state = _get_state(chat_id)
+    buf = state.get("initial_buffer") or {}
     texts = buf.get("texts", [])
     photos = buf.get("photos", [])
-    user_info = buf.get("user_info", {})
+    user_info = state.get("user_info", {})
     combined_text = "\n".join(texts).strip()
 
     if not combined_text and not photos:
+        _reset_state(chat_id)
         return
 
-    # Process photos: only the first photo is used as alert_image (GENES screenshot)
-    # Additional photos in the same burst are ignored — problem photos must go through
-    # the explicit [Sim]/[Não] flow so the mechanic confirms intent.
+    # Only first photo is the GENES screenshot. AI extraction runs ONLY on this image.
     alert_image = None
     vision_result = {}
     extraction_failed = False
@@ -325,7 +422,6 @@ async def _process_buffer(chat_id: int):
             if not vision_result.get("success"):
                 extraction_failed = True
 
-    # Create alert in DB
     now = datetime.now(timezone.utc).isoformat()
     alert_id = str(uuid.uuid4())
 
@@ -349,6 +445,7 @@ async def _process_buffer(chat_id: int):
         "alert_image": alert_image,
         "problem_images": [],
         "has_problem_images": False,
+        "mechanic_comment": None,
         "attachments": ([alert_image] if alert_image else []),
         "extraction_failed": extraction_failed,
         "raw_text": combined_text or None,
@@ -364,12 +461,18 @@ async def _process_buffer(chat_id: int):
     await db.alerts.insert_one(alert_doc)
     logger.info(f"[ALERTS] Created alert {alert_id} from chat {chat_id}")
 
-    # Confirm and ask about problem photos
+    # Transition state
+    state["active_alert_id"] = alert_id
+    state["state"] = STATE_WAIT_PROBLEM_PHOTO_CONF
+    state["problem_images_count"] = 0
+    state["initial_buffer"] = None
+    _cancel_timer(state)
+    _touch(state)
+
     plate_text = f"\nMatrícula: <b>{alert_doc['license_plate']}</b>" if alert_doc.get("license_plate") else ""
     items_text = f"\nItens: {', '.join(alert_doc['items'])}" if alert_doc.get("items") else ""
     warn_text = "\n⚠️ Não consegui ler a imagem, mas o alerta foi criado." if extraction_failed else ""
 
-    # Always ask about problem photos (intent must be explicit)
     await send_message(
         chat_id,
         f"✅ Alerta registado!{plate_text}{items_text}{warn_text}\n\n"
@@ -381,144 +484,318 @@ async def _process_buffer(chat_id: int):
             ]]
         }
     )
-    _pending_assignments[chat_id] = alert_id
 
 
-# Temporary mapping: chat_id -> alert_id waiting for assignee
-_pending_assignments = {}
+async def _idle_buffer_timer(chat_id: int):
+    """After BUFFER_TIMEOUT_SECONDS of inactivity in IDLE buffer, create alert."""
+    try:
+        await asyncio.sleep(BUFFER_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        return
+    state = _conversation_states.get(chat_id)
+    if not state or state.get("state") != STATE_IDLE or not state.get("initial_buffer"):
+        return
+    await _create_alert_from_buffer(chat_id)
 
 
-# ============== PHOTO COLLECTION MODE ==============
-async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
-    """Handle 'Sim'/'Não' callback for problem photos."""
-    if action == "yes":
-        # Enter photo collection mode
-        _photo_collection[chat_id] = {
-            "alert_id": alert_id,
-            "photos": [],
-            "timer_task": None,
-        }
-        await send_message(
-            chat_id,
-            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos das avarias. Quando terminar, aguarde alguns segundos."
-        )
-        # Start inactivity timer
-        _photo_collection[chat_id]["timer_task"] = asyncio.create_task(
-            _end_photo_collection(chat_id)
-        )
-    else:
-        # Skip photos, go to assignee selection
-        await send_message(chat_id, "Escolha o rececionista:")
-        await send_assignee_buttons(chat_id)
+# ============== INCOMING MESSAGE ROUTERS ==============
+async def handle_incoming_text(chat_id: int, user_info: dict, text: str):
+    """Route a text message based on current conversation state."""
+    state = _get_state(chat_id)
+    _touch(state)
+    current = state["state"]
 
-
-async def collect_problem_photo(chat_id: int, photo: dict) -> bool:
-    """Add a problem photo during collection mode. Returns True if handled."""
-    if chat_id not in _photo_collection:
-        return False
-
-    col = _photo_collection[chat_id]
-
-    if len(col["photos"]) >= MAX_PROBLEM_PHOTOS:
-        await send_message(chat_id, f"Máximo de {MAX_PROBLEM_PHOTOS} fotos atingido. A processar...")
-        await _finalize_photo_collection(chat_id)
-        return True
-
-    # Download and store
-    image_bytes = await download_telegram_photo(photo["file_id"])
-    if image_bytes:
-        att = await store_photo(
-            image_bytes,
-            f"problema_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{len(col['photos'])}.jpg",
-            photo["file_id"],
-            role="problem"
-        )
-        col["photos"].append(att)
-        remaining = MAX_PROBLEM_PHOTOS - len(col["photos"])
-        if remaining > 0:
-            await send_message(chat_id, f"✅ Foto {len(col['photos'])} recebida. Pode enviar mais {remaining}.")
-        else:
-            await send_message(chat_id, f"✅ Foto {len(col['photos'])} recebida. Máximo atingido, a processar...")
-            await _finalize_photo_collection(chat_id)
-            return True
-
-    # Reset inactivity timer
-    if col.get("timer_task") and not col["timer_task"].done():
-        col["timer_task"].cancel()
-    col["timer_task"] = asyncio.create_task(_end_photo_collection(chat_id))
-
-    return True
-
-
-async def _end_photo_collection(chat_id: int):
-    """End photo collection after inactivity timeout."""
-    await asyncio.sleep(PHOTO_COLLECTION_TIMEOUT)
-    await _finalize_photo_collection(chat_id)
-
-
-async def _finalize_photo_collection(chat_id: int):
-    """Save collected photos to alert and proceed to assignee selection."""
-    col = _photo_collection.pop(chat_id, None)
-    if not col:
+    if current == STATE_IDLE:
+        # Buffer text and wait for possible photo. If nothing else arrives, create text-only alert.
+        if not state.get("initial_buffer"):
+            state["initial_buffer"] = {"texts": [], "photos": []}
+        state["initial_buffer"]["texts"].append(text)
+        state["user_info"] = user_info
+        _cancel_timer(state)
+        state["timer_task"] = asyncio.create_task(_idle_buffer_timer(chat_id))
         return
 
-    # Cancel timer
-    if col.get("timer_task") and not col["timer_task"].done():
-        col["timer_task"].cancel()
+    if current == STATE_COLLECTING_NOTE:
+        # Save as mechanic note (text)
+        text = text[:MAX_NOTE_TEXT_LEN]
+        await _save_mechanic_note(chat_id, comment_type="text", text=text)
+        return
 
-    alert_id = col["alert_id"]
-    photos = col["photos"]
+    if current in (STATE_WAIT_PROBLEM_PHOTO_CONF, STATE_WAIT_NOTE_CONF, STATE_WAIT_ASSIGNEE):
+        await send_message(chat_id, "Por favor use os botões acima para continuar.")
+        return
 
-    if photos:
-        # Update alert with problem_images
-        await db.alerts.update_one(
-            {"id": alert_id},
-            {
-                "$set": {
-                    "problem_images": photos,
-                    "has_problem_images": True,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-                "$push": {"attachments": {"$each": photos}},
-            }
-        )
-        await send_message(chat_id, f"📸 {len(photos)} foto(s) das avarias adicionada(s).\n\nEscolha o rececionista:")
+    if current == STATE_COLLECTING_PROBLEM_IMAGES:
+        await send_message(chat_id, "A aguardar fotos das avarias. Envie imagens ou aguarde para terminar.")
+        return
+
+
+async def handle_incoming_photo(chat_id: int, user_info: dict, photo: dict, caption: str = None):
+    """Route a photo based on current state."""
+    state = _get_state(chat_id)
+    _touch(state)
+    current = state["state"]
+
+    if current == STATE_IDLE:
+        # GENES screenshot path
+        if not state.get("initial_buffer"):
+            state["initial_buffer"] = {"texts": [], "photos": []}
+        state["initial_buffer"]["photos"].append(photo)
+        if caption:
+            state["initial_buffer"]["texts"].append(caption)
+        state["user_info"] = user_info
+        _cancel_timer(state)
+        state["timer_task"] = asyncio.create_task(_idle_buffer_timer(chat_id))
+        return
+
+    if current == STATE_COLLECTING_PROBLEM_IMAGES:
+        await _append_problem_photo(chat_id, photo)
+        return
+
+    if current == STATE_WAIT_PROBLEM_PHOTO_CONF:
+        await send_message(chat_id, "Por favor responda Sim/Não acima antes de enviar fotos.")
+        return
+
+    if current == STATE_COLLECTING_NOTE:
+        await send_message(chat_id, "A aguardar nota (texto ou áudio). As fotos não são guardadas neste passo.")
+        return
+
+    if current in (STATE_WAIT_NOTE_CONF, STATE_WAIT_ASSIGNEE):
+        await send_message(chat_id, "Por favor use os botões acima para continuar.")
+        return
+
+
+async def handle_incoming_voice(chat_id: int, user_info: dict, voice: dict):
+    """Route a voice/audio message based on current state."""
+    state = _get_state(chat_id)
+    _touch(state)
+    current = state["state"]
+
+    if current != STATE_COLLECTING_NOTE:
+        await send_message(chat_id, "Áudios só são aceites no passo de nota do mecânico.")
+        return
+
+    duration = voice.get("duration", 0)
+    if duration > MAX_AUDIO_DURATION_SEC:
+        await send_message(chat_id, f"⚠️ Áudio demasiado longo (máx {MAX_AUDIO_DURATION_SEC}s).")
+        return
+
+    file_id = voice.get("file_id")
+    audio_bytes, ext = await download_telegram_file(file_id)
+    if not audio_bytes:
+        await send_message(chat_id, "⚠️ Não foi possível baixar o áudio. Tente novamente.")
+        return
+
+    ext = ext or "ogg"
+    audio_record = await store_audio(audio_bytes, ext, telegram_file_id=file_id)
+
+    # Try transcription (Whisper via Emergent LLM Key) — reuse existing helper
+    transcription_status = "not_applicable"
+    transcript = None
+    try:
+        from modules.telegram.service import transcribe_audio_with_whisper
+        transcript = await transcribe_audio_with_whisper(audio_bytes, ext)
+        transcription_status = "success" if transcript else "failed"
+    except Exception as e:
+        logger.warning(f"[ALERTS_AUDIO] Transcription error: {e}")
+        transcription_status = "failed"
+
+    await _save_mechanic_note(
+        chat_id,
+        comment_type="audio",
+        text=transcript or "",
+        audio=audio_record,
+        transcription_status=transcription_status,
+    )
+
+
+async def _save_mechanic_note(
+    chat_id: int,
+    comment_type: str,
+    text: str = "",
+    audio: dict = None,
+    transcription_status: str = "not_applicable",
+):
+    """Persist mechanic note on the active alert and advance to assignee selection."""
+    state = _get_state(chat_id)
+    alert_id = state.get("active_alert_id")
+    if not alert_id:
+        await send_message(chat_id, "⚠️ Sessão expirou. Envie a nova captura para começar de novo.")
+        _reset_state(chat_id)
+        return
+
+    user_info = state.get("user_info", {})
+    comment = {
+        "type": comment_type,
+        "text": text or None,
+        "audio": audio,
+        "transcription_status": transcription_status,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": {
+            "user_id": user_info.get("user_id", 0),
+            "username": user_info.get("username"),
+            "name": user_info.get("name", "Desconhecido"),
+        },
+    }
+    await db.alerts.update_one(
+        {"id": alert_id},
+        {"$set": {"mechanic_comment": comment, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    state["state"] = STATE_WAIT_ASSIGNEE
+    _cancel_timer(state)
+    _touch(state)
+
+    if comment_type == "audio":
+        if transcription_status == "success":
+            await send_message(chat_id, f"🎤 Nota de áudio guardada. Transcrição:\n<i>{text[:200]}</i>")
+        else:
+            await send_message(chat_id, "🎤 Nota de áudio guardada (sem transcrição).")
     else:
-        await send_message(chat_id, "Nenhuma foto recebida.\n\nEscolha o rececionista:")
+        await send_message(chat_id, "📝 Nota guardada.")
 
     await send_assignee_buttons(chat_id)
 
 
-def buffer_message(chat_id: int, user_info: dict, text: str = None, photo: dict = None):
-    """Add message to buffer and reset timer."""
-    if chat_id not in _message_buffers:
-        _message_buffers[chat_id] = {
-            "texts": [],
-            "photos": [],
-            "user_info": user_info,
-            "timer_task": None,
-        }
-
-    buf = _message_buffers[chat_id]
-
-    if text:
-        buf["texts"].append(text)
-    if photo:
-        buf["photos"].append(photo)
-
-    # Cancel existing timer and restart
-    if buf["timer_task"] and not buf["timer_task"].done():
-        buf["timer_task"].cancel()
-
-    buf["timer_task"] = asyncio.create_task(_process_buffer(chat_id))
-
-
-# ============== CALLBACK: ASSIGN ==============
-async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> bool:
-    """Handle assignee selection callback from inline keyboard."""
-    alert_id = _pending_assignments.pop(chat_id, None)
+# ============== PROBLEM PHOTO COLLECTION ==============
+async def _append_problem_photo(chat_id: int, photo: dict):
+    state = _get_state(chat_id)
+    alert_id = state.get("active_alert_id")
     if not alert_id:
-        # Maybe old alert — find latest pending unassigned for this chat
+        await send_message(chat_id, "⚠️ Sessão expirou. Envie a nova captura para começar de novo.")
+        _reset_state(chat_id)
+        return
+
+    if state["problem_images_count"] >= MAX_PROBLEM_PHOTOS:
+        await send_message(chat_id, f"Máximo de {MAX_PROBLEM_PHOTOS} fotos atingido. A continuar...")
+        await _end_problem_photos(chat_id)
+        return
+
+    image_bytes = await download_telegram_photo(photo["file_id"])
+    if not image_bytes:
+        await send_message(chat_id, "⚠️ Não consegui baixar a foto. Envie novamente.")
+        return
+
+    att = await store_photo(
+        image_bytes,
+        f"problema_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{state['problem_images_count']}.jpg",
+        photo["file_id"],
+        role="problem",
+    )
+    # Append to alert
+    await db.alerts.update_one(
+        {"id": alert_id},
+        {
+            "$push": {"problem_images": att, "attachments": att},
+            "$set": {"has_problem_images": True, "updated_at": datetime.now(timezone.utc).isoformat()},
+        },
+    )
+    state["problem_images_count"] += 1
+    _touch(state)
+
+    remaining = MAX_PROBLEM_PHOTOS - state["problem_images_count"]
+    if remaining > 0:
+        await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Pode enviar mais {remaining}.")
+        # Reset inactivity timer
+        _cancel_timer(state)
+        state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
+    else:
+        await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Máximo atingido.")
+        await _end_problem_photos(chat_id)
+
+
+async def _problem_photos_timer(chat_id: int):
+    """Inactivity timer in COLLECTING_PROBLEM_IMAGES."""
+    try:
+        await asyncio.sleep(PHOTO_COLLECTION_TIMEOUT)
+    except asyncio.CancelledError:
+        return
+    state = _conversation_states.get(chat_id)
+    if not state or state.get("state") != STATE_COLLECTING_PROBLEM_IMAGES:
+        return
+    await _end_problem_photos(chat_id)
+
+
+async def _end_problem_photos(chat_id: int):
+    state = _get_state(chat_id)
+    state["state"] = STATE_WAIT_NOTE_CONF
+    _cancel_timer(state)
+    _touch(state)
+    await send_message(
+        chat_id,
+        "Quer adicionar alguma nota para a receção?",
+        reply_markup={
+            "inline_keyboard": [[
+                {"text": "📝 Adicionar nota", "callback_data": f"note_yes:{state['active_alert_id']}"},
+                {"text": "Sem nota", "callback_data": f"note_no:{state['active_alert_id']}"},
+            ]]
+        }
+    )
+
+
+async def _note_collection_timer(chat_id: int):
+    """If user clicks 'Adicionar nota' but never sends, time out and continue to assignee."""
+    try:
+        await asyncio.sleep(NOTE_COLLECTION_TIMEOUT)
+    except asyncio.CancelledError:
+        return
+    state = _conversation_states.get(chat_id)
+    if not state or state.get("state") != STATE_COLLECTING_NOTE:
+        return
+    state["state"] = STATE_WAIT_ASSIGNEE
+    _cancel_timer(state)
+    await send_message(chat_id, "⏱️ Sem nota recebida. A prosseguir...")
+    await send_assignee_buttons(chat_id)
+
+
+# ============== CALLBACK HANDLERS ==============
+async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
+    state = _get_state(chat_id)
+    if state.get("state") != STATE_WAIT_PROBLEM_PHOTO_CONF or state.get("active_alert_id") != alert_id:
+        # State drifted — ignore softly
+        return
+
+    if action == "yes":
+        state["state"] = STATE_COLLECTING_PROBLEM_IMAGES
+        _cancel_timer(state)
+        _touch(state)
+        await send_message(
+            chat_id,
+            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos das avarias. Quando terminar, aguarde alguns segundos.",
+        )
+        state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
+    else:
+        await _end_problem_photos(chat_id)
+
+
+async def handle_note_callback(chat_id: int, action: str, alert_id: str):
+    state = _get_state(chat_id)
+    if state.get("state") != STATE_WAIT_NOTE_CONF or state.get("active_alert_id") != alert_id:
+        return
+
+    if action == "yes":
+        state["state"] = STATE_COLLECTING_NOTE
+        _cancel_timer(state)
+        _touch(state)
+        await send_message(
+            chat_id,
+            f"Envie uma mensagem de <b>texto</b> ou <b>áudio</b> com a explicação para a receção. "
+            f"(máx {MAX_NOTE_TEXT_LEN} caracteres ou {MAX_AUDIO_DURATION_SEC}s de áudio)"
+        )
+        state["timer_task"] = asyncio.create_task(_note_collection_timer(chat_id))
+    else:
+        state["state"] = STATE_WAIT_ASSIGNEE
+        _cancel_timer(state)
+        _touch(state)
+        await send_assignee_buttons(chat_id)
+
+
+async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> bool:
+    state = _get_state(chat_id)
+    alert_id = state.get("active_alert_id")
+
+    if not alert_id:
+        # Fallback: try to find latest pending unassigned
         alert = await db.alerts.find_one(
             {"telegram_chat_id": chat_id, "assigned_to": None, "status": AlertStatus.PENDING.value},
             {"_id": 0, "id": 1},
@@ -529,6 +806,7 @@ async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> 
 
     if not alert_id:
         await send_message(chat_id, "Nenhum alerta pendente para atribuir.")
+        _reset_state(chat_id)
         return False
 
     now = datetime.now(timezone.utc).isoformat()
@@ -537,28 +815,27 @@ async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> 
         {"$set": {"assigned_to": user_id, "assigned_to_name": user_name, "updated_at": now}}
     )
 
+    # Reset conversation state — IDLE
+    _reset_state(chat_id)
+
     await send_message(
         chat_id,
-        f"✅ Alerta atribuído a <b>{user_name}</b>.\n\nPode enviar nova foto ou texto para criar outro alerta."
+        f"✅ Alerta atribuído com sucesso a <b>{user_name}</b>.\n\nPode enviar nova captura para criar outro alerta."
     )
 
-    # Create notification for assigned user AND admin
+    # Notifications
     try:
         from services.notification_service import create_notification
         alert = await db.alerts.find_one({"id": alert_id}, {"_id": 0})
         plate_info = f" ({alert['license_plate']})" if alert and alert.get("license_plate") else ""
         mechanic_name = alert.get("created_by", {}).get("name", "Mecânico") if alert else "Mecânico"
         notif_body = f"Alerta de {mechanic_name}{plate_info} - atribuído a {user_name}"
-
-        # Notify assigned agent
         await create_notification(
             user_id=user_id,
             title="Novo Alerta Telegram",
             body=notif_body,
             notification_type="info",
         )
-
-        # Notify all admins
         admins = await db.users.find(
             {"role": "ADMIN", "is_active": {"$ne": False}},
             {"_id": 0, "id": 1}
@@ -576,6 +853,12 @@ async def handle_assign_callback(chat_id: int, user_id: str, user_name: str) -> 
 
     logger.info(f"[ALERTS] Alert {alert_id} assigned to {user_name} ({user_id})")
     return True
+
+
+# ============== PUBLIC: COMMAND /reset (manual recovery) ==============
+async def handle_reset_command(chat_id: int):
+    _reset_state(chat_id)
+    await send_message(chat_id, "🔄 Conversa reiniciada. Envie a captura GENES para criar um novo alerta.")
 
 
 # ============== ALERT CRUD ==============
@@ -620,7 +903,6 @@ async def delete_alert(alert_id: str) -> bool:
 
 
 async def dismiss_alert(alert_id: str) -> Optional[dict]:
-    """Dismiss an alert (mark as not needed)."""
     alert = await get_alert(alert_id)
     if not alert or alert.get("status") != AlertStatus.PENDING.value:
         return None
@@ -633,7 +915,7 @@ async def dismiss_alert(alert_id: str) -> Optional[dict]:
 
 
 async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict = None) -> Optional[dict]:
-    """Convert alert to a ticket. Mirrors intake conversion logic."""
+    """Convert alert to a ticket. Transfers problem_images and mechanic_comment (internal only)."""
     alert = await get_alert(alert_id)
     if not alert:
         return None
@@ -653,7 +935,6 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
     ticket_type = data.get("ticket_type") or "ORCAMENTO_MECANICA"
     assigned_to = data.get("assigned_to") or alert.get("assigned_to")
 
-    # Append items to description only if not already present
     items_list = alert.get("items", [])
     if items_list:
         items_text = ", ".join(items_list)
@@ -662,7 +943,6 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         elif not description:
             description = f"Itens: {items_text}"
 
-    # Auto-create customer and vehicle
     customer_id = None
     vehicle_id = None
     was_created = False
@@ -678,13 +958,11 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
     except Exception as e:
         logger.warning(f"[ALERTS] Customer auto-create failed: {e}")
 
-    # Get assigned user name
     assigned_to_name = None
     if assigned_to:
         user = await db.users.find_one({"id": assigned_to}, {"_id": 0, "name": 1})
         assigned_to_name = user.get("name") if user else None
 
-    # Compute SLA
     sla_due = None
     sla_target_minutes = 0
     sla_policy_key = None
@@ -733,9 +1011,10 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         "source_alert_id": alert_id,
         "quote_context": "diagnostic",
         "problem_images": [],
+        "mechanic_comment": None,
     }
 
-    # Transfer problem_images to ticket (NOT alert_image)
+    # Transfer problem_images to ticket (internal, customer-hidden by default)
     problem_imgs = alert.get("problem_images", [])
     if problem_imgs:
         ticket_problem_images = []
@@ -753,9 +1032,13 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
             })
         ticket_doc["problem_images"] = ticket_problem_images
 
+    # Transfer mechanic_comment as internal-only
+    if alert.get("mechanic_comment"):
+        ticket_doc["mechanic_comment"] = alert["mechanic_comment"]
+
     await db.tickets.insert_one(ticket_doc)
 
-    # Transfer attachments (marked as internal - not shown to clients)
+    # Transfer attachments (internal)
     for att in alert.get("attachments", []):
         att_doc = {
             "id": att.get("id", str(uuid.uuid4())),
@@ -771,7 +1054,7 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         }
         await db.attachments.insert_one(att_doc)
 
-    # Add system note
+    # System note
     note_body = "Ticket criado a partir de alerta Telegram"
     if alert.get("license_plate"):
         note_body += f"\nMatrícula: {alert['license_plate']}"
@@ -779,6 +1062,13 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
         note_body += f"\nItens: {', '.join(items_list)}"
     if alert.get("created_by", {}).get("name"):
         note_body += f"\nEnviado por: {alert['created_by']['name']}"
+    mc = alert.get("mechanic_comment")
+    if mc:
+        if mc.get("type") == "text" and mc.get("text"):
+            note_body += f"\n\nNota do mecânico: {mc['text']}"
+        elif mc.get("type") == "audio":
+            tr = mc.get("text") or "[áudio guardado]"
+            note_body += f"\n\nNota de áudio do mecânico: {tr}"
 
     note_doc = {
         "id": str(uuid.uuid4()),
@@ -790,7 +1080,6 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
     }
     await db.notes.insert_one(note_doc)
 
-    # Mark alert as converted
     await db.alerts.update_one(
         {"id": alert_id},
         {"$set": {
@@ -805,7 +1094,6 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
 
     logger.info(f"[ALERTS] Converted alert {alert_id} to ticket {ticket_number}")
 
-    # Notify mechanic via Telegram that alert was converted
     mechanic_chat_id = alert.get("telegram_chat_id")
     if mechanic_chat_id:
         plate_text = f" ({vehicle_plate})" if vehicle_plate else ""
@@ -819,25 +1107,21 @@ async def convert_alert_to_ticket(alert_id: str, converted_by: str, data: dict =
 
 
 async def get_alert_stats() -> dict:
-    """Get alert statistics."""
     pipeline = [
         {"$match": {"source": "telegram_alerts"}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}}
     ]
     results = await db.alerts.aggregate(pipeline).to_list(10)
-
     stats = {"pending": 0, "converted": 0, "dismissed": 0, "total": 0}
     for r in results:
         s = (r["_id"] or "pending").lower()
         if s in stats:
             stats[s] = r["count"]
         stats["total"] += r["count"]
-
     return stats
 
 
 async def setup_webhook(webhook_url: str) -> dict:
-    """Register webhook URL with Telegram Bot API."""
     if not BOT_TOKEN:
         return {"success": False, "error": "Bot token not configured"}
     try:

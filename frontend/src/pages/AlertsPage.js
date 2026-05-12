@@ -784,7 +784,7 @@ const AlertsPage = () => {
               {detailAlert.problem_images?.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-zinc-500 mb-1.5">
-                    Fotos do problema ({detailAlert.problem_images.length})
+                    Fotos das avarias ({detailAlert.problem_images.length})
                   </p>
                   <div className="grid grid-cols-3 gap-2" data-testid="problem-images-grid">
                     {detailAlert.problem_images.map((img, idx) => (
@@ -793,6 +793,12 @@ const AlertsPage = () => {
                   </div>
                 </div>
               )}
+
+              {/* Mechanic Comment */}
+              <div data-testid="mechanic-comment-section">
+                <p className="text-xs font-semibold text-zinc-500 mb-1.5">Comentário do mecânico</p>
+                <MechanicCommentBlock alert={detailAlert} />
+              </div>
 
               {/* Raw text */}
               {detailAlert.raw_text && (
@@ -1124,6 +1130,72 @@ const ProblemImageThumb = ({ alert, attachment }) => {
         </div>
       )}
     </>
+  );
+};
+
+// Sub-component: Mechanic comment (text or audio with optional transcription)
+const MechanicCommentBlock = ({ alert }) => {
+  const { getAuthHeaders } = useAuth();
+  const [audioSrc, setAudioSrc] = useState(null);
+  const [loadingAudio, setLoadingAudio] = useState(false);
+  const mc = alert.mechanic_comment;
+
+  useEffect(() => {
+    if (!mc || mc.type !== 'audio' || audioSrc) return;
+    let cancelled = false;
+    const load = async () => {
+      setLoadingAudio(true);
+      try {
+        const resp = await axios.get(
+          `${API_URL}/api/telegram-alerts/alerts/${alert.id}/audio`,
+          { headers: getAuthHeaders() }
+        );
+        if (cancelled) return;
+        if (resp.data.base64) {
+          setAudioSrc(`data:${resp.data.file_type || 'audio/ogg'};base64,${resp.data.base64}`);
+        }
+      } catch { /* silent */ }
+      finally { if (!cancelled) setLoadingAudio(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [alert.id, mc, audioSrc, getAuthHeaders]);
+
+  if (!mc) {
+    return (
+      <div className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-500 italic" data-testid="mechanic-comment-none">
+        Sem comentário
+      </div>
+    );
+  }
+
+  if (mc.type === 'text') {
+    return (
+      <div className="rounded-lg border border-zinc-200 bg-white p-3" data-testid="mechanic-comment-text">
+        <p className="text-sm text-zinc-700 whitespace-pre-wrap">{mc.text || '(vazio)'}</p>
+      </div>
+    );
+  }
+
+  // Audio
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-3 space-y-2" data-testid="mechanic-comment-audio">
+      {loadingAudio ? (
+        <p className="text-xs text-zinc-500">A carregar áudio…</p>
+      ) : audioSrc ? (
+        <audio controls src={audioSrc} className="w-full" data-testid="mechanic-audio-player" />
+      ) : (
+        <p className="text-xs text-zinc-500">Áudio indisponível</p>
+      )}
+      {mc.transcription_status === 'success' && mc.text ? (
+        <div className="border-t pt-2">
+          <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">Transcrição</p>
+          <p className="text-sm text-zinc-700 whitespace-pre-wrap">{mc.text}</p>
+        </div>
+      ) : mc.transcription_status === 'failed' ? (
+        <p className="text-xs text-amber-600">Transcrição falhou — apenas áudio disponível.</p>
+      ) : null}
+    </div>
   );
 };
 

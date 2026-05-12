@@ -26,7 +26,7 @@ async def telegram_alerts_webhook(request: Request):
     except Exception:
         return {"ok": True}
 
-    # Handle callback query (assignee selection + photo choice)
+    # Handle callback query (assignee + photos confirmation + note confirmation)
     callback = payload.get("callback_query")
     if callback:
         data = callback.get("data", "")
@@ -50,7 +50,6 @@ async def telegram_alerts_webhook(request: Request):
                     pass
 
         elif data.startswith("photos_") and chat_id:
-            # Handle "Sim" / "Não" for problem photos
             parts = data.split(":", 1)
             action = "yes" if "yes" in parts[0] else "no"
             alert_id = parts[1] if len(parts) > 1 else ""
@@ -58,6 +57,22 @@ async def telegram_alerts_webhook(request: Request):
             try:
                 import httpx
                 answer_text = "A aguardar fotos..." if action == "yes" else "OK"
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": answer_text}
+                    )
+            except Exception:
+                pass
+
+        elif data.startswith("note_") and chat_id:
+            parts = data.split(":", 1)
+            action = "yes" if "yes" in parts[0] else "no"
+            alert_id = parts[1] if len(parts) > 1 else ""
+            await service.handle_note_callback(chat_id, action, alert_id)
+            try:
+                import httpx
+                answer_text = "A aguardar nota..." if action == "yes" else "OK"
                 async with httpx.AsyncClient(timeout=5) as client:
                     await client.post(
                         f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
@@ -93,9 +108,13 @@ async def telegram_alerts_webhook(request: Request):
         await service.send_message(
             chat_id,
             "👋 Bem-vindo ao <b>PDPV Alertas</b>!\n\n"
-            "Envie uma <b>foto</b> ou <b>texto</b> para criar um alerta.\n"
-            "Depois escolha o rececionista."
+            "Envie uma <b>foto</b> da captura GENES para criar um alerta.\n"
+            "Pode usar /reset a qualquer momento para reiniciar."
         )
+        return {"ok": True}
+
+    if text == "/reset":
+        await service.handle_reset_command(chat_id)
         return {"ok": True}
 
     # Collect user info
@@ -105,41 +124,38 @@ async def telegram_alerts_webhook(request: Request):
         "name": f"{first_name} {last_name}".strip() or "Desconhecido",
     }
 
+    # Voice / audio message → mechanic note
+    voice = message.get("voice") or message.get("audio")
+    if voice:
+        await service.handle_incoming_voice(chat_id, user_info, voice)
+        return {"ok": True}
+
     # Photo message
     photo = message.get("photo")
     if photo:
-        # Telegram sends multiple sizes, take the largest
         best = max(photo, key=lambda p: p.get("file_size", 0))
         file_size = best.get("file_size", 0)
         if file_size > MAX_PHOTO_SIZE_MB * 1024 * 1024:
             await service.send_message(chat_id, f"⚠️ Foto demasiado grande (max {MAX_PHOTO_SIZE_MB}MB)")
             return {"ok": True}
 
-        # Check if in photo collection mode
-        handled = await service.collect_problem_photo(
-            chat_id, {"file_id": best["file_id"], "file_size": file_size}
-        )
-        if handled:
-            return {"ok": True}
-
-        # Normal buffer flow
         caption = message.get("caption", "")
-        service.buffer_message(
+        await service.handle_incoming_photo(
             chat_id,
             user_info,
-            text=caption if caption else None,
-            photo={"file_id": best["file_id"], "file_size": file_size}
+            {"file_id": best["file_id"], "file_size": file_size},
+            caption=caption or None,
         )
         return {"ok": True}
 
     # Ignore video
     if message.get("video") or message.get("video_note"):
-        await service.send_message(chat_id, "⚠️ Vídeos não são suportados. Envie uma foto ou texto.")
+        await service.send_message(chat_id, "⚠️ Vídeos não são suportados. Envie uma foto, áudio ou texto.")
         return {"ok": True}
 
     # Text message
     if text:
-        service.buffer_message(chat_id, user_info, text=text)
+        await service.handle_incoming_text(chat_id, user_info, text)
         return {"ok": True}
 
     # Document (treat as photo if image)
@@ -147,16 +163,10 @@ async def telegram_alerts_webhook(request: Request):
     if doc and doc.get("mime_type", "").startswith("image/"):
         file_size = doc.get("file_size", 0)
         if file_size <= MAX_PHOTO_SIZE_MB * 1024 * 1024:
-            # Check if in photo collection mode
-            handled = await service.collect_problem_photo(
-                chat_id, {"file_id": doc["file_id"], "file_size": file_size}
-            )
-            if handled:
-                return {"ok": True}
-            service.buffer_message(
+            await service.handle_incoming_photo(
                 chat_id,
                 user_info,
-                photo={"file_id": doc["file_id"], "file_size": file_size}
+                {"file_id": doc["file_id"], "file_size": file_size},
             )
         else:
             await service.send_message(chat_id, f"⚠️ Ficheiro demasiado grande (max {MAX_PHOTO_SIZE_MB}MB)")
@@ -334,6 +344,37 @@ async def get_alert_photo(alert_id: str, attachment_id: str, current_user: dict 
                     return {"base64": base64.b64encode(image_bytes).decode("utf-8"), "file_type": "image/jpeg"}
 
     raise HTTPException(status_code=404, detail="Foto não encontrada")
+
+
+@router.get("/alerts/{alert_id}/audio")
+async def get_alert_audio(alert_id: str, current_user: dict = Depends(get_current_user)):
+    """Get the mechanic's audio note (base64) for an alert."""
+    _check_alerts_access(current_user)
+    alert = await service.get_alert(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alerta não encontrado")
+    mc = alert.get("mechanic_comment") or {}
+    audio = mc.get("audio") if mc.get("type") == "audio" else None
+    if not audio:
+        raise HTTPException(status_code=404, detail="Áudio não encontrado")
+    if audio.get("storage_path"):
+        try:
+            from services.storage_service import get_object
+            data, content_type = get_object(audio["storage_path"])
+            import base64
+            return {"base64": base64.b64encode(data).decode("utf-8"), "file_type": content_type}
+        except Exception:
+            pass
+    if audio.get("base64_data"):
+        return {"base64": audio["base64_data"], "file_type": audio.get("file_type", "audio/ogg")}
+    if audio.get("telegram_file_id"):
+        audio_bytes, ext = await service.download_telegram_file(audio["telegram_file_id"])
+        if audio_bytes:
+            import base64
+            return {"base64": base64.b64encode(audio_bytes).decode("utf-8"), "file_type": f"audio/{ext or 'ogg'}"}
+    raise HTTPException(status_code=404, detail="Áudio não encontrado")
+
+
 
 
 # ============== TICKET PROBLEM IMAGES ==============

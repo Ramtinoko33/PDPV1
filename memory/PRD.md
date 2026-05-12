@@ -13,6 +13,7 @@
 - [x] Public quote links (accept/reject), Acceptance questionnaire
 - [x] Telegram Alerts module (bot, Vision, convert, notifications)
 - [x] Telegram Alerts flow refined (Feb 2026): GENES screenshot → alert only (no ticket), explicit [Sim]/[Não] for problem photos, up to 4 problem_images compressed, then assignee. Conversion transfers problem_images to ticket (alert_image stays internal).
+- [x] Telegram Alerts conversation state machine (Feb 2026): IDLE → WAITING_PROBLEM_PHOTO_CONFIRMATION → COLLECTING_PROBLEM_IMAGES (max 4, 10s inactivity) → WAITING_MECHANIC_NOTE_CONFIRMATION → COLLECTING_MECHANIC_NOTE (1 text up to 1000 chars OR 1 audio up to 60s with Whisper transcription) → WAITING_ASSIGNEE_SELECTION → IDLE. No duplicate alerts during collection. AI extraction runs only on first GENES image. /reset command for manual recovery. Alert detail UI has 3 sections (Imagem do alerta, Fotos das avarias, Comentário do mecânico). mechanic_comment transfers to ticket as internal-only.
 - [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
 - [x] Client preview in quote creation (real-time debounced)
 - [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge
