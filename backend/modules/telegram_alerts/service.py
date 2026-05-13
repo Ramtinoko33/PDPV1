@@ -24,8 +24,8 @@ BOT_TOKEN = os.environ.get("TELEGRAM_ALERTS_BOT_TOKEN", "")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 TELEGRAM_API = "https://api.telegram.org/bot"
 
-BUFFER_TIMEOUT_SECONDS = 10
-PHOTO_COLLECTION_TIMEOUT = 10
+BUFFER_TIMEOUT_SECONDS = 4         # how long we wait before turning the first photo/text into an alert
+PHOTO_COLLECTION_TIMEOUT = 60      # inactivity timeout while collecting problem photos
 NOTE_COLLECTION_TIMEOUT = 60
 MAX_MESSAGES_PER_MIN = 10
 MAX_PHOTO_SIZE_MB = 3
@@ -908,7 +908,16 @@ async def _append_problem_photo(chat_id: int, photo: dict, silent: bool = False)
     remaining = MAX_PROBLEM_PHOTOS - state["problem_images_count"]
     if remaining > 0:
         if not silent:
-            await send_message(chat_id, f"✅ Foto {state['problem_images_count']} guardada. Pode enviar mais {remaining}.")
+            await send_message(
+                chat_id,
+                f"✅ Foto {state['problem_images_count']} guardada. Pode enviar mais {remaining} fotos, "
+                f"ou clique em <b>Concluído</b> para passar ao próximo passo.",
+                reply_markup={
+                    "inline_keyboard": [[
+                        {"text": "✅ Concluído", "callback_data": f"photos_done:{alert_id}"},
+                    ]]
+                }
+            )
         # Reset inactivity timer
         _cancel_timer(state)
         state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
@@ -979,11 +988,25 @@ async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
         _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="photos_yes")
         await send_message(
             chat_id,
-            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos da avaria. Estas fotos serão apenas anexadas ao alerta.",
+            f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos da avaria. Quando terminar, "
+            f"clique em <b>Concluído</b> ou aguarde 1 minuto.",
+            reply_markup={
+                "inline_keyboard": [[
+                    {"text": "✅ Concluído", "callback_data": f"photos_done:{alert_id}"},
+                ]]
+            }
         )
         state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
     else:
         await _end_problem_photos(chat_id)
+
+
+async def handle_photos_done_callback(chat_id: int, alert_id: str):
+    """User clicked 'Concluído' while collecting problem photos."""
+    state = _get_state(chat_id)
+    if state.get("state") != STATE_COLLECTING_PROBLEM_IMAGES or state.get("active_alert_id") != alert_id:
+        return
+    await _end_problem_photos(chat_id)
 
 
 async def handle_comment_callback(chat_id: int, action: str, alert_id: str):

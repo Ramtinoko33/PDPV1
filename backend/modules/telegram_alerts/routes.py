@@ -49,6 +49,19 @@ async def telegram_alerts_webhook(request: Request):
                 except Exception:
                     pass
 
+        elif data.startswith("photos_done:") and chat_id:
+            alert_id = data.split(":", 1)[1]
+            await service.handle_photos_done_callback(chat_id, alert_id)
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    await client.post(
+                        f"{service.TELEGRAM_API}{service.BOT_TOKEN}/answerCallbackQuery",
+                        json={"callback_query_id": callback_id, "text": "Concluído"}
+                    )
+            except Exception:
+                pass
+
         elif data.startswith("photos_") and chat_id:
             parts = data.split(":", 1)
             action = "yes" if "yes" in parts[0] else "no"
