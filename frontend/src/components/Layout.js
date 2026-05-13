@@ -22,7 +22,8 @@ import {
   Bell,
   ClipboardList,
   Send,
-  Zap
+  Zap,
+  Car
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -120,6 +121,13 @@ const Layout = ({ children }) => {
       badge: 'alerts',
       requireAlertsAccess: true
     },
+    {
+      path: '/renting',
+      label: 'Renting',
+      icon: Car,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
+      requireRentingAccess: true
+    },
     { 
       path: '/tickets/archived', 
       label: 'Arquivados', 
@@ -174,6 +182,8 @@ const Layout = ({ children }) => {
     if (!item.roles.includes(user?.role)) return false;
     // For alerts: ADMIN/SUPERVISOR always see it, AGENT only if has_alerts_access
     if (item.requireAlertsAccess && user?.role === 'AGENT' && !user?.has_alerts_access) return false;
+    // For renting: ADMIN/SUPERVISOR always see it, AGENT only if has_renting_access
+    if (item.requireRentingAccess && user?.role === 'AGENT' && !user?.has_renting_access) return false;
     return true;
   });
 

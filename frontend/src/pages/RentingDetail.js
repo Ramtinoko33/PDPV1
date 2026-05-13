@@ -1,0 +1,265 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Label } from '../components/ui/label';
+import { ArrowLeft, Save, Loader2, Image as ImageIcon } from 'lucide-react';
+import { toast } from 'sonner';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const WHEEL_ORDER = ['FE', 'FD', 'TD', 'TE'];
+const WHEEL_LABELS = { FE: 'Frente Esquerda', FD: 'Frente Direita', TD: 'Trás Direita', TE: 'Trás Esquerda' };
+
+const RentingDetail = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { getAuthHeaders } = useAuth();
+  const [rec, setRec] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const resp = await axios.get(`${API_URL}/api/renting/records/${id}`, { headers: getAuthHeaders() });
+      setRec(resp.data);
+    } catch {
+      toast.error('Registo não encontrado');
+      navigate('/renting');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, getAuthHeaders, navigate]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSave = async () => {
+    if (!rec) return;
+    setSaving(true);
+    try {
+      const payload = {
+        driver_name: rec.driver_name,
+        driver_phone: rec.driver_phone,
+        renting_company: rec.renting_company,
+        license_plate: rec.license_plate,
+        km: rec.km ? parseInt(rec.km) : null,
+        wheels: rec.wheels,
+      };
+      await axios.put(`${API_URL}/api/renting/records/${id}`, payload, { headers: getAuthHeaders() });
+      toast.success('Registo guardado');
+      load();
+    } catch (e) {
+      toast.error('Erro ao guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateField = (k, v) => setRec((prev) => ({ ...prev, [k]: v }));
+  const updateWheelData = (idx, k, v) => {
+    setRec((prev) => {
+      const wheels = [...(prev.wheels || [])];
+      wheels[idx] = { ...wheels[idx], data: { ...(wheels[idx].data || {}), [k]: v } };
+      return { ...prev, wheels };
+    });
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-zinc-400" /></div>;
+  }
+  if (!rec) return null;
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto" data-testid="renting-detail">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/renting')} data-testid="back-btn">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
+        </Button>
+        <div className="flex items-center gap-2">
+          <Badge className={rec.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} variant="secondary">
+            {rec.status === 'completed' ? 'Concluído' : 'Rascunho'}
+          </Badge>
+          <Button onClick={handleSave} disabled={saving} size="sm" data-testid="save-btn">
+            <Save className="h-4 w-4 mr-1" />{saving ? 'A guardar...' : 'Guardar'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Cliente */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Cliente</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Condutor" value={rec.driver_name || ''} onChange={(v) => updateField('driver_name', v)} />
+          <Field label="Telefone" value={rec.driver_phone || ''} onChange={(v) => updateField('driver_phone', v)} />
+          <Field label="Empresa Renting" value={rec.renting_company || ''} onChange={(v) => updateField('renting_company', v)} />
+          <Field label="Matrícula" value={rec.license_plate || ''} onChange={(v) => updateField('license_plate', v?.toUpperCase())} />
+          <Field label="KM" value={rec.km || ''} onChange={(v) => updateField('km', v)} type="number" />
+          <Field label="Serviço" value={rec.service_type_label || '—'} disabled />
+        </CardContent>
+      </Card>
+
+      {/* Plate & KM photos */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Fotos da matrícula e KM</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <PhotoBox recordId={id} kind="plate" label="Matrícula" />
+          <PhotoBox recordId={id} kind="km" label="Quilómetros" />
+        </CardContent>
+      </Card>
+
+      {/* Wheels */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">Pneus</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          {WHEEL_ORDER.map((pos, idx) => {
+            const w = (rec.wheels || []).find((x) => x.position === pos);
+            const wheelIdx = (rec.wheels || []).findIndex((x) => x.position === pos);
+            return (
+              <div key={pos} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-sm">{WHEEL_LABELS[pos]} <span className="text-xs text-zinc-400 ml-1">({pos})</span></h4>
+                  {!w && <Badge variant="secondary" className="bg-zinc-100">Pendente</Badge>}
+                </div>
+                {w ? (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <PhotoBox recordId={id} kind="wheel" wheelIndex={wheelIdx} sub="full" label="Pneu" />
+                      <PhotoBox recordId={id} kind="wheel" wheelIndex={wheelIdx} sub="dot" label="DOT" />
+                      <PhotoBox recordId={id} kind="wheel" wheelIndex={wheelIdx} sub="tread" label="Piso" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <Field label="Medida" value={w.data?.size || ''} onChange={(v) => updateWheelData(wheelIdx, 'size', v)} />
+                      <Field label="Marca" value={w.data?.brand || ''} onChange={(v) => updateWheelData(wheelIdx, 'brand', v)} />
+                      <Field label="Modelo" value={w.data?.model || ''} onChange={(v) => updateWheelData(wheelIdx, 'model', v)} />
+                      <Field label="Índice C/V" value={w.data?.load_speed || ''} onChange={(v) => updateWheelData(wheelIdx, 'load_speed', v)} />
+                      <Field label="DOT" value={w.data?.dot || ''} onChange={(v) => updateWheelData(wheelIdx, 'dot', v)} />
+                      <Field label="Piso (mm)" value={w.data?.tread_mm ?? ''} onChange={(v) => updateWheelData(wheelIdx, 'tread_mm', v ? parseFloat(v) : null)} type="number" />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-zinc-500">Sem fotos registadas para esta roda.</p>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* Observations */}
+      {rec.observations && (
+        <Card data-testid="observations-section">
+          <CardHeader><CardTitle className="text-base">Observações <span className="text-xs font-normal text-zinc-500">(interno)</span></CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {rec.observations.type === 'text' && (
+              <p className="text-sm whitespace-pre-wrap">{rec.observations.text}</p>
+            )}
+            {rec.observations.type === 'audio' && (
+              <ObservationsAudio recordId={id} transcription={rec.observations.text} status={rec.observations.transcription_status} />
+            )}
+            {rec.observations.type === 'none' && <p className="text-xs text-zinc-500 italic">Sem observações</p>}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
+const Field = ({ label, value, onChange, type = 'text', disabled = false }) => (
+  <div>
+    <Label className="text-xs text-zinc-500">{label}</Label>
+    <Input
+      type={type}
+      value={value ?? ''}
+      onChange={(e) => onChange && onChange(e.target.value)}
+      disabled={disabled}
+      className="mt-1"
+    />
+  </div>
+);
+
+const PhotoBox = ({ recordId, kind, wheelIndex, sub, label }) => {
+  const { getAuthHeaders } = useAuth();
+  const [src, setSrc] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const load = async () => {
+    if (src) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (wheelIndex !== undefined) params.set('wheel_index', String(wheelIndex));
+      if (sub) params.set('sub', sub);
+      const resp = await axios.get(
+        `${API_URL}/api/renting/records/${recordId}/photo/${kind}?${params}`,
+        { headers: getAuthHeaders() }
+      );
+      setSrc(`data:${resp.data.file_type};base64,${resp.data.base64}`);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  return (
+    <>
+      <div className="border rounded-lg overflow-hidden bg-zinc-50 aspect-square flex items-center justify-center cursor-pointer" onClick={() => src && setOpen(true)}>
+        {loading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+        ) : src ? (
+          <img src={src} alt={label} className="w-full h-full object-cover" />
+        ) : (
+          <div className="text-center text-zinc-300"><ImageIcon className="h-6 w-6 mx-auto mb-1" /><span className="text-[10px]">{label}</span></div>
+        )}
+      </div>
+      {open && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+          <img src={src} alt={label} className="max-w-full max-h-full" />
+        </div>
+      )}
+    </>
+  );
+};
+
+const ObservationsAudio = ({ recordId, transcription, status }) => {
+  const { getAuthHeaders } = useAuth();
+  const [audioSrc, setAudioSrc] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const r = await axios.get(`${API_URL}/api/renting/records/${recordId}/observations-audio`, { headers: getAuthHeaders() });
+        if (!cancel && r.data.base64) setAudioSrc(`data:${r.data.file_type || 'audio/ogg'};base64,${r.data.base64}`);
+      } catch { /* */ }
+      finally { if (!cancel) setLoading(false); }
+    })();
+    return () => { cancel = true; };
+  }, [recordId, getAuthHeaders]);
+
+  return (
+    <>
+      {loading ? <p className="text-xs text-zinc-500">A carregar áudio...</p> : audioSrc ? (
+        <audio controls src={audioSrc} className="w-full" data-testid="observations-audio" />
+      ) : <p className="text-xs text-zinc-500">Áudio indisponível</p>}
+      {status === 'success' && transcription && (
+        <div className="border-t pt-2">
+          <p className="text-[10px] uppercase text-zinc-400 mb-1">Transcrição</p>
+          <p className="text-sm whitespace-pre-wrap">{transcription}</p>
+        </div>
+      )}
+      {status === 'failed' && <p className="text-xs text-amber-600">Transcrição falhou.</p>}
+    </>
+  );
+};
+
+export default RentingDetail;

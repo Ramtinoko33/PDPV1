@@ -18,6 +18,8 @@ import TicketReplyPage from "./pages/TicketReplyPage";
 import IntakePage from "./pages/IntakePage";
 import TelegramPage from "./pages/TelegramPage";
 import AlertsPage from "./pages/AlertsPage";
+import RentingPage from "./pages/RentingPage";
+import RentingDetail from "./pages/RentingDetail";
 import NormalizationSettings from "./pages/NormalizationSettings";
 import Layout from "./components/Layout";
 
@@ -141,6 +143,18 @@ function AppRoutes() {
       <Route path="/alertas" element={
         <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
           <AlertsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/renting" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+          <RentingPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/renting/:id" element={
+        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+          <RentingDetail />
         </ProtectedRoute>
       } />
       
