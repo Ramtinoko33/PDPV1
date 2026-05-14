@@ -15,6 +15,25 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 const WHEEL_ORDER = ['FE', 'FD', 'TD', 'TE'];
 const WHEEL_LABELS = { FE: 'Frente Esquerda', FD: 'Frente Direita', TD: 'Trás Direita', TE: 'Trás Esquerda' };
 
+const CONF_EMOJI = { high: '🟢', medium: '🟡', low: '🔴' };
+
+const FieldWithConfidence = ({ label, value, confidence, confirmed, onChange, type = 'text', placeholder }) => (
+  <div>
+    <Label className="text-xs text-zinc-500 flex items-center gap-1.5">
+      <span>{label}</span>
+      {confidence && <span title={`Confiança IA: ${confidence}`}>{CONF_EMOJI[confidence] || '⚪'}</span>}
+      {confirmed && <span title="Confirmado pelo mecânico" className="text-emerald-600">✅</span>}
+    </Label>
+    <Input
+      type={type}
+      value={value ?? ''}
+      placeholder={placeholder}
+      onChange={(e) => onChange && onChange(e.target.value)}
+      className="mt-1"
+    />
+  </div>
+);
+
 const RentingDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -64,7 +83,23 @@ const RentingDetail = () => {
   const updateWheelData = (idx, k, v) => {
     setRec((prev) => {
       const wheels = [...(prev.wheels || [])];
-      wheels[idx] = { ...wheels[idx], data: { ...(wheels[idx].data || {}), [k]: v } };
+      const data = { ...(wheels[idx].data || {}), [k]: v };
+      // Mark this field as confirmed by human and set confidence to high
+      const confKey = `${k}_confidence`;
+      const confirmKey = `${k}_confirmed_by_human`;
+      // Map field name to its confidence key family
+      const FAMILY = {
+        size: 'size', brand: 'brand', model: 'brand', load_speed: 'load_speed',
+        dot: 'dot', tread_mm: 'tread'
+      };
+      const fam = FAMILY[k];
+      if (fam) {
+        data[`${fam}_confidence`] = 'high';
+        data[`${fam}_confirmed_by_human`] = true;
+      }
+      // Suppress unused warning
+      void confKey; void confirmKey;
+      wheels[idx] = { ...wheels[idx], data };
       return { ...prev, wheels };
     });
   };
@@ -114,7 +149,14 @@ const RentingDetail = () => {
 
       {/* Wheels */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Pneus</CardTitle></CardHeader>
+        <CardHeader className="border-b">
+          <CardTitle className="text-base flex items-center justify-between">
+            <span>Pneus</span>
+            <span className="text-[10px] font-normal text-zinc-500">
+              🟢 alta confiança · 🟡 média · 🔴 baixa · ✅ confirmado pelo mecânico
+            </span>
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           {WHEEL_ORDER.map((pos, idx) => {
             const w = (rec.wheels || []).find((x) => x.position === pos);
@@ -133,12 +175,49 @@ const RentingDetail = () => {
                       <PhotoBox recordId={id} kind="wheel" wheelIndex={wheelIdx} sub="tread" label="Piso" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <Field label="Medida" value={w.data?.size || ''} onChange={(v) => updateWheelData(wheelIdx, 'size', v)} />
-                      <Field label="Marca" value={w.data?.brand || ''} onChange={(v) => updateWheelData(wheelIdx, 'brand', v)} />
-                      <Field label="Modelo" value={w.data?.model || ''} onChange={(v) => updateWheelData(wheelIdx, 'model', v)} />
-                      <Field label="Índice C/V" value={w.data?.load_speed || ''} onChange={(v) => updateWheelData(wheelIdx, 'load_speed', v)} />
-                      <Field label="DOT" value={w.data?.dot || ''} onChange={(v) => updateWheelData(wheelIdx, 'dot', v)} />
-                      <Field label="Piso (mm)" value={w.data?.tread_mm ?? ''} onChange={(v) => updateWheelData(wheelIdx, 'tread_mm', v ? parseFloat(v) : null)} type="number" />
+                      <FieldWithConfidence
+                        label="Medida" value={w.data?.size || ''}
+                        confidence={w.data?.size_confidence}
+                        confirmed={w.data?.size_confirmed_by_human}
+                        placeholder="205/55 R16"
+                        onChange={(v) => updateWheelData(wheelIdx, 'size', v)}
+                      />
+                      <FieldWithConfidence
+                        label="Marca" value={w.data?.brand || ''}
+                        confidence={w.data?.brand_confidence}
+                        confirmed={w.data?.brand_confirmed_by_human}
+                        placeholder="Yokohama"
+                        onChange={(v) => updateWheelData(wheelIdx, 'brand', v)}
+                      />
+                      <FieldWithConfidence
+                        label="Modelo" value={w.data?.model || ''}
+                        confidence={w.data?.brand_confidence}
+                        confirmed={w.data?.brand_confirmed_by_human}
+                        placeholder="BluEarth"
+                        onChange={(v) => updateWheelData(wheelIdx, 'model', v)}
+                      />
+                      <FieldWithConfidence
+                        label="Índice C/V" value={w.data?.load_speed || ''}
+                        confidence={w.data?.load_speed_confidence}
+                        confirmed={w.data?.load_speed_confirmed_by_human}
+                        placeholder="91V"
+                        onChange={(v) => updateWheelData(wheelIdx, 'load_speed', v)}
+                      />
+                      <FieldWithConfidence
+                        label="DOT" value={w.data?.dot || ''}
+                        confidence={w.data?.dot_confidence}
+                        confirmed={w.data?.dot_confirmed_by_human}
+                        placeholder="3620"
+                        onChange={(v) => updateWheelData(wheelIdx, 'dot', v)}
+                      />
+                      <FieldWithConfidence
+                        label="Piso (mm)" type="number"
+                        value={w.data?.tread_mm ?? ''}
+                        confidence={w.data?.tread_confidence}
+                        confirmed={w.data?.tread_confirmed_by_human}
+                        placeholder="5.5"
+                        onChange={(v) => updateWheelData(wheelIdx, 'tread_mm', v ? parseFloat(v) : null)}
+                      />
                     </div>
                   </>
                 ) : (
