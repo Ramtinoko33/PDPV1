@@ -68,6 +68,7 @@ const RentingDetail = () => {
         license_plate: rec.license_plate,
         km: rec.km ? parseInt(rec.km) : null,
         wheels: rec.wheels,
+        adblue_liters: rec.adblue_liters != null ? parseFloat(rec.adblue_liters) : null,
       };
       await axios.put(`${API_URL}/api/renting/records/${id}`, payload, { headers: getAuthHeaders() });
       toast.success('Registo guardado');
@@ -127,14 +128,24 @@ const RentingDetail = () => {
 
       {/* Cliente */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Cliente</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            Cliente
+            {rec.subtype === 'adblue' && <Badge variant="secondary" className="bg-blue-100 text-blue-700">⛽ AdBlue</Badge>}
+            {rec.subtype === 'tires' && <Badge variant="secondary" className="bg-orange-100 text-orange-700">🛞 Pneus</Badge>}
+          </CardTitle>
+        </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Condutor" value={rec.driver_name || ''} onChange={(v) => updateField('driver_name', v)} />
           <Field label="Telefone" value={rec.driver_phone || ''} onChange={(v) => updateField('driver_phone', v)} />
           <Field label="Empresa Renting" value={rec.renting_company || ''} onChange={(v) => updateField('renting_company', v)} />
           <Field label="Matrícula" value={rec.license_plate || ''} onChange={(v) => updateField('license_plate', v?.toUpperCase())} />
           <Field label="KM" value={rec.km || ''} onChange={(v) => updateField('km', v)} type="number" />
-          <Field label="Serviço" value={rec.service_type_label || '—'} disabled />
+          {rec.subtype === 'adblue' ? (
+            <Field label="Litros AdBlue" value={rec.adblue_liters ?? ''} onChange={(v) => updateField('adblue_liters', v ? parseFloat(v) : null)} type="number" />
+          ) : (
+            <Field label="Serviço" value={rec.service_type_label || '—'} disabled />
+          )}
         </CardContent>
       </Card>
 
@@ -147,8 +158,9 @@ const RentingDetail = () => {
         </CardContent>
       </Card>
 
-      {/* Wheels */}
-      <Card>
+      {/* Wheels — only for tires subtype */}
+      {rec.subtype !== 'adblue' && (
+        <Card>
         <CardHeader className="border-b">
           <CardTitle className="text-base flex items-center justify-between">
             <span>Pneus</span>
@@ -228,6 +240,7 @@ const RentingDetail = () => {
           })}
         </CardContent>
       </Card>
+      )}
 
       {/* Observations */}
       {rec.observations && (

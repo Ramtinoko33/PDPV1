@@ -115,12 +115,13 @@ async def list_records(
     status: Optional[str] = Query(None),
     renting_company: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    subtype: Optional[str] = Query(None, regex="^(tires|adblue)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(get_current_user),
 ):
     _check_renting_access(current_user)
-    items, total = await service.list_records(status, renting_company, search, page, page_size)
+    items, total = await service.list_records(status, renting_company, search, subtype, page, page_size)
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
@@ -149,6 +150,8 @@ class RentingUpdate(BaseModel):
     service_type_label: Optional[str] = None
     wheels: Optional[list] = None
     observations: Optional[dict] = None
+    subtype: Optional[str] = None
+    adblue_liters: Optional[float] = None
 
 
 @router.put("/records/{record_id}")

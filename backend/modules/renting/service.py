@@ -17,6 +17,7 @@ from .models import (
     STATE_IDLE, STATE_WAIT_DRIVER_NAME, STATE_WAIT_DRIVER_PHONE,
     STATE_WAIT_RENTING_COMPANY, STATE_WAIT_PLATE_PHOTO, STATE_CONFIRM_PLATE,
     STATE_EDIT_PLATE, STATE_WAIT_KM_PHOTO, STATE_CONFIRM_KM, STATE_EDIT_KM,
+    STATE_WAIT_SUBTYPE, STATE_WAIT_ADBLUE_LITERS, STATE_WAIT_ADBLUE_OBS,
     STATE_WHEEL_PHOTO_FULL, STATE_CONFIRM_FULL, STATE_EDIT_FULL_SIZE,
     STATE_EDIT_FULL_BRAND, STATE_EDIT_FULL_LOAD_SPEED,
     STATE_WHEEL_PHOTO_DOT, STATE_CONFIRM_DOT, STATE_EDIT_DOT,
@@ -441,6 +442,7 @@ async def _create_draft(chat_id: int, user_info: dict) -> str:
     doc = {
         "id": draft_id,
         "status": RentingStatus.DRAFT.value,
+        "subtype": None,  # 'tires' | 'adblue'
         "telegram_chat_id": chat_id,
         "created_by_telegram": user_info,
         "driver_name": None,
@@ -450,7 +452,8 @@ async def _create_draft(chat_id: int, user_info: dict) -> str:
         "license_plate_photo": None,
         "km": None,
         "km_photo": None,
-        "wheels": [],  # list of dicts with position + photos + data
+        "wheels": [],  # used only when subtype == 'tires'
+        "adblue_liters": None,  # used only when subtype == 'adblue'
         "service_type": None,
         "service_type_label": None,
         "observations": None,
@@ -559,6 +562,39 @@ async def handle_text(chat_id: int, user_info: dict, text: str):
             await _ask_confirm_km(chat_id, km)
         except Exception:
             await send_message(chat_id, "⚠️ Por favor envie apenas números (ex: 45230).")
+        return
+
+    if state == STATE_WAIT_ADBLUE_LITERS:
+        try:
+            liters = float(text.replace(",", ".").strip())
+            if not 0 < liters <= 100:
+                raise ValueError
+        except Exception:
+            await send_message(chat_id, "⚠️ Valor inválido. Envie apenas o número de litros (ex: 5, 7.5, 12).")
+            return
+        await _update_draft(draft_id, {"adblue_liters": liters})
+        _transition(chat_id, STATE_WAIT_ADBLUE_OBS)
+        await send_message(
+            chat_id,
+            f"✅ Registado: <b>{liters} L</b>\n\nQuer adicionar observações? (texto livre ou clique em <b>Sem observações</b>)",
+            reply_markup={"inline_keyboard": [[
+                {"text": "Sem observações", "callback_data": f"adblue_no_obs:{draft_id}"}
+            ]]}
+        )
+        return
+
+    if state == STATE_WAIT_ADBLUE_OBS:
+        # User typed observations
+        obs = {
+            "type": "text",
+            "text": text[:2000],
+            "audio": None,
+            "transcription_status": "not_applicable",
+            "internal_only": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _update_draft(draft_id, {"observations": obs})
+        await _finalize_adblue(chat_id)
         return
 
     if state == STATE_EDIT_FULL_SIZE:
@@ -806,8 +842,62 @@ async def _ask_confirm_km(chat_id: int, km: Optional[int]):
         _transition(chat_id, STATE_EDIT_KM)
 
 
+async def _ask_subtype(chat_id: int):
+    """Bifurcation: Pneus vs AdBlue."""
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    _transition(chat_id, STATE_WAIT_SUBTYPE)
+    await send_message(
+        chat_id,
+        "Qual o <b>tipo de serviço</b>?",
+        reply_markup={"inline_keyboard": [[
+            {"text": "🛞 Pneus", "callback_data": f"subtype_tires:{draft_id}"},
+            {"text": "⛽ AdBlue", "callback_data": f"subtype_adblue:{draft_id}"},
+        ]]}
+    )
+
+
+async def _start_adblue_flow(chat_id: int):
+    s = _get_state(chat_id)
+    await _update_draft(s["draft_id"], {"subtype": "adblue"})
+    _transition(chat_id, STATE_WAIT_ADBLUE_LITERS)
+    await send_message(
+        chat_id,
+        "⛽ <b>AdBlue</b>\n\nQuantos litros foram colocados? (ex: <code>5</code>, <code>7.5</code>, <code>12</code>)"
+    )
+
+
+async def _finalize_adblue(chat_id: int):
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    now = datetime.now(timezone.utc).isoformat()
+    await db.renting_records.update_one(
+        {"id": draft_id},
+        {"$set": {"status": RentingStatus.COMPLETED.value, "completed_at": now, "updated_at": now}}
+    )
+    draft = await _get_draft(draft_id)
+    plate = draft.get("license_plate") or "—"
+    company = draft.get("renting_company") or "—"
+    km = draft.get("km")
+    liters = draft.get("adblue_liters")
+    user = (draft.get("created_by_telegram") or {}).get("name") or "—"
+    summary = (
+        f"✅ <b>Pedido AdBlue concluído!</b>\n\n"
+        f"Matrícula: <b>{plate}</b>\n"
+        f"Renting: {company}\n"
+        f"KM: <b>{km if km is not None else '—'}</b>\n"
+        f"Litros AdBlue: <b>{liters if liters is not None else '—'}</b>\n"
+        f"Utilizador: {user}\n"
+        f"Data: {now[:16].replace('T', ' ')}\n\n"
+        f"Use /novo_renting para começar outro."
+    )
+    await send_message(chat_id, summary)
+    _reset(chat_id)
+
+
 async def _start_wheel_collection(chat_id: int):
     s = _get_state(chat_id)
+    await _update_draft(s["draft_id"], {"subtype": "tires"})
     s["wheel_index"] = 0
     await _prompt_wheel_full(chat_id)
 
@@ -1039,7 +1129,20 @@ async def handle_callback(chat_id: int, data: str):
         return
 
     if action == "km_ok":
+        await _ask_subtype(chat_id)
+        return
+
+    if action == "subtype_tires":
         await _start_wheel_collection(chat_id)
+        return
+
+    if action == "subtype_adblue":
+        await _start_adblue_flow(chat_id)
+        return
+
+    if action == "adblue_no_obs":
+        await _update_draft(s["draft_id"], {"observations": None})
+        await _finalize_adblue(chat_id)
         return
 
     if action == "km_edit":
@@ -1152,12 +1255,15 @@ async def handle_callback(chat_id: int, data: str):
 
 # ============== ADMIN CRUD ==============
 async def list_records(status: Optional[str] = None, renting_company: Optional[str] = None,
-                       search: Optional[str] = None, page: int = 1, page_size: int = 50) -> Tuple[List[dict], int]:
+                       search: Optional[str] = None, subtype: Optional[str] = None,
+                       page: int = 1, page_size: int = 50) -> Tuple[List[dict], int]:
     query = {}
     if status:
         query["status"] = status
     if renting_company:
         query["renting_company"] = renting_company
+    if subtype:
+        query["subtype"] = subtype
     if search:
         rx = {"$regex": re.escape(search), "$options": "i"}
         query["$or"] = [
@@ -1198,11 +1304,12 @@ async def get_stats() -> dict:
         if s in stats:
             stats[s] = r["count"]
         stats["total"] += r["count"]
-    # Incomplete = drafts that have at least driver_name (started but not finished)
     stats["incomplete"] = await db.renting_records.count_documents({
         "status": "draft",
         "driver_name": {"$ne": None}
     })
+    stats["tires"] = await db.renting_records.count_documents({"subtype": "tires"})
+    stats["adblue"] = await db.renting_records.count_documents({"subtype": "adblue"})
     return stats
 
 

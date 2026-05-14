@@ -19,10 +19,11 @@ const STATUS_LABELS = {
 const RentingPage = () => {
   const { getAuthHeaders } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ draft: 0, completed: 0, total: 0, incomplete: 0 });
+  const [stats, setStats] = useState({ draft: 0, completed: 0, total: 0, incomplete: 0, tires: 0, adblue: 0 });
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [subtypeFilter, setSubtypeFilter] = useState('all');
   const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
@@ -30,6 +31,7 @@ const RentingPage = () => {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (subtypeFilter !== 'all') params.set('subtype', subtypeFilter);
       if (search.trim()) params.set('search', search.trim());
       const [recRes, statsRes] = await Promise.all([
         axios.get(`${API_URL}/api/renting/records?${params}`, { headers: getAuthHeaders() }),
@@ -42,7 +44,7 @@ const RentingPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, search, getAuthHeaders]);
+  }, [statusFilter, subtypeFilter, search, getAuthHeaders]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -56,11 +58,13 @@ const RentingPage = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <StatCard label="Total" value={stats.total} />
         <StatCard label="Concluídos" value={stats.completed} color="text-emerald-600" />
         <StatCard label="Rascunhos" value={stats.draft} color="text-amber-600" />
         <StatCard label="Incompletos" value={stats.incomplete} color="text-zinc-600" />
+        <StatCard label="Pneus" value={stats.tires} color="text-orange-600" />
+        <StatCard label="AdBlue" value={stats.adblue} color="text-blue-600" />
       </div>
 
       {/* Filters */}
@@ -76,12 +80,22 @@ const RentingPage = () => {
               data-testid="renting-search-input"
             />
           </div>
+          <Select value={subtypeFilter} onValueChange={setSubtypeFilter}>
+            <SelectTrigger className="sm:w-40" data-testid="renting-subtype-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="tires">🛞 Pneus</SelectItem>
+              <SelectItem value="adblue">⛽ AdBlue</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="sm:w-48" data-testid="renting-status-filter">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="all">Todos os estados</SelectItem>
               <SelectItem value="completed">Concluídos</SelectItem>
               <SelectItem value="draft">Rascunhos</SelectItem>
             </SelectContent>
@@ -116,6 +130,12 @@ const RentingPage = () => {
                       <Badge className={STATUS_LABELS[r.status]?.color || 'bg-zinc-100'} variant="secondary">
                         {STATUS_LABELS[r.status]?.label || r.status}
                       </Badge>
+                      {r.subtype === 'adblue' && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-700">⛽ AdBlue</Badge>
+                      )}
+                      {r.subtype === 'tires' && (
+                        <Badge variant="secondary" className="bg-orange-100 text-orange-700">🛞 Pneus</Badge>
+                      )}
                     </div>
                     <div className="text-xs text-zinc-500 truncate">
                       {r.driver_name || '—'} • {r.renting_company || '—'} • {r.driver_phone || '—'}
@@ -123,7 +143,10 @@ const RentingPage = () => {
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-zinc-400">{new Date(r.created_at).toLocaleDateString('pt-PT')}</div>
-                    {r.service_type_label && (
+                    {r.subtype === 'adblue' && r.adblue_liters != null && (
+                      <div className="text-xs text-blue-600 font-medium">{r.adblue_liters} L</div>
+                    )}
+                    {r.subtype === 'tires' && r.service_type_label && (
                       <div className="text-xs text-zinc-600">{r.service_type_label}</div>
                     )}
                   </div>
