@@ -58,13 +58,15 @@ const RentingPage = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <StatCard label="Total" value={stats.total} />
         <StatCard label="Concluídos" value={stats.completed} color="text-emerald-600" />
         <StatCard label="Rascunhos" value={stats.draft} color="text-amber-600" />
         <StatCard label="Incompletos" value={stats.incomplete} color="text-zinc-600" />
-        <StatCard label="Pneus" value={stats.tires} color="text-orange-600" />
-        <StatCard label="AdBlue" value={stats.adblue} color="text-blue-600" />
+        <StatCard label="🛞 Pneus" value={stats.tires} color="text-orange-600" />
+        <StatCard label="🔧 Furo" value={stats.puncture} color="text-red-600" />
+        <StatCard label="⛽ AdBlue" value={stats.adblue} color="text-blue-600" />
+        <StatCard label="📝 Outro" value={stats.other} color="text-purple-600" />
       </div>
 
       {/* Filters */}
@@ -81,13 +83,15 @@ const RentingPage = () => {
             />
           </div>
           <Select value={subtypeFilter} onValueChange={setSubtypeFilter}>
-            <SelectTrigger className="sm:w-40" data-testid="renting-subtype-filter">
+            <SelectTrigger className="sm:w-48" data-testid="renting-subtype-filter">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os tipos</SelectItem>
-              <SelectItem value="tires">🛞 Pneus</SelectItem>
+              <SelectItem value="tires">🛞 Pneus Novos</SelectItem>
+              <SelectItem value="puncture">🔧 Furo</SelectItem>
               <SelectItem value="adblue">⛽ AdBlue</SelectItem>
+              <SelectItem value="other">📝 Outro</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -135,6 +139,12 @@ const RentingPage = () => {
                       )}
                       {r.subtype === 'tires' && (
                         <Badge variant="secondary" className="bg-orange-100 text-orange-700">🛞 Pneus</Badge>
+                      )}
+                      {r.subtype === 'puncture' && (
+                        <Badge variant="secondary" className="bg-red-100 text-red-700">🔧 Furo</Badge>
+                      )}
+                      {r.subtype === 'other' && (
+                        <Badge variant="secondary" className="bg-purple-100 text-purple-700">📝 Outro</Badge>
                       )}
                     </div>
                     <div className="text-xs text-zinc-500 truncate">

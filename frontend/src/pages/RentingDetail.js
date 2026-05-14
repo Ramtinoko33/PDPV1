@@ -69,6 +69,7 @@ const RentingDetail = () => {
         km: rec.km ? parseInt(rec.km) : null,
         wheels: rec.wheels,
         adblue_liters: rec.adblue_liters != null ? parseFloat(rec.adblue_liters) : null,
+        description: rec.description,
       };
       await axios.put(`${API_URL}/api/renting/records/${id}`, payload, { headers: getAuthHeaders() });
       toast.success('Registo guardado');
@@ -132,7 +133,9 @@ const RentingDetail = () => {
           <CardTitle className="text-base flex items-center gap-2">
             Cliente
             {rec.subtype === 'adblue' && <Badge variant="secondary" className="bg-blue-100 text-blue-700">⛽ AdBlue</Badge>}
-            {rec.subtype === 'tires' && <Badge variant="secondary" className="bg-orange-100 text-orange-700">🛞 Pneus</Badge>}
+            {rec.subtype === 'tires' && <Badge variant="secondary" className="bg-orange-100 text-orange-700">🛞 Pneus Novos</Badge>}
+            {rec.subtype === 'puncture' && <Badge variant="secondary" className="bg-red-100 text-red-700">🔧 Furo</Badge>}
+            {rec.subtype === 'other' && <Badge variant="secondary" className="bg-purple-100 text-purple-700">📝 Outro</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -143,8 +146,15 @@ const RentingDetail = () => {
           <Field label="KM" value={rec.km || ''} onChange={(v) => updateField('km', v)} type="number" />
           {rec.subtype === 'adblue' ? (
             <Field label="Litros AdBlue" value={rec.adblue_liters ?? ''} onChange={(v) => updateField('adblue_liters', v ? parseFloat(v) : null)} type="number" />
+          ) : rec.subtype === 'puncture' ? (
+            <Field label="Roda do furo" value={rec.puncture_wheel_label || '—'} disabled />
           ) : (
             <Field label="Serviço" value={rec.service_type_label || '—'} disabled />
+          )}
+          {rec.subtype === 'other' && (
+            <div className="md:col-span-2">
+              <Field label="Descrição" value={rec.description || ''} onChange={(v) => updateField('description', v)} />
+            </div>
           )}
         </CardContent>
       </Card>
@@ -158,8 +168,8 @@ const RentingDetail = () => {
         </CardContent>
       </Card>
 
-      {/* Wheels — only for tires subtype */}
-      {rec.subtype !== 'adblue' && (
+      {/* Wheels — only for full tires subtype */}
+      {rec.subtype === 'tires' && (
         <Card>
         <CardHeader className="border-b">
           <CardTitle className="text-base flex items-center justify-between">

@@ -13,11 +13,14 @@ import httpx
 
 from db import db
 from .models import (
-    RentingStatus, WHEEL_POSITIONS, WHEEL_LABELS, SERVICE_TYPES,
+    RentingStatus, WHEEL_POSITIONS, WHEEL_LABELS, SERVICE_TYPES, TIRE_SERVICE_TYPES,
     STATE_IDLE, STATE_WAIT_DRIVER_NAME, STATE_WAIT_DRIVER_PHONE,
     STATE_WAIT_RENTING_COMPANY, STATE_WAIT_PLATE_PHOTO, STATE_CONFIRM_PLATE,
     STATE_EDIT_PLATE, STATE_WAIT_KM_PHOTO, STATE_CONFIRM_KM, STATE_EDIT_KM,
-    STATE_WAIT_SUBTYPE, STATE_WAIT_ADBLUE_LITERS, STATE_WAIT_ADBLUE_OBS,
+    STATE_WAIT_SUBTYPE, STATE_WAIT_SERVICE_TYPE,
+    STATE_WAIT_PUNCTURE_WHEEL, STATE_WAIT_PUNCTURE_OBS,
+    STATE_WAIT_OTHER_DESC, STATE_WAIT_OTHER_OBS,
+    STATE_WAIT_ADBLUE_LITERS, STATE_WAIT_ADBLUE_OBS,
     STATE_WHEEL_PHOTO_FULL, STATE_CONFIRM_FULL, STATE_EDIT_FULL_SIZE,
     STATE_EDIT_FULL_BRAND, STATE_EDIT_FULL_LOAD_SPEED,
     STATE_WHEEL_PHOTO_DOT, STATE_CONFIRM_DOT, STATE_EDIT_DOT,
@@ -454,6 +457,9 @@ async def _create_draft(chat_id: int, user_info: dict) -> str:
         "km_photo": None,
         "wheels": [],  # used only when subtype == 'tires'
         "adblue_liters": None,  # used only when subtype == 'adblue'
+        "puncture_wheel": None,  # used only when subtype == 'puncture'
+        "puncture_wheel_label": None,
+        "description": None,  # used only when subtype == 'other'
         "service_type": None,
         "service_type_label": None,
         "observations": None,
@@ -562,6 +568,38 @@ async def handle_text(chat_id: int, user_info: dict, text: str):
             await _ask_confirm_km(chat_id, km)
         except Exception:
             await send_message(chat_id, "⚠️ Por favor envie apenas números (ex: 45230).")
+        return
+
+    if state == STATE_WAIT_PUNCTURE_OBS:
+        obs = {
+            "type": "text", "text": text[:2000], "audio": None,
+            "transcription_status": "not_applicable", "internal_only": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _update_draft(draft_id, {"observations": obs})
+        await _finalize_short(chat_id, "Furo")
+        return
+
+    if state == STATE_WAIT_OTHER_DESC:
+        await _update_draft(draft_id, {"description": text[:2000]})
+        _transition(chat_id, STATE_WAIT_OTHER_OBS)
+        await send_message(
+            chat_id,
+            "✅ Descrição registada.\n\nQuer adicionar observações? (texto livre ou clique em <b>Sem observações</b>)",
+            reply_markup={"inline_keyboard": [[
+                {"text": "Sem observações", "callback_data": f"other_no_obs:{draft_id}"}
+            ]]}
+        )
+        return
+
+    if state == STATE_WAIT_OTHER_OBS:
+        obs = {
+            "type": "text", "text": text[:2000], "audio": None,
+            "transcription_status": "not_applicable", "internal_only": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _update_draft(draft_id, {"observations": obs})
+        await _finalize_short(chat_id, "Pedido")
         return
 
     if state == STATE_WAIT_ADBLUE_LITERS:
@@ -857,6 +895,77 @@ async def _ask_subtype(chat_id: int):
     )
 
 
+async def _ask_tire_service(chat_id: int):
+    """After subtype=tires, ask which kind of tire service."""
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    await _update_draft(draft_id, {"subtype": "tires"})
+    _transition(chat_id, STATE_WAIT_SERVICE_TYPE)
+    rows = [[{"text": lbl, "callback_data": f"tsvc:{key}:{draft_id}"}] for key, lbl in TIRE_SERVICE_TYPES]
+    await send_message(
+        chat_id,
+        "🛞 <b>Pneus</b>\n\nQual o serviço?",
+        reply_markup={"inline_keyboard": rows}
+    )
+
+
+async def _start_puncture_flow(chat_id: int):
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    await _update_draft(draft_id, {"subtype": "puncture", "service_type": "puncture", "service_type_label": "Furo"})
+    _transition(chat_id, STATE_WAIT_PUNCTURE_WHEEL)
+    rows = []
+    for pos in WHEEL_POSITIONS:
+        rows.append([{"text": WHEEL_LABELS[pos], "callback_data": f"pwheel:{pos}:{draft_id}"}])
+    await send_message(
+        chat_id,
+        "🔧 <b>Furo</b>\n\nQual é a roda afetada?",
+        reply_markup={"inline_keyboard": rows}
+    )
+
+
+async def _start_other_flow(chat_id: int):
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    await _update_draft(draft_id, {"subtype": "other", "service_type": "other", "service_type_label": "Outro"})
+    _transition(chat_id, STATE_WAIT_OTHER_DESC)
+    await send_message(
+        chat_id,
+        "📝 <b>Outro serviço</b>\n\nDescreva brevemente o serviço pretendido:"
+    )
+
+
+async def _finalize_short(chat_id: int, label: str):
+    """Finalize a short flow (puncture/other) — keep status as completed."""
+    s = _get_state(chat_id)
+    draft_id = s["draft_id"]
+    now = datetime.now(timezone.utc).isoformat()
+    await db.renting_records.update_one(
+        {"id": draft_id},
+        {"$set": {"status": RentingStatus.COMPLETED.value, "completed_at": now, "updated_at": now}}
+    )
+    draft = await _get_draft(draft_id)
+    plate = draft.get("license_plate") or "—"
+    company = draft.get("renting_company") or "—"
+    user = (draft.get("created_by_telegram") or {}).get("name") or "—"
+    extras = []
+    if draft.get("subtype") == "puncture" and draft.get("puncture_wheel_label"):
+        extras.append(f"Roda: <b>{draft['puncture_wheel_label']}</b>")
+    if draft.get("subtype") == "other" and draft.get("description"):
+        extras.append(f"Descrição: <i>{draft['description']}</i>")
+    extras_str = ("\n" + "\n".join(extras)) if extras else ""
+    await send_message(
+        chat_id,
+        f"✅ <b>{label} concluído!</b>\n\n"
+        f"Matrícula: <b>{plate}</b>\n"
+        f"Renting: {company}{extras_str}\n"
+        f"Utilizador: {user}\n"
+        f"Data: {now[:16].replace('T', ' ')}\n\n"
+        f"Use /novo_renting para começar outro."
+    )
+    _reset(chat_id)
+
+
 async def _start_adblue_flow(chat_id: int):
     s = _get_state(chat_id)
     await _update_draft(s["draft_id"], {"subtype": "adblue"})
@@ -1133,11 +1242,55 @@ async def handle_callback(chat_id: int, data: str):
         return
 
     if action == "subtype_tires":
-        await _start_wheel_collection(chat_id)
+        await _ask_tire_service(chat_id)
         return
 
     if action == "subtype_adblue":
         await _start_adblue_flow(chat_id)
+        return
+
+    if action == "tsvc":
+        # tsvc:<key>:<draft_id> — chosen tire service
+        if len(parts) >= 3:
+            key = parts[1]
+            label = dict(TIRE_SERVICE_TYPES).get(key, key)
+            await _update_draft(s["draft_id"], {"service_type": key, "service_type_label": label})
+            if key == "puncture":
+                await _start_puncture_flow(chat_id)
+            elif key == "other":
+                await _start_other_flow(chat_id)
+            else:
+                # 2_front, 2_rear, 4_tires → continue with full wheel flow
+                await _start_wheel_collection(chat_id)
+        return
+
+    if action == "pwheel":
+        # pwheel:<pos>:<draft_id>
+        if len(parts) >= 3:
+            pos = parts[1]
+            await _update_draft(s["draft_id"], {
+                "puncture_wheel": pos,
+                "puncture_wheel_label": WHEEL_LABELS.get(pos, pos),
+            })
+            _transition(chat_id, STATE_WAIT_PUNCTURE_OBS)
+            await send_message(
+                chat_id,
+                f"🔧 Roda registada: <b>{WHEEL_LABELS.get(pos, pos)}</b>\n\n"
+                "Quer adicionar observações? (texto livre ou clique em <b>Sem observações</b>)",
+                reply_markup={"inline_keyboard": [[
+                    {"text": "Sem observações", "callback_data": f"puncture_no_obs:{s['draft_id']}"}
+                ]]}
+            )
+        return
+
+    if action == "puncture_no_obs":
+        await _update_draft(s["draft_id"], {"observations": None})
+        await _finalize_short(chat_id, "Furo")
+        return
+
+    if action == "other_no_obs":
+        await _update_draft(s["draft_id"], {"observations": None})
+        await _finalize_short(chat_id, "Pedido")
         return
 
     if action == "adblue_no_obs":
@@ -1310,6 +1463,8 @@ async def get_stats() -> dict:
     })
     stats["tires"] = await db.renting_records.count_documents({"subtype": "tires"})
     stats["adblue"] = await db.renting_records.count_documents({"subtype": "adblue"})
+    stats["puncture"] = await db.renting_records.count_documents({"subtype": "puncture"})
+    stats["other"] = await db.renting_records.count_documents({"subtype": "other"})
     return stats
 
 

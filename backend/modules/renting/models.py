@@ -16,13 +16,22 @@ WHEEL_LABELS = {
     "TE": "Trás Esquerda",
 }
 
-# Service types offered after wheel collection
+# Service types offered after wheel collection (full tire flow)
 SERVICE_TYPES = [
     ("2_front", "2 pneus frente"),
     ("2_rear", "2 pneus trás"),
     ("4_tires", "4 pneus"),
     ("puncture", "Furo"),
     ("inspection", "Verificação"),
+    ("other", "Outro"),
+]
+
+# Service types after "Pneus" subtype selection (asked BEFORE wheel photos)
+TIRE_SERVICE_TYPES = [
+    ("2_front", "2 pneus frente"),
+    ("2_rear", "2 pneus trás"),
+    ("4_tires", "4 pneus"),
+    ("puncture", "Furo"),
     ("other", "Outro"),
 ]
 
@@ -38,6 +47,11 @@ STATE_WAIT_KM_PHOTO = "WAIT_KM_PHOTO"
 STATE_CONFIRM_KM = "CONFIRM_KM"
 STATE_EDIT_KM = "EDIT_KM"
 STATE_WAIT_SUBTYPE = "WAIT_SUBTYPE"
+STATE_WAIT_SERVICE_TYPE = "WAIT_SERVICE_TYPE"
+STATE_WAIT_PUNCTURE_WHEEL = "WAIT_PUNCTURE_WHEEL"
+STATE_WAIT_PUNCTURE_OBS = "WAIT_PUNCTURE_OBS"
+STATE_WAIT_OTHER_DESC = "WAIT_OTHER_DESC"
+STATE_WAIT_OTHER_OBS = "WAIT_OTHER_OBS"
 STATE_WAIT_ADBLUE_LITERS = "WAIT_ADBLUE_LITERS"
 STATE_WAIT_ADBLUE_OBS = "WAIT_ADBLUE_OBS"
 STATE_WHEEL_PHOTO_FULL = "WHEEL_PHOTO_FULL"

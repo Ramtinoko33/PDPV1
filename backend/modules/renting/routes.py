@@ -115,7 +115,7 @@ async def list_records(
     status: Optional[str] = Query(None),
     renting_company: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    subtype: Optional[str] = Query(None, regex="^(tires|adblue)$"),
+    subtype: Optional[str] = Query(None, regex="^(tires|adblue|puncture|other)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(get_current_user),
@@ -152,6 +152,9 @@ class RentingUpdate(BaseModel):
     observations: Optional[dict] = None
     subtype: Optional[str] = None
     adblue_liters: Optional[float] = None
+    description: Optional[str] = None
+    puncture_wheel: Optional[str] = None
+    puncture_wheel_label: Optional[str] = None
 
 
 @router.put("/records/{record_id}")
