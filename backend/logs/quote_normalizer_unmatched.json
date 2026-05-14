@@ -640,5 +640,23 @@
     "normalized": "alinhament",
     "matched": false,
     "created_at": "2026-04-21T14:07:46.427279+00:00"
+  },
+  {
+    "original": "fuga oel",
+    "normalized": "fuga oel",
+    "matched": false,
+    "created_at": "2026-05-13T17:45:10.172243+00:00"
+  },
+  {
+    "original": "fuga oe",
+    "normalized": "fuga oe",
+    "matched": false,
+    "created_at": "2026-05-13T17:45:10.756889+00:00"
+  },
+  {
+    "original": "fuga o",
+    "normalized": "fuga o",
+    "matched": false,
+    "created_at": "2026-05-13T17:45:11.181649+00:00"
   }
 ]

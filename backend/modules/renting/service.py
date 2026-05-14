@@ -17,7 +17,10 @@ from .models import (
     STATE_IDLE, STATE_WAIT_DRIVER_NAME, STATE_WAIT_DRIVER_PHONE,
     STATE_WAIT_RENTING_COMPANY, STATE_WAIT_PLATE_PHOTO, STATE_CONFIRM_PLATE,
     STATE_EDIT_PLATE, STATE_WAIT_KM_PHOTO, STATE_CONFIRM_KM, STATE_EDIT_KM,
-    STATE_WHEEL_PHOTO_FULL, STATE_WHEEL_PHOTO_DOT, STATE_WHEEL_PHOTO_TREAD,
+    STATE_WHEEL_PHOTO_FULL, STATE_CONFIRM_FULL, STATE_EDIT_FULL_SIZE,
+    STATE_EDIT_FULL_BRAND, STATE_EDIT_FULL_LOAD_SPEED,
+    STATE_WHEEL_PHOTO_DOT, STATE_CONFIRM_DOT, STATE_EDIT_DOT,
+    STATE_WHEEL_PHOTO_TREAD, STATE_CONFIRM_TREAD, STATE_EDIT_TREAD,
     STATE_CONFIRM_WHEEL, STATE_EDIT_WHEEL, STATE_WAIT_SERVICE,
     STATE_WAIT_OBSERVATIONS, STATE_COLLECT_OBS_TEXT, STATE_COLLECT_OBS_AUDIO,
 )
@@ -227,52 +230,140 @@ Regras:
         return None
 
 
-async def extract_tire_data(photo_full: bytes, photo_dot: bytes, photo_tread: bytes) -> dict:
-    """Extract tire technical data from 3 photos. Returns dict (any field may be None)."""
-    result = {"size": None, "brand": None, "model": None, "load_speed": None, "dot": None, "tread_mm": None}
+async def extract_full_tire(image_bytes: bytes) -> dict:
+    """Read sidewall: size, brand, model, load_speed. Returns dict with values + confidence."""
+    prompt = """Analisa o flanco deste pneu. Procura APENAS o padrão oficial de medida e índice de carga/velocidade.
 
-    # Full tire photo: extract size + brand
-    d1 = await _llm_extract(photo_full, """Analisa este pneu de viatura. Extrai dados visíveis no flanco.
+REGRAS DURAS:
+- MEDIDA: 3 dígitos / 2 dígitos R 2 dígitos (ex: 195/50 R16, 205/55 R16, 225/45 R17)
+  Aceita variações: "195/50R16", "195/50 R16", "195 50 R16". Devolve sempre formatado como "205/55 R16".
+- ÍNDICE C/V: 2 ou 3 dígitos + 1 letra (ex: 88V, 91V, 94W, 98W, 110T). DEVE estar perto da medida.
+- IGNORA SEMPRE: "TUBELESS", "OUTSIDE", "RADIAL", "STEEL", "E4", "EXTRA LOAD", "MAX LOAD", "MAX PRESS", "DOT", "M+S", logos de aprovação.
+- MARCA/MODELO: nome do fabricante grande (ex: Michelin, Continental, Yokohama) e modelo se visível (ex: Primacy 4, BluEarth).
+- Se um campo tiver baixa visibilidade ou estiver tapado, devolve null e confidence "low" PARA ESSE CAMPO.
+- NUNCA inventes. Se não vês claramente, devolve null.
 
 JSON:
 {
   "size": "ex: 205/55 R16 ou null",
-  "brand": "ex: Michelin / Continental / null",
-  "model": "ex: Primacy 4 / null",
-  "load_speed": "ex: 91V / null"
+  "size_confidence": "high|medium|low",
+  "brand": "ex: Yokohama ou null",
+  "model": "ex: BluEarth ou null",
+  "brand_confidence": "high|medium|low",
+  "load_speed": "ex: 91V ou null",
+  "load_speed_confidence": "high|medium|low"
 }
 
-Devolve APENAS JSON. null se ilegível.""")
-    if d1:
-        for k in ("size", "brand", "model", "load_speed"):
-            if d1.get(k):
-                result[k] = d1[k]
+Devolve APENAS JSON válido."""
+    data = await _llm_extract(image_bytes, prompt) or {}
+    # Post-validate size via regex
+    size = data.get("size")
+    if size:
+        m = re.search(r'(\d{3})\s*/?\s*(\d{2})\s*R?\s*(\d{2})', str(size).upper())
+        if m:
+            data["size"] = f"{m.group(1)}/{m.group(2)} R{m.group(3)}"
+        else:
+            data["size"] = None
+            data["size_confidence"] = "low"
+    # Post-validate load_speed via regex
+    ls = data.get("load_speed")
+    if ls:
+        m = re.search(r'\b(\d{2,3}[A-Z])\b', str(ls).upper())
+        if m:
+            data["load_speed"] = m.group(1)
+        else:
+            data["load_speed"] = None
+            data["load_speed_confidence"] = "low"
+    return {
+        "size": data.get("size"),
+        "size_confidence": data.get("size_confidence") or ("low" if not data.get("size") else "high"),
+        "brand": data.get("brand"),
+        "model": data.get("model"),
+        "brand_confidence": data.get("brand_confidence") or ("low" if not data.get("brand") else "high"),
+        "load_speed": data.get("load_speed"),
+        "load_speed_confidence": data.get("load_speed_confidence") or ("low" if not data.get("load_speed") else "high"),
+    }
 
-    # DOT photo
-    d2 = await _llm_extract(photo_dot, """Extrai o código DOT (4 dígitos finais que indicam semana e ano).
+
+async def extract_dot(image_bytes: bytes) -> dict:
+    """Read DOT code. Returns {dot: 4 digits or None, confidence}."""
+    prompt = """Procura o código DOT neste flanco de pneu.
+
+REGRAS DURAS:
+- DOT são os 4 ÚLTIMOS dígitos dentro ou imediatamente após o bloco "DOT ...".
+- Os primeiros 2 dígitos representam a SEMANA (01–53).
+- Os últimos 2 dígitos representam o ANO (10–30).
+- Exemplos válidos: 1923, 3620, 4973.
+- IGNORA: códigos de homologação ("E4 12345"), pressão (MAX PRESS), carga (MAX LOAD).
+- NUNCA confundas códigos longos (8+ caracteres) com DOT.
+- Se não tiveres CERTEZA dos 4 dígitos, devolve null com confidence "low".
 
 JSON:
-{"dot": "ex: 2523 ou null"}
+{"dot": "1923 ou null", "confidence": "high|medium|low"}
 
-Devolve APENAS JSON. null se ilegível.""")
-    if d2 and d2.get("dot"):
-        result["dot"] = d2["dot"]
+Devolve APENAS JSON válido."""
+    data = await _llm_extract(image_bytes, prompt) or {}
+    dot = data.get("dot")
+    conf = data.get("confidence") or "low"
+    if dot:
+        m = re.search(r'(\d{4})', str(dot))
+        if m:
+            digits = m.group(1)
+            wk = int(digits[:2])
+            yr = int(digits[2:])
+            if 1 <= wk <= 53 and 10 <= yr <= 30:
+                return {"dot": digits, "confidence": conf if conf in ("high", "medium", "low") else "high"}
+        # invalid → low
+        return {"dot": None, "confidence": "low"}
+    return {"dot": None, "confidence": "low"}
 
-    # Tread depth photo
-    d3 = await _llm_extract(photo_tread, """Lê o valor de profundidade do piso (em mm) no medidor presente na imagem.
+
+async def extract_tread(image_bytes: bytes) -> dict:
+    """Read tread depth (mm) from a gauge in the photo.
+
+    CRITICAL: The gauge has reference labels '1.6MM' and '4 MM' printed on it.
+    These are NOT the reading — they are LIMITS. The actual reading is at the
+    position of the cursor/probe along the scale.
+    """
+    prompt = """Analisa esta imagem de um pneu com profundímetro/medidor de piso.
+
+REGRAS CRÍTICAS:
+- O medidor tem marcas IMPRESSAS de referência: "1,6 MM" (limite legal) e "4 MM" (alerta).
+- ESTAS MARCAS NÃO SÃO LEITURAS. NÃO podes devolvê-las como valor.
+- A LEITURA real é a POSIÇÃO do indicador/cursor na escala vertical (lateral) do medidor — onde a régua entra no sulco.
+- A escala tem traços pequenos numerados de 0 a ~8 mm. Lê o valor onde o cursor para.
+- Se o cursor não estiver visível, ou se a única coisa que vês são as marcas impressas "1,6 MM"/"4 MM", devolve null.
+- NUNCA estimes pelo aspecto visual do pneu.
+- Se houver dúvida, devolve null e confidence "low".
 
 JSON:
-{"tread_mm": 5.5 ou null}
+{"tread_mm": 5.5 ou null, "confidence": "high|medium|low"}
 
-Devolve APENAS JSON. null se ilegível.""")
-    if d3:
-        val = d3.get("tread_mm")
-        try:
-            result["tread_mm"] = float(val) if val is not None else None
-        except Exception:
-            pass
+Devolve APENAS JSON válido."""
+    data = await _llm_extract(image_bytes, prompt) or {}
+    val = data.get("tread_mm")
+    conf = data.get("confidence") or "low"
+    try:
+        if val is not None:
+            fval = float(val)
+            # Sanity: realistic tread is 0-12mm. Block exact 1.6 or 4.0 returns (gauge labels).
+            if 0 <= fval <= 12 and fval not in (1.6, 4.0):
+                return {"tread_mm": fval, "confidence": conf if conf in ("high", "medium", "low") else "high"}
+            return {"tread_mm": None, "confidence": "low"}
+    except Exception:
+        pass
+    return {"tread_mm": None, "confidence": "low"}
 
-    return result
+
+# Legacy combined function (kept for backward compatibility — not used in new per-photo flow)
+async def extract_tire_data(photo_full: bytes, photo_dot: bytes, photo_tread: bytes) -> dict:
+    f = await extract_full_tire(photo_full)
+    d = await extract_dot(photo_dot)
+    t = await extract_tread(photo_tread)
+    return {
+        "size": f.get("size"), "brand": f.get("brand"), "model": f.get("model"),
+        "load_speed": f.get("load_speed"), "dot": d.get("dot"), "tread_mm": t.get("tread_mm"),
+    }
 
 
 # ============== STATE HELPERS ==============
@@ -470,6 +561,85 @@ async def handle_text(chat_id: int, user_info: dict, text: str):
             await send_message(chat_id, "⚠️ Por favor envie apenas números (ex: 45230).")
         return
 
+    if state == STATE_EDIT_FULL_SIZE:
+        # Validate size regex
+        m = re.search(r'(\d{3})\s*/?\s*(\d{2})\s*R?\s*(\d{2})', text.upper())
+        size = f"{m.group(1)}/{m.group(2)} R{m.group(3)}" if m else None
+        draft = await _get_draft(draft_id)
+        cur = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur["size"] = size or text.strip()
+        cur["size_confidence"] = "high"
+        cur["size_confirmed_by_human"] = True
+        await _update_last_wheel(draft_id, {"data": cur})
+        _transition(chat_id, STATE_CONFIRM_FULL)
+        await _ask_confirm_full(chat_id)
+        return
+
+    if state == STATE_EDIT_FULL_BRAND:
+        # Expect "Marca | Modelo" or just brand
+        parts = [p.strip() for p in text.split("|")]
+        brand = parts[0] if parts else text.strip()
+        model = parts[1] if len(parts) > 1 else None
+        draft = await _get_draft(draft_id)
+        cur = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur["brand"] = brand or None
+        cur["model"] = model
+        cur["brand_confidence"] = "high"
+        cur["brand_confirmed_by_human"] = True
+        await _update_last_wheel(draft_id, {"data": cur})
+        _transition(chat_id, STATE_CONFIRM_FULL)
+        await _ask_confirm_full(chat_id)
+        return
+
+    if state == STATE_EDIT_FULL_LOAD_SPEED:
+        m = re.search(r'(\d{2,3}[A-Z])', text.upper())
+        ls = m.group(1) if m else None
+        draft = await _get_draft(draft_id)
+        cur = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur["load_speed"] = ls or text.strip().upper()
+        cur["load_speed_confidence"] = "high"
+        cur["load_speed_confirmed_by_human"] = True
+        await _update_last_wheel(draft_id, {"data": cur})
+        _transition(chat_id, STATE_CONFIRM_FULL)
+        await _ask_confirm_full(chat_id)
+        return
+
+    if state == STATE_EDIT_DOT:
+        m = re.search(r'(\d{4})', text)
+        dot = m.group(1) if m else None
+        if dot:
+            wk, yr = int(dot[:2]), int(dot[2:])
+            if not (1 <= wk <= 53 and 10 <= yr <= 30):
+                await send_message(chat_id, "⚠️ DOT inválido. Os primeiros 2 dígitos devem ser semana (01–53) e os últimos 2 anos (10–30). Tente novamente:")
+                return
+        draft = await _get_draft(draft_id)
+        cur = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur["dot"] = dot
+        cur["dot_confidence"] = "high"
+        cur["dot_confirmed_by_human"] = True
+        await _update_last_wheel(draft_id, {"data": cur})
+        _transition(chat_id, STATE_CONFIRM_DOT)
+        await _ask_confirm_dot(chat_id)
+        return
+
+    if state == STATE_EDIT_TREAD:
+        try:
+            val = float(text.replace(",", ".").strip())
+            if not 0 <= val <= 12:
+                raise ValueError
+        except Exception:
+            await send_message(chat_id, "⚠️ Valor inválido. Envie apenas o número em mm (ex: 5.5).")
+            return
+        draft = await _get_draft(draft_id)
+        cur = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur["tread_mm"] = val
+        cur["tread_confidence"] = "high"
+        cur["tread_confirmed_by_human"] = True
+        await _update_last_wheel(draft_id, {"data": cur})
+        _transition(chat_id, STATE_CONFIRM_TREAD)
+        await _ask_confirm_tread(chat_id)
+        return
+
     if state == STATE_EDIT_WHEEL:
         await _save_wheel_edit_text(chat_id, text)
         return
@@ -525,39 +695,54 @@ async def handle_photo(chat_id: int, user_info: dict, photo: dict):
             "photo_dot": None,
             "photo_tread": None,
             "data": {},
-            "_full_bytes_size": len(image_bytes),
         })
-        # Cache bytes in state to avoid re-downloading for AI extraction
-        s["_full_bytes"] = image_bytes
-        _transition(chat_id, STATE_WHEEL_PHOTO_DOT)
-        await send_message(chat_id, f"📸 Agora envie a <b>foto do DOT</b> ({WHEEL_LABELS[pos]}).")
+        await send_message(chat_id, "🔎 A ler o flanco do pneu...")
+        result = await extract_full_tire(image_bytes)
+        wheel_data = {
+            "size": result["size"],
+            "size_confidence": result["size_confidence"],
+            "size_confirmed_by_human": False,
+            "brand": result["brand"],
+            "model": result["model"],
+            "brand_confidence": result["brand_confidence"],
+            "brand_confirmed_by_human": False,
+            "load_speed": result["load_speed"],
+            "load_speed_confidence": result["load_speed_confidence"],
+            "load_speed_confirmed_by_human": False,
+        }
+        await _update_last_wheel(draft_id, {"data": wheel_data})
+        _transition(chat_id, STATE_CONFIRM_FULL)
+        await _ask_confirm_full(chat_id)
         return
 
     if state == STATE_WHEEL_PHOTO_DOT:
         photo_rec = await store_photo(image_bytes, f"wheels/{s['wheel_index']}/dot", photo["file_id"])
         await _update_last_wheel(draft_id, {"photo_dot": photo_rec})
-        s["_dot_bytes"] = image_bytes
-        pos = WHEEL_POSITIONS[s["wheel_index"]]
-        _transition(chat_id, STATE_WHEEL_PHOTO_TREAD)
-        await send_message(chat_id, f"📏 Agora envie a <b>foto do piso com medidor</b> ({WHEEL_LABELS[pos]}).")
+        await send_message(chat_id, "🔎 A ler o DOT...")
+        result = await extract_dot(image_bytes)
+        draft = await _get_draft(draft_id)
+        cur_data = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur_data["dot"] = result["dot"]
+        cur_data["dot_confidence"] = result["confidence"]
+        cur_data["dot_confirmed_by_human"] = False
+        await _update_last_wheel(draft_id, {"data": cur_data})
+        _transition(chat_id, STATE_CONFIRM_DOT)
+        await _ask_confirm_dot(chat_id)
         return
 
     if state == STATE_WHEEL_PHOTO_TREAD:
         photo_rec = await store_photo(image_bytes, f"wheels/{s['wheel_index']}/tread", photo["file_id"])
         await _update_last_wheel(draft_id, {"photo_tread": photo_rec})
-        pos = WHEEL_POSITIONS[s["wheel_index"]]
-        await send_message(chat_id, f"🔎 A extrair dados do pneu {WHEEL_LABELS[pos]}...")
-        # Run AI extraction
-        data = await extract_tire_data(
-            s.get("_full_bytes", b""),
-            s.get("_dot_bytes", b""),
-            image_bytes
-        )
-        await _update_last_wheel(draft_id, {"data": data})
-        s["_full_bytes"] = None
-        s["_dot_bytes"] = None
-        _transition(chat_id, STATE_CONFIRM_WHEEL)
-        await _ask_confirm_wheel(chat_id, pos, data)
+        await send_message(chat_id, "🔎 A ler o piso...")
+        result = await extract_tread(image_bytes)
+        draft = await _get_draft(draft_id)
+        cur_data = (draft.get("wheels") or [{}])[-1].get("data", {}) if draft else {}
+        cur_data["tread_mm"] = result["tread_mm"]
+        cur_data["tread_confidence"] = result["confidence"]
+        cur_data["tread_confirmed_by_human"] = False
+        await _update_last_wheel(draft_id, {"data": cur_data})
+        _transition(chat_id, STATE_CONFIRM_TREAD)
+        await _ask_confirm_tread(chat_id)
         return
 
     await send_message(chat_id, "Não estava à espera de uma foto neste passo. Use os botões ou /cancelar.")
@@ -635,8 +820,90 @@ async def _prompt_wheel_full(chat_id: int):
     await send_message(
         chat_id,
         f"🛞 <b>Roda {WHEEL_LABELS[pos]}</b>\n\nProgresso: {progress}\n\n"
-        f"📸 Envie a <b>foto completa do pneu</b> (mostrar flanco com medida e marca)."
+        f"📸 Fotografe o <b>flanco</b> com a medida bem visível, perto e com luz."
     )
+
+
+async def _prompt_wheel_dot(chat_id: int):
+    s = _get_state(chat_id)
+    pos = WHEEL_POSITIONS[s["wheel_index"]]
+    _transition(chat_id, STATE_WHEEL_PHOTO_DOT)
+    await send_message(
+        chat_id,
+        f"📸 Fotografe o <b>DOT de perto</b>, com os 4 últimos dígitos nítidos. ({WHEEL_LABELS[pos]})"
+    )
+
+
+async def _prompt_wheel_tread(chat_id: int):
+    s = _get_state(chat_id)
+    pos = WHEEL_POSITIONS[s["wheel_index"]]
+    _transition(chat_id, STATE_WHEEL_PHOTO_TREAD)
+    await send_message(
+        chat_id,
+        f"📏 Encoste o <b>profundímetro</b> ao sulco principal, mantenha a escala direita e visível, com boa luz. ({WHEEL_LABELS[pos]})"
+    )
+
+
+def _conf_emoji(conf: str) -> str:
+    return {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(conf or "low", "🔴")
+
+
+async def _ask_confirm_full(chat_id: int):
+    s = _get_state(chat_id)
+    draft = await _get_draft(s["draft_id"])
+    w = (draft.get("wheels") or [{}])[-1]
+    d = w.get("data", {})
+    size_low = d.get("size_confidence") == "low"
+    bm_low = d.get("brand_confidence") == "low"
+    ls_low = d.get("load_speed_confidence") == "low"
+    rows = [
+        f"{_conf_emoji(d.get('size_confidence'))} Medida: <b>{d.get('size') or '—'}</b>",
+        f"{_conf_emoji(d.get('brand_confidence'))} Marca/Modelo: <b>{(d.get('brand') or '—')} {d.get('model') or ''}</b>".strip(),
+        f"{_conf_emoji(d.get('load_speed_confidence'))} Índice C/V: <b>{d.get('load_speed') or '—'}</b>",
+    ]
+    buttons = []
+    any_low = size_low or bm_low or ls_low
+    if not any_low and d.get("size") and d.get("brand") and d.get("load_speed"):
+        buttons.append([{"text": "✅ Confirmar", "callback_data": f"full_ok:{s['draft_id']}"}])
+    buttons.append([{"text": "✏️ Editar medida", "callback_data": f"full_edit_size:{s['draft_id']}"}])
+    buttons.append([{"text": "✏️ Editar marca/modelo", "callback_data": f"full_edit_brand:{s['draft_id']}"}])
+    buttons.append([{"text": "✏️ Editar índice C/V", "callback_data": f"full_edit_speed:{s['draft_id']}"}])
+    buttons.append([{"text": "🔁 Repetir foto", "callback_data": f"full_redo:{s['draft_id']}"}])
+    warning = "\n\n⚠️ Não consegui ler com segurança algum campo. Edite manualmente ou repita a foto." if any_low else ""
+    await send_message(chat_id, "📋 <b>Dados do flanco:</b>\n\n" + "\n".join(rows) + warning, reply_markup={"inline_keyboard": buttons})
+
+
+async def _ask_confirm_dot(chat_id: int):
+    s = _get_state(chat_id)
+    draft = await _get_draft(s["draft_id"])
+    w = (draft.get("wheels") or [{}])[-1]
+    d = w.get("data", {})
+    low = d.get("dot_confidence") == "low"
+    txt = f"{_conf_emoji(d.get('dot_confidence'))} DOT: <b>{d.get('dot') or '—'}</b>"
+    buttons = []
+    if not low and d.get("dot"):
+        buttons.append([{"text": "✅ Confirmar", "callback_data": f"dot_ok:{s['draft_id']}"}])
+    buttons.append([{"text": "✏️ Editar DOT", "callback_data": f"dot_edit:{s['draft_id']}"}])
+    buttons.append([{"text": "🔁 Repetir foto", "callback_data": f"dot_redo:{s['draft_id']}"}])
+    warning = "\n\n⚠️ Não consegui ler o DOT com segurança. Edite manualmente ou repita a foto." if low else ""
+    await send_message(chat_id, txt + warning, reply_markup={"inline_keyboard": buttons})
+
+
+async def _ask_confirm_tread(chat_id: int):
+    s = _get_state(chat_id)
+    draft = await _get_draft(s["draft_id"])
+    w = (draft.get("wheels") or [{}])[-1]
+    d = w.get("data", {})
+    low = d.get("tread_confidence") == "low"
+    val = d.get("tread_mm")
+    txt = f"{_conf_emoji(d.get('tread_confidence'))} Piso: <b>{val if val is not None else '—'} mm</b>"
+    buttons = []
+    if not low and val is not None:
+        buttons.append([{"text": "✅ Confirmar", "callback_data": f"tread_ok:{s['draft_id']}"}])
+    buttons.append([{"text": "✏️ Inserir manualmente", "callback_data": f"tread_edit:{s['draft_id']}"}])
+    buttons.append([{"text": "🔁 Repetir foto", "callback_data": f"tread_redo:{s['draft_id']}"}])
+    warning = "\n\n⚠️ Não consegui ler o piso com segurança." if low else ""
+    await send_message(chat_id, txt + warning, reply_markup={"inline_keyboard": buttons})
 
 
 async def _ask_confirm_wheel(chat_id: int, pos: str, data: dict):
@@ -778,6 +1045,61 @@ async def handle_callback(chat_id: int, data: str):
     if action == "km_edit":
         _transition(chat_id, STATE_EDIT_KM)
         await send_message(chat_id, "Escreva os KM corretos (apenas números):")
+        return
+
+    # --- Per-photo confirmation: FULL ---
+    if action == "full_ok":
+        await _prompt_wheel_dot(chat_id)
+        return
+    if action == "full_edit_size":
+        _transition(chat_id, STATE_EDIT_FULL_SIZE)
+        await send_message(chat_id, "Escreva a <b>medida</b> (ex: <code>205/55 R16</code>):")
+        return
+    if action == "full_edit_brand":
+        _transition(chat_id, STATE_EDIT_FULL_BRAND)
+        await send_message(chat_id, "Escreva a <b>marca</b> e opcionalmente o <b>modelo</b> separados por <b>|</b>.\n\nExemplo: <code>Yokohama | BluEarth</code>")
+        return
+    if action == "full_edit_speed":
+        _transition(chat_id, STATE_EDIT_FULL_LOAD_SPEED)
+        await send_message(chat_id, "Escreva o <b>índice C/V</b> (ex: <code>91V</code>):")
+        return
+    if action == "full_redo":
+        # Remove the last wheel entry (with all photos) and re-prompt full
+        draft = await _get_draft(s["draft_id"])
+        if draft and draft.get("wheels"):
+            wheels = draft["wheels"][:-1]
+            await _update_draft(s["draft_id"], {"wheels": wheels})
+        await _prompt_wheel_full(chat_id)
+        return
+
+    # --- Per-photo confirmation: DOT ---
+    if action == "dot_ok":
+        await _prompt_wheel_tread(chat_id)
+        return
+    if action == "dot_edit":
+        _transition(chat_id, STATE_EDIT_DOT)
+        await send_message(chat_id, "Escreva o <b>DOT</b> (4 dígitos finais, ex: <code>3620</code>):")
+        return
+    if action == "dot_redo":
+        # Re-prompt DOT photo (keep full data)
+        await _prompt_wheel_dot(chat_id)
+        return
+
+    # --- Per-photo confirmation: TREAD ---
+    if action == "tread_ok":
+        # All 3 done — show final wheel review
+        draft = await _get_draft(s["draft_id"])
+        w = (draft.get("wheels") or [{}])[-1]
+        pos = w.get("position") or WHEEL_POSITIONS[s["wheel_index"]]
+        _transition(chat_id, STATE_CONFIRM_WHEEL)
+        await _ask_confirm_wheel(chat_id, pos, w.get("data", {}))
+        return
+    if action == "tread_edit":
+        _transition(chat_id, STATE_EDIT_TREAD)
+        await send_message(chat_id, "Escreva a <b>profundidade do piso em mm</b> (ex: <code>5.5</code>):")
+        return
+    if action == "tread_redo":
+        await _prompt_wheel_tread(chat_id)
         return
 
     if action == "wheel_ok":
