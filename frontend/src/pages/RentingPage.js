@@ -13,13 +13,14 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const STATUS_LABELS = {
   draft: { label: 'Rascunho', color: 'bg-amber-100 text-amber-700' },
+  in_progress: { label: 'Em tratamento', color: 'bg-blue-100 text-blue-700' },
   completed: { label: 'Concluído', color: 'bg-emerald-100 text-emerald-700' },
 };
 
 const RentingPage = () => {
   const { getAuthHeaders } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ draft: 0, completed: 0, total: 0, incomplete: 0, tires: 0, adblue: 0 });
+  const [stats, setStats] = useState({ draft: 0, in_progress: 0, completed: 0, total: 0, tires: 0, adblue: 0, puncture: 0, other: 0 });
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -60,9 +61,9 @@ const RentingPage = () => {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <StatCard label="Total" value={stats.total} />
+        <StatCard label="Em tratamento" value={stats.in_progress} color="text-blue-600" />
         <StatCard label="Concluídos" value={stats.completed} color="text-emerald-600" />
         <StatCard label="Rascunhos" value={stats.draft} color="text-amber-600" />
-        <StatCard label="Incompletos" value={stats.incomplete} color="text-zinc-600" />
         <StatCard label="🛞 Pneus" value={stats.tires} color="text-orange-600" />
         <StatCard label="🔧 Furo" value={stats.puncture} color="text-red-600" />
         <StatCard label="⛽ AdBlue" value={stats.adblue} color="text-blue-600" />
@@ -100,6 +101,7 @@ const RentingPage = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os estados</SelectItem>
+              <SelectItem value="in_progress">Em tratamento</SelectItem>
               <SelectItem value="completed">Concluídos</SelectItem>
               <SelectItem value="draft">Rascunhos</SelectItem>
             </SelectContent>

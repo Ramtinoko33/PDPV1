@@ -463,6 +463,11 @@ async def _create_draft(chat_id: int, user_info: dict) -> str:
         "service_type": None,
         "service_type_label": None,
         "observations": None,
+        # Reception desk fields
+        "proposed_tires": None,
+        "authorization_number": None,
+        # Audit history
+        "history": [],
         "created_at": now,
         "updated_at": now,
         "completed_at": None,
@@ -936,13 +941,24 @@ async def _start_other_flow(chat_id: int):
 
 
 async def _finalize_short(chat_id: int, label: str):
-    """Finalize a short flow (puncture/other) — keep status as completed."""
+    """Finalize a short flow (puncture/other) — moves to 'in_progress' (Em tratamento)."""
     s = _get_state(chat_id)
     draft_id = s["draft_id"]
     now = datetime.now(timezone.utc).isoformat()
+    history_entry = {
+        "field": "status",
+        "old_value": RentingStatus.DRAFT.value,
+        "new_value": RentingStatus.IN_PROGRESS.value,
+        "changed_at": now,
+        "changed_by": "telegram_bot",
+        "changed_by_name": (s.get("user_info") or {}).get("name") or "Telegram",
+    }
     await db.renting_records.update_one(
         {"id": draft_id},
-        {"$set": {"status": RentingStatus.COMPLETED.value, "completed_at": now, "updated_at": now}}
+        {
+            "$set": {"status": RentingStatus.IN_PROGRESS.value, "updated_at": now},
+            "$push": {"history": history_entry},
+        }
     )
     draft = await _get_draft(draft_id)
     plate = draft.get("license_plate") or "—"
@@ -956,7 +972,8 @@ async def _finalize_short(chat_id: int, label: str):
     extras_str = ("\n" + "\n".join(extras)) if extras else ""
     await send_message(
         chat_id,
-        f"✅ <b>{label} concluído!</b>\n\n"
+        f"✅ <b>{label} enviado!</b>\n"
+        f"<i>Estado: Em tratamento (aguarda rececionista)</i>\n\n"
         f"Matrícula: <b>{plate}</b>\n"
         f"Renting: {company}{extras_str}\n"
         f"Utilizador: {user}\n"
@@ -980,9 +997,20 @@ async def _finalize_adblue(chat_id: int):
     s = _get_state(chat_id)
     draft_id = s["draft_id"]
     now = datetime.now(timezone.utc).isoformat()
+    history_entry = {
+        "field": "status",
+        "old_value": RentingStatus.DRAFT.value,
+        "new_value": RentingStatus.IN_PROGRESS.value,
+        "changed_at": now,
+        "changed_by": "telegram_bot",
+        "changed_by_name": (s.get("user_info") or {}).get("name") or "Telegram",
+    }
     await db.renting_records.update_one(
         {"id": draft_id},
-        {"$set": {"status": RentingStatus.COMPLETED.value, "completed_at": now, "updated_at": now}}
+        {
+            "$set": {"status": RentingStatus.IN_PROGRESS.value, "updated_at": now},
+            "$push": {"history": history_entry},
+        }
     )
     draft = await _get_draft(draft_id)
     plate = draft.get("license_plate") or "—"
@@ -991,7 +1019,8 @@ async def _finalize_adblue(chat_id: int):
     liters = draft.get("adblue_liters")
     user = (draft.get("created_by_telegram") or {}).get("name") or "—"
     summary = (
-        f"✅ <b>Pedido AdBlue concluído!</b>\n\n"
+        f"✅ <b>Pedido AdBlue enviado!</b>\n"
+        f"<i>Estado: Em tratamento (aguarda rececionista)</i>\n\n"
         f"Matrícula: <b>{plate}</b>\n"
         f"Renting: {company}\n"
         f"KM: <b>{km if km is not None else '—'}</b>\n"
@@ -1199,16 +1228,28 @@ async def _finalize(chat_id: int):
     s = _get_state(chat_id)
     draft_id = s["draft_id"]
     now = datetime.now(timezone.utc).isoformat()
+    history_entry = {
+        "field": "status",
+        "old_value": RentingStatus.DRAFT.value,
+        "new_value": RentingStatus.IN_PROGRESS.value,
+        "changed_at": now,
+        "changed_by": "telegram_bot",
+        "changed_by_name": (s.get("user_info") or {}).get("name") or "Telegram",
+    }
     await db.renting_records.update_one(
         {"id": draft_id},
-        {"$set": {"status": RentingStatus.COMPLETED.value, "completed_at": now, "updated_at": now}}
+        {
+            "$set": {"status": RentingStatus.IN_PROGRESS.value, "updated_at": now},
+            "$push": {"history": history_entry},
+        }
     )
     draft = await _get_draft(draft_id)
     plate = draft.get("license_plate") or "—"
     company = draft.get("renting_company") or "—"
     await send_message(
         chat_id,
-        f"✅ <b>Registo Renting concluído!</b>\n\n"
+        f"✅ <b>Registo Renting enviado!</b>\n"
+        f"<i>Estado: Em tratamento (aguarda rececionista)</i>\n\n"
         f"Matrícula: <b>{plate}</b>\n"
         f"Renting: {company}\n\n"
         f"Pode consultá-lo no sistema. Use /novo_renting para começar outro."
@@ -1435,11 +1476,78 @@ async def get_record(record_id: str) -> Optional[dict]:
     return await db.renting_records.find_one({"id": record_id}, {"_id": 0})
 
 
-async def update_record(record_id: str, updates: dict) -> Optional[dict]:
+async def update_record(record_id: str, updates: dict, actor: Optional[dict] = None) -> Optional[dict]:
+    """Update a record. Tracks audit history for changed fields when `actor` is provided.
+
+    Validates status transitions and enforces business rules:
+    - Cannot mark as 'completed' without `authorization_number` set.
+    - Only `ALLOWED_STATUS_TRANSITIONS` allowed.
+    """
+    from .models import AUDITED_FIELDS, ALLOWED_STATUS_TRANSITIONS
+
     if "id" in updates:
         del updates["id"]
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.renting_records.update_one({"id": record_id}, {"$set": updates})
+    # 'history' must never be set directly via API
+    updates.pop("history", None)
+    updates.pop("created_at", None)
+
+    current = await db.renting_records.find_one({"id": record_id}, {"_id": 0})
+    if not current:
+        return None
+
+    new_status = updates.get("status")
+    if new_status is not None:
+        old_status = current.get("status") or RentingStatus.DRAFT.value
+        if new_status != old_status:
+            allowed = ALLOWED_STATUS_TRANSITIONS.get(old_status, set())
+            if new_status not in allowed:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Transição de estado inválida: {old_status} → {new_status}",
+                )
+            if new_status == RentingStatus.COMPLETED.value:
+                # Check authorization_number presence (either in update or already in DB)
+                auth = updates.get("authorization_number")
+                if auth is None:
+                    auth = current.get("authorization_number")
+                if not auth or not str(auth).strip():
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Não é possível concluir: preencha o nº de autorização.",
+                    )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Build audit history entries for changed audited fields
+    history_entries = []
+    if actor is not None:
+        actor_id = actor.get("id") or actor.get("user_id") or actor.get("email") or "unknown"
+        actor_name = actor.get("name") or actor.get("email") or "Utilizador"
+        for f in AUDITED_FIELDS:
+            if f in updates:
+                new_v = updates[f]
+                old_v = current.get(f)
+                if new_v != old_v:
+                    history_entries.append({
+                        "field": f,
+                        "old_value": old_v,
+                        "new_value": new_v,
+                        "changed_at": now,
+                        "changed_by": str(actor_id),
+                        "changed_by_name": actor_name,
+                    })
+
+    updates["updated_at"] = now
+    if new_status == RentingStatus.COMPLETED.value and current.get("status") != RentingStatus.COMPLETED.value:
+        updates["completed_at"] = now
+
+    mongo_update = {"$set": updates}
+    if history_entries:
+        mongo_update["$push"] = {"history": {"$each": history_entries}}
+
+    await db.renting_records.update_one({"id": record_id}, mongo_update)
     return await get_record(record_id)
 
 
@@ -1451,7 +1559,7 @@ async def delete_record(record_id: str) -> bool:
 async def get_stats() -> dict:
     pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
     rows = await db.renting_records.aggregate(pipeline).to_list(10)
-    stats = {"draft": 0, "completed": 0, "total": 0}
+    stats = {"draft": 0, "in_progress": 0, "completed": 0, "total": 0}
     for r in rows:
         s = r["_id"] or "draft"
         if s in stats:

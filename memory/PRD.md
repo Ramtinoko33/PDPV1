@@ -24,6 +24,13 @@
   - New permission `has_renting_access` (User edit toggle)
   - Frontend: `/renting` (list with filters/search + stats), `/renting/:id` (detail with editable fields, wheel photos grid, observations audio player + transcription)
   - Sidebar entry "Renting" (Car icon)
+- [x] Renting Phase 2 — Reception desk + audit history (Feb 2026):
+  - New `RentingStatus` value `in_progress` ("Em tratamento"). Bot finalizes as `in_progress` (not `completed`).
+  - Server-side transition validation: draft→in_progress, in_progress↔completed; cannot mark `completed` without `authorization_number`.
+  - New fields `proposed_tires` (textarea) + `authorization_number` (input) on detail page.
+  - Audit history array embedded in `renting_records.history[]` — tracks every PUT change with `{field, old_value, new_value, changed_at, changed_by, changed_by_name}`. Telegram-driven status changes use `changed_by="telegram_bot"`.
+  - UI: 3-state badge + transition buttons (Marcar Em tratamento / Concluir / Reabrir), warning when auth_number missing, History timeline card on detail.
+  - Stats endpoint returns `in_progress` counter; list filter supports `in_progress`.
 - [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
 - [x] Client preview in quote creation (real-time debounced)
 - [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge

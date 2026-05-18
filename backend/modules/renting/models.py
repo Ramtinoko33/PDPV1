@@ -4,7 +4,24 @@ from enum import Enum
 
 class RentingStatus(str, Enum):
     DRAFT = "draft"
+    IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+
+
+# Allowed status transitions enforced server-side
+ALLOWED_STATUS_TRANSITIONS = {
+    "draft": {"in_progress"},
+    "in_progress": {"completed"},
+    "completed": {"in_progress"},  # allow re-opening if needed
+}
+
+# Fields tracked in the audit history (subset of RentingUpdate)
+AUDITED_FIELDS = [
+    "driver_name", "driver_phone", "renting_company", "license_plate", "km",
+    "service_type", "service_type_label", "subtype", "adblue_liters",
+    "description", "puncture_wheel", "puncture_wheel_label",
+    "proposed_tires", "authorization_number", "status",
+]
 
 
 # Wheel positions in collection order

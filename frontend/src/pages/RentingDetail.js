@@ -4,10 +4,11 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
-import { ArrowLeft, Save, Loader2, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Image as ImageIcon, History, CheckCircle2, ShieldAlert, PlayCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -16,6 +17,37 @@ const WHEEL_ORDER = ['FE', 'FD', 'TD', 'TE'];
 const WHEEL_LABELS = { FE: 'Frente Esquerda', FD: 'Frente Direita', TD: 'Trás Direita', TE: 'Trás Esquerda' };
 
 const CONF_EMOJI = { high: '🟢', medium: '🟡', low: '🔴' };
+
+const STATUS_META = {
+  draft: { label: 'Rascunho', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  in_progress: { label: 'Em tratamento', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  completed: { label: 'Concluído', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+};
+
+const FIELD_LABELS = {
+  driver_name: 'Condutor',
+  driver_phone: 'Telefone',
+  renting_company: 'Empresa Renting',
+  license_plate: 'Matrícula',
+  km: 'KM',
+  service_type: 'Tipo de serviço',
+  service_type_label: 'Serviço',
+  subtype: 'Subtipo',
+  adblue_liters: 'Litros AdBlue',
+  description: 'Descrição',
+  puncture_wheel: 'Roda furo',
+  puncture_wheel_label: 'Roda furo',
+  proposed_tires: 'Pneus propostos',
+  authorization_number: 'Nº de autorização',
+  status: 'Estado',
+};
+
+const formatHistoryValue = (field, value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (field === 'status') return STATUS_META[value]?.label || value;
+  if (typeof value === 'string' && value.length > 60) return value.slice(0, 60) + '…';
+  return String(value);
+};
 
 const FieldWithConfidence = ({ label, value, confidence, confirmed, onChange, type = 'text', placeholder }) => (
   <div>
@@ -57,8 +89,8 @@ const RentingDetail = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleSave = async () => {
-    if (!rec) return;
+  const handleSave = async (extraUpdates = {}) => {
+    if (!rec) return null;
     setSaving(true);
     try {
       const payload = {
@@ -70,15 +102,34 @@ const RentingDetail = () => {
         wheels: rec.wheels,
         adblue_liters: rec.adblue_liters != null ? parseFloat(rec.adblue_liters) : null,
         description: rec.description,
+        proposed_tires: rec.proposed_tires ?? '',
+        authorization_number: rec.authorization_number ?? '',
+        ...extraUpdates,
       };
-      await axios.put(`${API_URL}/api/renting/records/${id}`, payload, { headers: getAuthHeaders() });
+      const resp = await axios.put(`${API_URL}/api/renting/records/${id}`, payload, { headers: getAuthHeaders() });
       toast.success('Registo guardado');
-      load();
+      setRec(resp.data);
+      return resp.data;
     } catch (e) {
-      toast.error('Erro ao guardar');
+      const detail = e?.response?.data?.detail || 'Erro ao guardar';
+      toast.error(detail);
+      return null;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleMarkInProgress = async () => {
+    await handleSave({ status: 'in_progress' });
+  };
+
+  const handleMarkCompleted = async () => {
+    const auth = (rec?.authorization_number || '').trim();
+    if (!auth) {
+      toast.error('Preencha o nº de autorização antes de concluir.');
+      return;
+    }
+    await handleSave({ status: 'completed' });
   };
 
   const updateField = (k, v) => setRec((prev) => ({ ...prev, [k]: v }));
@@ -111,21 +162,89 @@ const RentingDetail = () => {
   }
   if (!rec) return null;
 
+  const status = rec.status || 'draft';
+  const statusMeta = STATUS_META[status] || STATUS_META.draft;
+  const authMissing = !((rec.authorization_number || '').trim());
+  const canMarkInProgress = status === 'draft';
+  const canMarkCompleted = status === 'in_progress';
+  const canReopen = status === 'completed';
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto" data-testid="renting-detail">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate('/renting')} data-testid="back-btn">
           <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
         </Button>
-        <div className="flex items-center gap-2">
-          <Badge className={rec.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} variant="secondary">
-            {rec.status === 'completed' ? 'Concluído' : 'Rascunho'}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className={`${statusMeta.color} border`} variant="secondary" data-testid="status-badge">
+            {statusMeta.label}
           </Badge>
-          <Button onClick={handleSave} disabled={saving} size="sm" data-testid="save-btn">
+          {canMarkInProgress && (
+            <Button onClick={handleMarkInProgress} disabled={saving} size="sm" variant="outline" data-testid="mark-in-progress-btn">
+              <PlayCircle className="h-4 w-4 mr-1" /> Marcar Em tratamento
+            </Button>
+          )}
+          {canMarkCompleted && (
+            <Button
+              onClick={handleMarkCompleted}
+              disabled={saving || authMissing}
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              data-testid="mark-completed-btn"
+              title={authMissing ? 'Preencha o nº de autorização para concluir' : 'Marcar como concluído'}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" /> Concluir
+            </Button>
+          )}
+          {canReopen && (
+            <Button onClick={handleMarkInProgress} disabled={saving} size="sm" variant="outline" data-testid="reopen-btn">
+              Reabrir
+            </Button>
+          )}
+          <Button onClick={() => handleSave()} disabled={saving} size="sm" data-testid="save-btn">
             <Save className="h-4 w-4 mr-1" />{saving ? 'A guardar...' : 'Guardar'}
           </Button>
         </div>
       </div>
+
+      {/* Reception desk panel */}
+      <Card data-testid="reception-card" className="border-blue-200">
+        <CardHeader className="border-b bg-blue-50/40">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-blue-600" /> Painel da Rececionista
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          <div>
+            <Label className="text-xs text-zinc-500">Pneus disponíveis / propostos</Label>
+            <Textarea
+              data-testid="proposed-tires-input"
+              value={rec.proposed_tires || ''}
+              onChange={(e) => updateField('proposed_tires', e.target.value)}
+              placeholder="Liste os pneus disponíveis ou os que foram propostos à locadora (medida, marca, modelo, preço)..."
+              rows={3}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-zinc-500">
+              Nº de autorização <span className="text-red-500">*</span> <span className="text-zinc-400 font-normal">(obrigatório para concluir)</span>
+            </Label>
+            <Input
+              data-testid="authorization-number-input"
+              value={rec.authorization_number || ''}
+              onChange={(e) => updateField('authorization_number', e.target.value)}
+              placeholder="Ex: AUTH-2026-00123"
+              className="mt-1"
+            />
+          </div>
+          {status === 'in_progress' && authMissing && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2" data-testid="auth-missing-warning">
+              ⚠️ Preencha o nº de autorização da locadora para poder marcar como concluído.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Cliente */}
       <Card>
@@ -267,6 +386,37 @@ const RentingDetail = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Audit history */}
+      <Card data-testid="history-card">
+        <CardHeader className="border-b">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4 text-zinc-500" /> Histórico de alterações
+            <span className="text-xs font-normal text-zinc-400 ml-1">({(rec.history || []).length})</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {(!rec.history || rec.history.length === 0) ? (
+            <p className="text-xs text-zinc-500 italic" data-testid="history-empty">Sem alterações registadas.</p>
+          ) : (
+            <ol className="space-y-3" data-testid="history-list">
+              {[...rec.history].reverse().map((h, i) => (
+                <li key={i} className="border-l-2 border-zinc-200 pl-3 py-1">
+                  <div className="text-xs text-zinc-500">
+                    {new Date(h.changed_at).toLocaleString('pt-PT')} • <span className="font-medium text-zinc-700">{h.changed_by_name || h.changed_by || '—'}</span>
+                  </div>
+                  <div className="text-sm mt-0.5">
+                    <span className="font-semibold">{FIELD_LABELS[h.field] || h.field}</span>:{' '}
+                    <span className="text-zinc-500 line-through">{formatHistoryValue(h.field, h.old_value)}</span>
+                    {' → '}
+                    <span className="text-zinc-900 font-medium">{formatHistoryValue(h.field, h.new_value)}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

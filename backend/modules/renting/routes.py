@@ -155,15 +155,21 @@ class RentingUpdate(BaseModel):
     description: Optional[str] = None
     puncture_wheel: Optional[str] = None
     puncture_wheel_label: Optional[str] = None
+    # Reception desk fields
+    proposed_tires: Optional[str] = None
+    authorization_number: Optional[str] = None
+    status: Optional[str] = None
 
 
 @router.put("/records/{record_id}")
 async def update_record(record_id: str, body: RentingUpdate, current_user: dict = Depends(get_current_user)):
     _check_renting_access(current_user)
-    updates = {k: v for k, v in body.dict().items() if v is not None}
+    updates = body.dict(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="Sem campos para atualizar")
-    rec = await service.update_record(record_id, updates)
+    if "status" in updates and updates["status"] not in ("draft", "in_progress", "completed"):
+        raise HTTPException(status_code=400, detail="Estado inválido")
+    rec = await service.update_record(record_id, updates, actor=current_user)
     if not rec:
         raise HTTPException(status_code=404, detail="Registo não encontrado")
     return rec
