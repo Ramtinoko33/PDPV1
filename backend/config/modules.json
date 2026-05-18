@@ -1,7 +1,7 @@
 {
   "intake": true,
   "telegram": true,
-  "whatsapp": false,
+  "whatsapp": true,
   "telegram_alerts": true,
   "renting": true
 }

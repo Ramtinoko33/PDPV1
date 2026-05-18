@@ -1623,12 +1623,22 @@ except Exception as e:
 
 app.include_router(api_router)
 
+# CORS configuration
+# IMPORTANT: When CORS_ORIGINS="*" (wildcard), browsers reject responses that also include
+# `Access-Control-Allow-Credentials: true`. The app uses Bearer tokens in the Authorization
+# header (no cookies / no withCredentials), so we only enable credentials when the operator
+# has provided an explicit allow-list of origins.
+_cors_origins_raw = os.environ.get('CORS_ORIGINS', '*')
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(',') if o.strip()]
+_cors_allow_credentials = bool(_cors_origins) and _cors_origins != ['*']
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=_cors_allow_credentials,
+    allow_origins=_cors_origins if _cors_origins else ['*'],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Configure logging
