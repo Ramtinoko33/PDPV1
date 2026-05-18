@@ -174,22 +174,6 @@ class ReportResponse(BaseModel):
     agent_performance: List[AgentPerformance] = []
     daily_ticket_counts: List[Dict[str, Any]] = []
 
-class TireSizeCount(BaseModel):
-    size: str
-    count: int
-    percentage: float
-
-class BrandCount(BaseModel):
-    brand: str
-    count: int
-    percentage: float
-
-class TireAnalysisResponse(BaseModel):
-    total_tickets: int
-    tire_sizes: List[TireSizeCount]
-    brands: List[BrandCount]
-    period: Dict[str, Optional[str]]
-
 class RejectionReasonStat(BaseModel):
     code: str
     label: str
@@ -448,7 +432,9 @@ async def get_sla_config(current_user: dict = Depends(get_current_user)):
 
 @router.put("/sla-config", response_model=SlaConfigResponse)
 async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = Depends(get_current_user)):
-    from server import load_sla_config_from_db
+    # Direct import of the underlying service function (passes db explicitly)
+    # avoids the circular import server.py → routes/admin.py → server.py
+    from services.sla_service import load_sla_config_from_db as _load_sla_config_svc
     
     if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Apenas administradores podem editar configuração SLA")
@@ -492,7 +478,7 @@ async def update_sla_config(config_data: SlaConfigUpdate, current_user: dict = D
     else:
         await db.settings.insert_one(update_doc)
     
-    await load_sla_config_from_db()
+    await _load_sla_config_svc(db)
     
     config = await db.settings.find_one({"type": "sla_config"}, {"_id": 0})
     return build_sla_config_response(config)

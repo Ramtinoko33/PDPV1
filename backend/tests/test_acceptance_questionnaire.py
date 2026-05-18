@@ -20,7 +20,7 @@ class TestAcceptanceQuestionnaire:
     def setup(self):
         """Setup test fixtures"""
         self.admin_email = "admin@pdpv.pt"
-        self.admin_password = "HCNMEnKMLq"
+        self.admin_password = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
         
@@ -333,7 +333,7 @@ class TestAcceptanceQuestionnaireValidation:
     def setup(self):
         """Setup test fixtures"""
         self.admin_email = "admin@pdpv.pt"
-        self.admin_password = "HCNMEnKMLq"
+        self.admin_password = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
         

@@ -19,7 +19,7 @@ TEST_TICKET_NUMBER = "TK20260225FBCA47"
 TEST_REPLY_TOKEN = "4ef74aac-a780-41b3-950c-ec9753dfd373"
 
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
 
 
 @pytest.fixture(scope="module")

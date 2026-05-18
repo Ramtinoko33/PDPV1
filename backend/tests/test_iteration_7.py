@@ -18,7 +18,7 @@ class TestEmailConfig:
         # Login as admin
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "email": "admin@pdpv.pt",
-            "password": "HCNMEnKMLq"
+            "password": os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         data = response.json()
@@ -87,7 +87,7 @@ class TestTicketEdit:
         # Login as admin
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "email": "admin@pdpv.pt",
-            "password": "HCNMEnKMLq"
+            "password": os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         data = response.json()
@@ -205,7 +205,7 @@ class TestDashboardStats:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "email": "admin@pdpv.pt",
-            "password": "HCNMEnKMLq"
+            "password": os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         data = response.json()
@@ -261,7 +261,7 @@ class TestAttachmentPreview:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "email": "admin@pdpv.pt",
-            "password": "HCNMEnKMLq"
+            "password": os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         data = response.json()

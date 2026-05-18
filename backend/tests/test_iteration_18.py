@@ -20,7 +20,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
 VALID_QUOTE_TOKEN = "0e0e05ea-ecfb-48a6-bfb3-d593ab488f52"
 
 

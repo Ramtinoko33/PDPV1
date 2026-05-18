@@ -22,7 +22,7 @@ import uuid
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://quote-management-4.preview.emergentagent.com').rstrip('/')
 
 # Test credentials
-ADMIN_CREDS = {"email": "admin@pdpv.pt", "password": "HCNMEnKMLq"}
+ADMIN_CREDS = {"email": "admin@pdpv.pt", "password": os.environ.get("TEST_ADMIN_PASSWORD", "changeme")}
 SUPERVISOR_CREDS = {"email": "supervisor@pdpv.pt", "password": "f9pSIn6zRP"}
 AGENT_CREDS = {"email": "agente@pdpv.pt", "password": "yHprFGvPUJ"}
 

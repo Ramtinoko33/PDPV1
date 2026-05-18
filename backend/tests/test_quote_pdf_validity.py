@@ -16,7 +16,7 @@ DB_NAME = os.environ.get('DB_NAME', 'test_database').strip('"\'')
 
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
 
 
 @pytest.fixture(scope="module")

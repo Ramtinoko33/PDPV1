@@ -279,9 +279,6 @@ async def transcribe_audio_with_whisper(audio_bytes: bytes, file_extension: str 
     Converts OGG to a supported format if needed.
     Supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
     """
-    import subprocess
-    import shutil
-    
     print(f"[WHISPER] Starting transcription: {len(audio_bytes)} bytes, format: {file_extension}")
     
     if not EMERGENT_LLM_KEY:
