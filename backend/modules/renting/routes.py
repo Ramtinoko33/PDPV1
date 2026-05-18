@@ -185,6 +185,31 @@ async def delete_record(record_id: str, current_user: dict = Depends(get_current
     return {"deleted": True}
 
 
+@router.get("/records/{record_id}/pdf")
+async def get_record_pdf(record_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate a technical PDF for a Renting record (for sending to the renting company)."""
+    _check_renting_access(current_user)
+    rec = await service.get_record(record_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Registo não encontrado")
+    try:
+        branding = await db.settings.find_one({"type": "branding_config"}, {"_id": 0}) or {}
+        company_name = branding.get("company_name", "Pneus D. Pedro V")
+        from .pdf import build_renting_pdf
+        pdf_bytes = await build_renting_pdf(rec, company_name=company_name)
+    except Exception as e:
+        logger.error(f"[RENTING_PDF] generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro ao gerar PDF")
+    plate = (rec.get("license_plate") or "renting").replace("-", "").replace(" ", "")
+    filename = f"renting_{plate}_{(rec.get('id') or '')[:8]}.pdf"
+    from fastapi.responses import Response
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 # ============== PHOTO PROXY ==============
 @router.get("/records/{record_id}/photo/{photo_kind}")
 async def get_record_photo(

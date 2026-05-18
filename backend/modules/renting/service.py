@@ -176,6 +176,29 @@ async def store_audio(audio_bytes: bytes, ext: str, telegram_file_id: str = None
     return record
 
 
+async def get_photo_bytes(photo: dict) -> Optional[bytes]:
+    """Resolve photo bytes from storage / base64 / telegram fallback. Returns None if unavailable."""
+    if not photo:
+        return None
+    if photo.get("storage_path"):
+        try:
+            from services.storage_service import get_object
+            data, _ = get_object(photo["storage_path"])
+            if data:
+                return data
+        except Exception as e:
+            logger.warning(f"[RENTING_PDF] storage fetch failed: {e}")
+    if photo.get("base64_data"):
+        try:
+            return base64.b64decode(photo["base64_data"])
+        except Exception:
+            pass
+    if photo.get("telegram_file_id"):
+        return await download_telegram_photo(photo["telegram_file_id"])
+    return None
+
+
+
 # ============== AI / OCR ==============
 async def _llm_extract(image_bytes: bytes, prompt: str) -> Optional[dict]:
     """Generic GPT-5.2 Vision JSON extractor."""

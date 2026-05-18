@@ -8,7 +8,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
-import { ArrowLeft, Save, Loader2, Image as ImageIcon, History, CheckCircle2, ShieldAlert, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Image as ImageIcon, History, CheckCircle2, ShieldAlert, PlayCircle, FileDown, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -47,6 +47,62 @@ const formatHistoryValue = (field, value) => {
   if (field === 'status') return STATUS_META[value]?.label || value;
   if (typeof value === 'string' && value.length > 60) return value.slice(0, 60) + '…';
   return String(value);
+};
+
+const SUBTYPE_TITLE = {
+  tires: 'Pedido de pneus',
+  puncture: 'Reparação de furo',
+  adblue: 'Reposição AdBlue',
+  other: 'Pedido Renting',
+};
+
+const buildSummaryText = (rec) => {
+  const subtype = rec.subtype || 'tires';
+  const lines = [];
+  lines.push(`*${SUBTYPE_TITLE[subtype] || 'Pedido Renting'}*`);
+  if (rec.renting_company) lines.push(`Renting: ${rec.renting_company}`);
+  if (rec.license_plate) lines.push(`Matrícula: ${rec.license_plate}`);
+  if (rec.km != null) lines.push(`KM: ${Number(rec.km).toLocaleString('pt-PT')}`);
+  if (rec.driver_name || rec.driver_phone) {
+    lines.push(`Condutor: ${rec.driver_name || '—'}${rec.driver_phone ? ` (${rec.driver_phone})` : ''}`);
+  }
+  if (rec.service_type_label) lines.push(`Serviço: ${rec.service_type_label}`);
+
+  if (subtype === 'tires') {
+    const wheelsByPos = {};
+    (rec.wheels || []).forEach((w) => { wheelsByPos[w.position] = w; });
+    lines.push('');
+    lines.push('*Pneus:*');
+    WHEEL_ORDER.forEach((pos) => {
+      const w = wheelsByPos[pos];
+      if (!w) {
+        lines.push(`- ${WHEEL_LABELS[pos]}: —`);
+        return;
+      }
+      const d = w.data || {};
+      const parts = [];
+      if (d.size) parts.push(d.size);
+      if (d.load_speed) parts.push(d.load_speed);
+      const brandModel = [d.brand, d.model].filter(Boolean).join(' ');
+      if (brandModel) parts.push(brandModel);
+      const extras = [];
+      if (d.dot) extras.push(`DOT ${d.dot}`);
+      if (d.tread_mm != null) extras.push(`piso ${d.tread_mm}mm`);
+      const main = parts.join(' • ') || '—';
+      const ex = extras.length ? ` (${extras.join(', ')})` : '';
+      lines.push(`- ${WHEEL_LABELS[pos]}: ${main}${ex}`);
+    });
+  } else if (subtype === 'puncture') {
+    lines.push(`Roda do furo: ${rec.puncture_wheel_label || '—'}`);
+  } else if (subtype === 'adblue') {
+    lines.push(`Litros AdBlue: ${rec.adblue_liters ?? '—'} L`);
+  } else if (subtype === 'other') {
+    if (rec.description) {
+      lines.push('');
+      lines.push(`Descrição: ${rec.description}`);
+    }
+  }
+  return lines.join('\n');
 };
 
 const FieldWithConfidence = ({ label, value, confidence, confirmed, onChange, type = 'text', placeholder }) => (
@@ -132,6 +188,46 @@ const RentingDetail = () => {
     await handleSave({ status: 'completed' });
   };
 
+  const handleDownloadPdf = async () => {
+    if (!rec) return;
+    try {
+      const resp = await axios.get(`${API_URL}/api/renting/records/${id}/pdf`, {
+        headers: getAuthHeaders(),
+        responseType: 'blob',
+      });
+      const blob = new Blob([resp.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Best-effort revoke after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast.success('PDF gerado');
+    } catch {
+      toast.error('Erro ao gerar PDF');
+    }
+  };
+
+  const handleCopySummary = async () => {
+    if (!rec) return;
+    const txt = buildSummaryText(rec);
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(txt);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      toast.success('Resumo copiado para a área de transferência');
+    } catch {
+      toast.error('Falha ao copiar');
+    }
+  };
+
   const updateField = (k, v) => setRec((prev) => ({ ...prev, [k]: v }));
   const updateWheelData = (idx, k, v) => {
     setRec((prev) => {
@@ -201,6 +297,12 @@ const RentingDetail = () => {
               Reabrir
             </Button>
           )}
+          <Button onClick={handleCopySummary} size="sm" variant="outline" data-testid="copy-summary-btn">
+            <Copy className="h-4 w-4 mr-1" /> Copiar resumo
+          </Button>
+          <Button onClick={handleDownloadPdf} size="sm" variant="outline" data-testid="download-pdf-btn">
+            <FileDown className="h-4 w-4 mr-1" /> PDF
+          </Button>
           <Button onClick={() => handleSave()} disabled={saving} size="sm" data-testid="save-btn">
             <Save className="h-4 w-4 mr-1" />{saving ? 'A guardar...' : 'Guardar'}
           </Button>

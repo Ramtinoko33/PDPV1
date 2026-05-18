@@ -31,6 +31,9 @@
   - Audit history array embedded in `renting_records.history[]` — tracks every PUT change with `{field, old_value, new_value, changed_at, changed_by, changed_by_name}`. Telegram-driven status changes use `changed_by="telegram_bot"`.
   - UI: 3-state badge + transition buttons (Marcar Em tratamento / Concluir / Reabrir), warning when auth_number missing, History timeline card on detail.
   - Stats endpoint returns `in_progress` counter; list filter supports `in_progress`.
+- [x] Renting Phase 3 — PDF + Copiar resumo (Feb 2026):
+  - New endpoint `GET /api/renting/records/{id}/pdf` returns a technical PDF (ReportLab) with header navy+yellow, info table (Renting/Matrícula/Condutor/Telefone/KM/Serviço), tire technical table (medida/marca/modelo/índice/DOT/piso), 3 photos per wheel (flanco/DOT/piso), and matrícula+KM photos. Multi-page with footer pagination. Excludes internal fields: observations, history, proposed_tires, authorization_number.
+  - Frontend: "📄 PDF" button (blob download with auth headers, opens in new tab) and "📋 Copiar resumo" button (client-side `buildSummaryText`, copies a clean WhatsApp/SMS-ready summary using `navigator.clipboard` with `document.execCommand` fallback).
 - [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
 - [x] Client preview in quote creation (real-time debounced)
 - [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge
