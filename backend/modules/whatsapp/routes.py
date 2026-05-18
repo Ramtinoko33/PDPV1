@@ -3,12 +3,15 @@ WhatsApp Business Cloud API - Routes
 Webhook endpoints for receiving and sending messages
 """
 import os
+import hmac
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException, Query, Depends, BackgroundTasks
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
 
 from db import db
 from core.security import get_current_user
@@ -26,6 +29,39 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 # Configuration
 WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "pdpv_whatsapp_verify_2024")
+
+
+def _is_production() -> bool:
+    """Return True when running in a production environment.
+
+    Looks at ENVIRONMENT/APP_ENV/NODE_ENV env vars. Defaults to development
+    so local tests never inadvertently block on missing app secret.
+    """
+    env = (
+        os.environ.get("ENVIRONMENT")
+        or os.environ.get("APP_ENV")
+        or os.environ.get("NODE_ENV")
+        or "development"
+    ).strip().lower()
+    return env in ("prod", "production")
+
+
+def _verify_meta_signature(raw_body: bytes, signature_header: Optional[str]) -> bool:
+    """Validate the `X-Hub-Signature-256` header against `WHATSAPP_APP_SECRET`.
+
+    Returns True when the header matches the HMAC SHA-256 digest of the raw body.
+    Returns False otherwise (missing header, wrong format, mismatch).
+    """
+    app_secret = os.environ.get("WHATSAPP_APP_SECRET", "")
+    if not app_secret:
+        return False
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    received = signature_header.split("=", 1)[1].strip()
+    expected = hmac.new(
+        app_secret.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, received)
 
 
 @router.get("/webhook")
@@ -61,20 +97,60 @@ async def verify_webhook(
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Receive incoming WhatsApp messages and status updates.
-    Returns 200 immediately and processes in background.
+
+    Security:
+    - In production (`ENVIRONMENT=production`), `X-Hub-Signature-256` MUST be present
+      and HMAC SHA-256(WHATSAPP_APP_SECRET, raw_body) MUST match. Otherwise → 403.
+    - In development, when `WHATSAPP_APP_SECRET` is unset, the signature check is
+      skipped but a clear warning is logged on every request.
+
+    Returns 200 immediately and processes the payload in a background task.
     """
+    raw_body = await request.body()
+    signature = request.headers.get("x-hub-signature-256") or request.headers.get(
+        "X-Hub-Signature-256"
+    )
+    app_secret_present = bool(os.environ.get("WHATSAPP_APP_SECRET"))
+    in_production = _is_production()
+
+    # Enforce signature in production
+    if in_production:
+        if not app_secret_present:
+            logger.error(
+                "WhatsApp webhook in production but WHATSAPP_APP_SECRET is missing; rejecting"
+            )
+            raise HTTPException(status_code=503, detail="WhatsApp not configured")
+        if not _verify_meta_signature(raw_body, signature):
+            logger.warning(
+                "Rejecting WhatsApp webhook: invalid or missing X-Hub-Signature-256"
+            )
+            raise HTTPException(status_code=403, detail="Invalid signature")
+    else:
+        # Development / test: validate only if both secret and header present, warn otherwise
+        if app_secret_present and signature:
+            if not _verify_meta_signature(raw_body, signature):
+                logger.warning(
+                    "Rejecting WhatsApp webhook in dev: signature header present but invalid"
+                )
+                raise HTTPException(status_code=403, detail="Invalid signature")
+        else:
+            logger.warning(
+                "WhatsApp webhook: skipping signature check (development mode; "
+                "app_secret_present=%s, signature_present=%s)",
+                app_secret_present,
+                bool(signature),
+            )
+
     try:
-        data = await request.json()
-        logger.info(f"WhatsApp webhook received")
-        
-        # Process in background to return quickly
+        import json as _json
+        data = _json.loads(raw_body or b"{}")
+        logger.info("WhatsApp webhook accepted (%d bytes)", len(raw_body or b""))
         background_tasks.add_task(process_webhook_payload, data)
-        
         return {"status": "ok"}
-    
     except Exception as e:
-        logger.error(f"Error in webhook handler: {e}")
-        return {"status": "ok"}  # Always return 200 to avoid retries
+        # Always return 200 to avoid Meta retries, but log the failure
+        logger.error("Error parsing WhatsApp webhook payload: %s", e)
+        return {"status": "ok"}
 
 
 async def process_webhook_payload(data: dict):
@@ -180,9 +256,19 @@ async def process_incoming_message(message: dict, contacts: list, phone_number_i
             message_text=body,
             message_type=message_type
         )
-        
-        # Save message
-        await service.save_ticket_message(
+        if is_new:
+            logger.info(
+                "WhatsApp ticket created: %s (phone=%s, type=%s)",
+                ticket.get("ticket_number"), from_phone, message_type,
+            )
+        else:
+            logger.info(
+                "WhatsApp ticket reused: %s (phone=%s)",
+                ticket.get("ticket_number"), from_phone,
+            )
+
+        # Save message (service already de-duplicates by external_message_id)
+        saved = await service.save_ticket_message(
             ticket_id=ticket["id"],
             body=body,
             direction=TicketMessageDirection.INBOUND,
@@ -193,6 +279,9 @@ async def process_incoming_message(message: dict, contacts: list, phone_number_i
             sender_phone=from_phone,
             sender_name=sender_name
         )
+        if saved and saved.get("external_message_id") == message_id and saved.get("body") == body:
+            # save_ticket_message returns existing doc when duplicate
+            pass
         
         # Mark as read
         await service.mark_message_as_read(message_id, phone_number_id)
@@ -254,34 +343,66 @@ async def get_conversation_messages(
     return messages
 
 
+class WhatsAppReplyBody(BaseModel):
+    body: str = Field(..., min_length=1, description="Message text to send to the customer")
+
+
 @router.post("/tickets/{ticket_id}/messages")
 async def send_reply_message(
     ticket_id: str,
-    body: str = Query(..., min_length=1),
+    payload: Optional[WhatsAppReplyBody] = None,
+    body: Optional[str] = Query(None, min_length=1, description="DEPRECATED: use JSON body instead"),
     current_user: dict = Depends(get_current_user)
 ):
-    """Send a reply message to the customer via WhatsApp"""
+    """Send a reply message to the customer via WhatsApp.
+
+    Accepts JSON body: ``{"body": "..."}`` (preferred).
+    Also accepts the legacy ``?body=`` query param for backwards compatibility — this
+    will be removed once all callers migrate to JSON.
+
+    Errors:
+    - 400 if no body provided in either format.
+    - 404 if ticket not found.
+    - 503 ``WhatsApp not configured`` when access token / phone number id missing.
+    - 502 ``WhatsApp upstream error`` when Meta Graph API rejects the request.
+    """
+    # Resolve message text from JSON body or legacy query param
+    message_text = (payload.body if payload else None) or body
+    if not message_text or not message_text.strip():
+        raise HTTPException(status_code=400, detail="Body required")
+
+    # Fail fast if WhatsApp not configured (avoid generic 500)
+    if not service.is_whatsapp_configured():
+        logger.error(
+            "WhatsApp reply blocked: credentials missing (ticket=%s, user=%s)",
+            ticket_id, current_user.get("id"),
+        )
+        raise HTTPException(status_code=503, detail="WhatsApp not configured")
+
     # Get ticket
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket não encontrado")
-    
+
     phone = ticket.get("customer_phone")
     if not phone:
         raise HTTPException(status_code=400, detail="Ticket sem número de telefone")
-    
+
     # Send via WhatsApp
-    result = await service.send_whatsapp_message(phone, body)
-    
+    try:
+        result = await service.send_whatsapp_message(phone, message_text)
+    except service.WhatsAppNotConfiguredError:
+        raise HTTPException(status_code=503, detail="WhatsApp not configured")
+
     if not result:
-        raise HTTPException(status_code=500, detail="Falha ao enviar mensagem WhatsApp")
-    
+        raise HTTPException(status_code=502, detail="WhatsApp upstream error")
+
     # Save outbound message
     message_id = result.get("messages", [{}])[0].get("id")
-    
+
     await service.save_ticket_message(
         ticket_id=ticket_id,
-        body=body,
+        body=message_text,
         direction=TicketMessageDirection.OUTBOUND,
         message_type="text",
         external_message_id=message_id,
@@ -289,12 +410,12 @@ async def send_reply_message(
         sender_name=current_user.get("name"),
         created_by_user_id=current_user.get("id")
     )
-    
+
     # Mark first response done
     if not ticket.get("first_response_done"):
         await db.tickets.update_one(
             {"id": ticket_id},
             {"$set": {"first_response_done": True}}
         )
-    
+
     return {"success": True, "message_id": message_id}

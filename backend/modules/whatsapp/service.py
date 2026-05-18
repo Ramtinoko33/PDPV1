@@ -21,6 +21,22 @@ WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
 
 
+def is_whatsapp_configured() -> bool:
+    """Return True only when both Meta credentials are present.
+
+    Re-reads env vars so tests can mutate them at runtime.
+    """
+    return bool(
+        os.environ.get("WHATSAPP_ACCESS_TOKEN")
+        and os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
+    )
+
+
+class WhatsAppNotConfiguredError(RuntimeError):
+    """Raised when WhatsApp send/receive cannot proceed due to missing credentials."""
+    pass
+
+
 async def get_or_create_ticket_for_whatsapp(
     phone: str,
     name: str,
@@ -131,7 +147,10 @@ async def save_ticket_message(
             {"_id": 0}
         )
         if existing:
-            logger.debug(f"Duplicate message ignored: {external_message_id}")
+            logger.info(
+                "WhatsApp duplicate ignored (external_message_id=%s, ticket=%s)",
+                external_message_id, existing.get("ticket_id"),
+            )
             return existing
     
     now = datetime.now(timezone.utc)
@@ -227,16 +246,18 @@ async def send_whatsapp_message(
 ) -> Optional[dict]:
     """
     Send a text message via WhatsApp Cloud API.
-    Returns the API response or None on failure.
+    Returns the API response or None on a transport/Meta error.
+    Raises WhatsAppNotConfiguredError when credentials are missing.
     """
-    if not WHATSAPP_ACCESS_TOKEN:
-        logger.error("WHATSAPP_ACCESS_TOKEN not configured")
-        return None
-    
-    phone_id = phone_number_id or WHATSAPP_PHONE_NUMBER_ID
+    access_token = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+    default_phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    if not access_token:
+        logger.error("WhatsApp send aborted: WHATSAPP_ACCESS_TOKEN not configured")
+        raise WhatsAppNotConfiguredError("WHATSAPP_ACCESS_TOKEN missing")
+    phone_id = phone_number_id or default_phone_id
     if not phone_id:
-        logger.error("WHATSAPP_PHONE_NUMBER_ID not configured")
-        return None
+        logger.error("WhatsApp send aborted: WHATSAPP_PHONE_NUMBER_ID not configured")
+        raise WhatsAppNotConfiguredError("WHATSAPP_PHONE_NUMBER_ID missing")
     
     url = f"{WHATSAPP_API_BASE}/{phone_id}/messages"
     
@@ -248,7 +269,7 @@ async def send_whatsapp_message(
     }
     
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
     
