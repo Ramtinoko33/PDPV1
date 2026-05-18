@@ -21,11 +21,11 @@ class TestAgentAssignment:
     def setup(self):
         """Setup test credentials and get auth tokens"""
         self.admin_email = "admin@pdpv.pt"
-        self.admin_password = "admin123"
+        self.admin_password = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
         self.supervisor_email = "supervisor@pdpv.pt"
-        self.supervisor_password = "super123"
+        self.supervisor_password = os.environ.get("TEST_SUPERVISOR_PASSWORD", "changeme")
         self.agent_email = "agente@pdpv.pt"
-        self.agent_password = "agente123"
+        self.agent_password = os.environ.get("TEST_AGENT_PASSWORD", "changeme")
         
         # Get admin token
         admin_resp = requests.post(

@@ -1112,7 +1112,7 @@ const IntakePage = () => {
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {notesRequest.review_notes?.length > 0 ? (
                   notesRequest.review_notes.map((note, idx) => (
-                    <div key={idx} className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                    <div key={`${note.created_at || ''}-${idx}`} className="p-3 bg-amber-50 rounded-lg border border-amber-100">
                       <p className="text-sm text-zinc-700">{note.note}</p>
                       <p className="text-xs text-zinc-500 mt-2">
                         {note.author_name} • {new Date(note.created_at).toLocaleDateString('pt-PT', {

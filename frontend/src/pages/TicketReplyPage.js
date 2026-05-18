@@ -278,7 +278,7 @@ export default function TicketReplyPage() {
               {files.length > 0 && (
                 <div className="mt-3 space-y-2" data-testid="reply-file-list">
                   {files.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-zinc-50 rounded border text-sm">
+                    <div key={`${file.name}-${file.size}-${file.lastModified || idx}`} className="flex items-center gap-2 p-2 bg-zinc-50 rounded border text-sm">
                       <FileText className="h-4 w-4 text-zinc-400 shrink-0" />
                       <span className="flex-1 truncate text-zinc-700">{file.name}</span>
                       <span className="text-xs text-zinc-400 shrink-0">{formatFileSize(file.size)}</span>

@@ -16,9 +16,9 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
 SUPERVISOR_EMAIL = "supervisor@pdpv.pt"
-SUPERVISOR_PASSWORD = "super123"
+SUPERVISOR_PASSWORD = os.environ.get("TEST_SUPERVISOR_PASSWORD", "changeme")
 
 
 @pytest.fixture(scope="module")

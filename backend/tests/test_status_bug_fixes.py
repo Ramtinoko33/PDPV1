@@ -10,7 +10,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 ADMIN_EMAIL = "admin@pdpv.pt"
 ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
 AGENT_EMAIL = "agente@pdpv.pt"
-AGENT_PASSWORD = "yHprFGvPUJ"
+AGENT_PASSWORD = os.environ.get("TEST_AGENT_PASSWORD", "changeme")
 
 @pytest.fixture(scope="module")
 def admin_token():

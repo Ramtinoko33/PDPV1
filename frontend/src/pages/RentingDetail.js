@@ -503,7 +503,7 @@ const RentingDetail = () => {
           ) : (
             <ol className="space-y-3" data-testid="history-list">
               {[...rec.history].reverse().map((h, i) => (
-                <li key={i} className="border-l-2 border-zinc-200 pl-3 py-1">
+                <li key={`${h.changed_at || ''}-${h.field || ''}-${i}`} className="border-l-2 border-zinc-200 pl-3 py-1">
                   <div className="text-xs text-zinc-500">
                     {new Date(h.changed_at).toLocaleString('pt-PT')} • <span className="font-medium text-zinc-700">{h.changed_by_name || h.changed_by || '—'}</span>
                   </div>

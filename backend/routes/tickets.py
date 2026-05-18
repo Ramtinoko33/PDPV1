@@ -33,8 +33,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 @router.post("", response_model=TicketResponse)
 async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
     from services.customer_service import find_or_create_customer_vehicle
-    # Import notification functions from server (they need websocket manager)
-    from server import notify_supervisors, create_notification
+    from core.notifications import notify_supervisors, create_notification
     
     user = current_user
     
@@ -296,7 +295,7 @@ async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_us
 
 @router.put("/{ticket_id}", response_model=TicketResponse)
 async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user: dict = Depends(get_current_user)):
-    from server import create_notification
+    from core.notifications import create_notification
     
     user = current_user
     

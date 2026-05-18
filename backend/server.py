@@ -26,6 +26,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 # Import modular components
 from db import db, client
+from core.websocket_manager import ConnectionManager, manager
 from schemas.user import UserRole, UserCreate, UserLogin, UserResponse, UserUpdate, DashboardConfigUpdate
 from schemas.ticket import (
     TicketChannel, TicketType, TicketStatus, TicketPriority,
@@ -86,46 +87,10 @@ VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'admin@pdpv.pt').strip
 VAPID_KEYS_VALID = False
 
 # WebSocket connections manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}  # user_id -> websocket
-        self.user_roles: Dict[str, str] = {}  # user_id -> role
-    
-    async def connect(self, websocket: WebSocket, user_id: str, role: str):
-        await websocket.accept()
-        self.active_connections[user_id] = websocket
-        self.user_roles[user_id] = role
-        logger.info(f"WebSocket connected: {user_id} ({role})")
-    
-    def disconnect(self, user_id: str):
-        if user_id in self.active_connections:
-            del self.active_connections[user_id]
-        if user_id in self.user_roles:
-            del self.user_roles[user_id]
-        logger.info(f"WebSocket disconnected: {user_id}")
-    
-    async def send_to_user(self, user_id: str, message: dict):
-        if user_id in self.active_connections:
-            try:
-                await self.active_connections[user_id].send_json(message)
-            except Exception as e:
-                logger.error(f"Error sending to {user_id}: {e}")
-    
-    async def send_to_role(self, role: str, message: dict):
-        for user_id, user_role in self.user_roles.items():
-            if user_role == role:
-                await self.send_to_user(user_id, message)
-    
-    async def send_to_supervisors(self, message: dict):
-        await self.send_to_role("SUPERVISOR", message)
-        await self.send_to_role("ADMIN", message)
-    
-    async def broadcast(self, message: dict, exclude_user: str = None):
-        for user_id in self.active_connections:
-            if user_id != exclude_user:
-                await self.send_to_user(user_id, message)
-
-manager = ConnectionManager()
+# `ConnectionManager` + `manager` are imported from core.websocket_manager (top of file).
+# Kept here for backwards-compatibility with any external code doing
+# `from server import manager` / `from server import ConnectionManager`.
+__all_legacy_ws_exports__ = (ConnectionManager, manager)  # noqa: F841 - intentional re-export marker
 
 # Create the main app
 app = FastAPI(title="PDPV Tickets API")
@@ -1431,45 +1396,10 @@ async def cleanup_invalid_push_subscriptions(current_user: dict = Depends(get_cu
 # Web push function imported from notification_service
 from services.notification_service import send_web_push_to_user
 
-# Helper function to create and send notification
-async def create_notification(user_id: str, title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
-    now = datetime.now(timezone.utc)
-    notification_id = str(uuid.uuid4())
-    
-    notification_doc = {
-        "id": notification_id,
-        "user_id": user_id,
-        "title": title,
-        "body": body,
-        "type": notification_type,
-        "ticket_id": ticket_id,
-        "ticket_number": ticket_number,
-        "created_at": now.isoformat(),
-        "read": False
-    }
-    await db.notifications.insert_one(notification_doc)
-    
-    # Send via WebSocket
-    await manager.send_to_user(user_id, {
-        "type": "notification",
-        "data": notification_doc
-    })
-    
-    # Send via Web Push (in background to not block)
-    url = f"/tickets/{ticket_id}" if ticket_id else "/"
-    asyncio.create_task(send_web_push_to_user(user_id, title, body, url))
-    
-    return notification_doc
-
-async def notify_supervisors(title: str, body: str, notification_type: str = "info", ticket_id: str = None, ticket_number: str = None):
-    # Get all supervisors and admins
-    supervisors = await db.users.find(
-        {"role": {"$in": [UserRole.SUPERVISOR.value, UserRole.ADMIN.value]}},
-        {"_id": 0, "id": 1}
-    ).to_list(100)
-    
-    for sup in supervisors:
-        await create_notification(sup["id"], title, body, notification_type, ticket_id, ticket_number)
+# Notification helpers (extracted to core/notifications.py to break circular import
+# server.py ↔ routes/tickets.py). Re-exported here for backward compatibility with
+# any consumer still doing `from server import create_notification`.
+from core.notifications import create_notification, notify_supervisors  # noqa: F401
 
 # ============== ADMIN SETTINGS ==============
 # Admin settings routes are in routes/admin.py

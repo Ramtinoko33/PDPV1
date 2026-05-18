@@ -115,7 +115,6 @@ async def process_incoming_message(message: dict, contacts: list, phone_number_i
     try:
         from_phone = message.get("from")
         message_id = message.get("id")
-        timestamp = message.get("timestamp")
         message_type = message.get("type", "unknown")
         
         # Get contact name if available

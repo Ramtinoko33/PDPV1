@@ -667,7 +667,7 @@ const TicketDetail = () => {
         const ctxRes = await axios.get(`${API_URL}/api/tickets/${id}/quote-context`, { headers: getAuthHeaders() });
         setQuoteContext(ctxRes.data.quote_context || 'unknown');
         setContextAutoDetected(ctxRes.data.auto_detected);
-      } catch { /* silent */ }
+      } catch (err) { console.warn('quote-context fetch failed:', err?.message || err); }
       
       // Set quote options or create default empty one
       if (optionsRes.data && optionsRes.data.length > 0) {
@@ -820,7 +820,7 @@ const TicketDetail = () => {
             headers: getAuthHeaders()
           });
           setOptionPreviews(prev => ({ ...prev, [index]: resp.data }));
-        } catch { /* silent */ }
+        } catch (err) { console.warn('normalize-preview failed:', err?.message || err); }
       }, 400);
     }
   };
@@ -882,7 +882,7 @@ const TicketDetail = () => {
         await axios.post(`${API_URL}/api/normalization-learning`, {
           original, suggested, final: finalText, action,
         }, { headers: getAuthHeaders() });
-      } catch { /* silent */ }
+      } catch (err) { console.warn('normalization-learning failed:', err?.message || err); }
     }
   };
 
@@ -924,7 +924,7 @@ const TicketDetail = () => {
           if (sugRes.data.should_suggest) {
             setContextSuggestion(sugRes.data);
           }
-        } catch { /* silent */ }
+        } catch (err) { console.warn('quote-suggestion failed:', err?.message || err); }
       }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Erro ao guardar opções');
@@ -943,7 +943,7 @@ const TicketDetail = () => {
         { quote_context: newContext },
         { headers: getAuthHeaders() }
       );
-    } catch { /* silent */ }
+    } catch (err) { console.warn('quote-context update failed:', err?.message || err); }
   };
 
   const handleSuggestionAccept = async () => {
@@ -961,7 +961,7 @@ const TicketDetail = () => {
         suggested_context: 'diagnostic',
       }, { headers: getAuthHeaders() });
       toast.success('Contexto atualizado para diagnóstico');
-    } catch { /* silent */ }
+    } catch (err) { console.warn('suggestion accept failed:', err?.message || err); }
   };
 
   const handleSuggestionIgnore = async () => {
@@ -975,7 +975,7 @@ const TicketDetail = () => {
         signals: contextSuggestion?.signals || [],
         suggested_context: 'diagnostic',
       }, { headers: getAuthHeaders() });
-    } catch { /* silent */ }
+    } catch (err) { console.warn('suggestion ignore failed:', err?.message || err); }
   };
 
 
@@ -1073,6 +1073,7 @@ Qualquer dúvida estamos disponíveis.`;
       fetchData(); // Refresh to show new note
     } catch (err) {
       // Silent fail - don't block WhatsApp opening
+      console.warn('WhatsApp note log failed:', err?.message || err);
     }
     
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
