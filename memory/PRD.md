@@ -34,6 +34,14 @@
 - [x] Renting Phase 3 — PDF + Copiar resumo (Feb 2026):
   - New endpoint `GET /api/renting/records/{id}/pdf` returns a technical PDF (ReportLab) with header navy+yellow, info table (Renting/Matrícula/Condutor/Telefone/KM/Serviço), tire technical table (medida/marca/modelo/índice/DOT/piso), 3 photos per wheel (flanco/DOT/piso), and matrícula+KM photos. Multi-page with footer pagination. Excludes internal fields: observations, history, proposed_tires, authorization_number.
   - Frontend: "📄 PDF" button (blob download with auth headers, opens in new tab) and "📋 Copiar resumo" button (client-side `buildSummaryText`, copies a clean WhatsApp/SMS-ready summary using `navigator.clipboard` with `document.execCommand` fallback).
+- [x] Renting Phase 4 — Notificações internas de receção (Feb 2026):
+  - New fields in `renting_records`: `seen_by_reception` (bool), `seen_by_reception_at`, `seen_by_reception_user_id`, `seen_by_reception_user_name`.
+  - New endpoint `GET /api/renting/pending-count` returns unseen `in_progress` count. Sidebar polls every 30s and shows red badge ao lado de "Renting".
+  - `GET /api/renting/records/{id}` now auto-marks the record as seen by current user on first detail open (idempotent; adds 1 history entry).
+  - Stats endpoint exposes `pending_unseen`.
+  - List filter `status=unseen` returns only `in_progress AND seen_by_reception != true`.
+  - Frontend `/renting`: dedicated red "Pendentes por tratar" card section at top with quick "Abrir" button per item; list rows highlighted in pink with "Novo" badge when unseen.
+  - "Por ler" added to status filter dropdown.
 - [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
 - [x] Client preview in quote creation (real-time debounced)
 - [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge

@@ -125,6 +125,14 @@ async def list_records(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/pending-count")
+async def get_pending_count(current_user: dict = Depends(get_current_user)):
+    """Return the count of in_progress records not yet seen by reception."""
+    _check_renting_access(current_user)
+    count = await service.count_pending_unseen()
+    return {"count": count}
+
+
 @router.get("/stats")
 async def get_stats(current_user: dict = Depends(get_current_user)):
     _check_renting_access(current_user)
@@ -137,6 +145,11 @@ async def get_record(record_id: str, current_user: dict = Depends(get_current_us
     rec = await service.get_record(record_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Registo não encontrado")
+    # Auto-mark as seen on detail open (idempotent)
+    if not rec.get("seen_by_reception"):
+        updated = await service.mark_seen_by_reception(record_id, actor=current_user)
+        if updated:
+            rec = updated
     return rec
 
 

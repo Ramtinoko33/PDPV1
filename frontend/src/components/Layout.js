@@ -35,6 +35,7 @@ const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingIntakeCount, setPendingIntakeCount] = useState(0);
   const [pendingAlertsCount, setPendingAlertsCount] = useState(0);
+  const [pendingRentingCount, setPendingRentingCount] = useState(0);
 
   // Fetch pending intake count for badge
   useEffect(() => {
@@ -76,6 +77,27 @@ const Layout = ({ children }) => {
 
     fetchAlertsCount();
     const interval = setInterval(fetchAlertsCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, getAuthHeaders]);
+
+  // Fetch pending Renting count for badge
+  useEffect(() => {
+    const fetchRentingCount = async () => {
+      if (!user) return;
+      const hasAccess = ['ADMIN', 'SUPERVISOR'].includes(user.role) || user.has_renting_access;
+      if (!hasAccess) return;
+      try {
+        const response = await axios.get(`${API_URL}/api/renting/pending-count`, {
+          headers: getAuthHeaders()
+        });
+        setPendingRentingCount(response.data.count || 0);
+      } catch (error) {
+        // Module might be disabled - silent
+      }
+    };
+
+    fetchRentingCount();
+    const interval = setInterval(fetchRentingCount, 30000);
     return () => clearInterval(interval);
   }, [user, getAuthHeaders]);
 
@@ -126,6 +148,7 @@ const Layout = ({ children }) => {
       label: 'Renting',
       icon: Car,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
+      badge: 'renting',
       requireRentingAccess: true
     },
     { 
@@ -235,7 +258,7 @@ const Layout = ({ children }) => {
               {filteredNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
-                const badgeCount = item.badge === 'intake' ? pendingIntakeCount : item.badge === 'alerts' ? pendingAlertsCount : 0;
+                const badgeCount = item.badge === 'intake' ? pendingIntakeCount : item.badge === 'alerts' ? pendingAlertsCount : item.badge === 'renting' ? pendingRentingCount : 0;
                 return (
                   <Link
                     key={item.path}

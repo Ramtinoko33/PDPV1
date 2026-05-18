@@ -489,6 +489,11 @@ async def _create_draft(chat_id: int, user_info: dict) -> str:
         # Reception desk fields
         "proposed_tires": None,
         "authorization_number": None,
+        # Reception "seen" tracking
+        "seen_by_reception": False,
+        "seen_by_reception_at": None,
+        "seen_by_reception_user_id": None,
+        "seen_by_reception_user_name": None,
         # Audit history
         "history": [],
         "created_at": now,
@@ -1475,7 +1480,10 @@ async def list_records(status: Optional[str] = None, renting_company: Optional[s
                        search: Optional[str] = None, subtype: Optional[str] = None,
                        page: int = 1, page_size: int = 50) -> Tuple[List[dict], int]:
     query = {}
-    if status:
+    if status == "unseen":
+        query["status"] = RentingStatus.IN_PROGRESS.value
+        query["seen_by_reception"] = {"$ne": True}
+    elif status:
         query["status"] = status
     if renting_company:
         query["renting_company"] = renting_company
@@ -1497,6 +1505,45 @@ async def list_records(status: Optional[str] = None, renting_company: Optional[s
 
 async def get_record(record_id: str) -> Optional[dict]:
     return await db.renting_records.find_one({"id": record_id}, {"_id": 0})
+
+
+async def mark_seen_by_reception(record_id: str, actor: dict) -> Optional[dict]:
+    """Idempotently mark a record as seen by reception. Adds a history entry only on first mark."""
+    current = await db.renting_records.find_one({"id": record_id}, {"_id": 0})
+    if not current:
+        return None
+    if current.get("seen_by_reception"):
+        return current
+    now = datetime.now(timezone.utc).isoformat()
+    actor_id = actor.get("id") or actor.get("user_id") or actor.get("email") or "unknown"
+    actor_name = actor.get("name") or actor.get("email") or "Utilizador"
+    set_doc = {
+        "seen_by_reception": True,
+        "seen_by_reception_at": now,
+        "seen_by_reception_user_id": str(actor_id),
+        "seen_by_reception_user_name": actor_name,
+        "updated_at": now,
+    }
+    history_entry = {
+        "field": "seen_by_reception",
+        "old_value": False,
+        "new_value": True,
+        "changed_at": now,
+        "changed_by": str(actor_id),
+        "changed_by_name": actor_name,
+    }
+    await db.renting_records.update_one(
+        {"id": record_id},
+        {"$set": set_doc, "$push": {"history": history_entry}},
+    )
+    return await db.renting_records.find_one({"id": record_id}, {"_id": 0})
+
+
+async def count_pending_unseen() -> int:
+    return await db.renting_records.count_documents({
+        "status": RentingStatus.IN_PROGRESS.value,
+        "seen_by_reception": {"$ne": True},
+    })
 
 
 async def update_record(record_id: str, updates: dict, actor: Optional[dict] = None) -> Optional[dict]:
@@ -1596,6 +1643,10 @@ async def get_stats() -> dict:
     stats["adblue"] = await db.renting_records.count_documents({"subtype": "adblue"})
     stats["puncture"] = await db.renting_records.count_documents({"subtype": "puncture"})
     stats["other"] = await db.renting_records.count_documents({"subtype": "other"})
+    stats["pending_unseen"] = await db.renting_records.count_documents({
+        "status": RentingStatus.IN_PROGRESS.value,
+        "seen_by_reception": {"$ne": True},
+    })
     return stats
 
 
