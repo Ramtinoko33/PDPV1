@@ -21,6 +21,7 @@ import AlertsPage from "./pages/AlertsPage";
 import RentingPage from "./pages/RentingPage";
 import RentingDetail from "./pages/RentingDetail";
 import NormalizationSettings from "./pages/NormalizationSettings";
+import AdminTelegramUsers from "./pages/AdminTelegramUsers";
 import Layout from "./components/Layout";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -155,6 +156,12 @@ function AppRoutes() {
       <Route path="/renting/:id" element={
         <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
           <RentingDetail />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/telegram-users" element={
+        <ProtectedRoute allowedRoles={['ADMIN']}>
+          <AdminTelegramUsers />
         </ProtectedRoute>
       } />
       

@@ -1,0 +1,66 @@
+{
+  "summary": "PDPV Bot Interno unification with /intake module — 15/15 new backend tests + 24/24 existing intake regression tests all PASS. Internal Telegram webhook correctly creates documents in intake_requests (NOT pre_tickets) for authorized users, blocks unauthorized ones, and properly stores ai_extracted, source_bot=PDPV_INTERNAL_BOT, reference PT*, created_by_name, telegram_user_id. Old webhooks (/api/telegram/webhook, /api/renting/webhook, /api/telegram-alerts/webhook) still respond 200. /intake UI shows 53 records with Bot Interno (indigo) and Bot Antigo (azul) badges. Convert dialog correctly pre-fills cliente/telefone/matrícula and description (with 'Resumo IA' line) from ai_extracted. /admin/telegram-users admin page renders the seeded user 999000111 'Test Operator' with bot info and Telegram Users sidebar entry visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global", "issues": ["WebSocket /ws/<jwt> connection fails repeatedly in browser console (warning + error). Not blocking but spammy; backend may not support WS or wrong URL/protocol."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_21_pdpv_internal.py",
+    "/app/backend/tests/test_intake_module.py",
+    "/app/test_reports/pytest/pytest_iter21.xml"
+  ],
+  "action_items": [
+    "Optional: investigate the WebSocket /ws/<jwt> 'closed before connection established' console errors observed throughout the dashboard.",
+    "Optional: verify whether the Edit dialog (pencil icon) exposes the IntakeAIDetails indigo panel — testing surfaced the Notes review dialog when clicking the first row action; manual visual check recommended (the AI data is correctly persisted and surfaces in the Convert dialog and row cells)."
+  ],
+  "critical_code_review_comments": [
+    "Internal-bot pre_ticket flow correctly writes to intake_requests via the intake service (no parallel pre_tickets writes observed; pre_tickets stats endpoint returns 0).",
+    "Webhook secret validation is enforced (wrong secret returns 401).",
+    "Unauthorized telegram user receives {status: ok} but DOES NOT create any intake document — confirmed before/after counts unchanged.",
+    "/api/intake/{id}/attachments/{att_id} proxy correctly requires JWT (401/403 without auth).",
+    "Admin endpoints /api/telegram/internal/authorized-users require ADMIN (POST/GET unauthenticated → 403)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_21_pdpv_internal.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 new + 24/24 regression = 39/39 passed)",
+    "frontend": "100% on verified flows (intake list with badges, convert pre-fill, admin telegram users, sidebar entry)"
+  },
+  "seed_data_creation": "Tests created temporary intakes (cleaned up) and one authorized-bot pre-ticket flow that produced a real intake_requests document with reference starting with PT*. No mock data introduced.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 21 unified PDPV Bot Interno pre-tickets into the existing /intake module. Webhook URL: POST /api/telegram/internal/webhook with header X-Telegram-Bot-Api-Secret-Token=pdpv_internal_webhook_2026. Authorized seeded user: telegram_user_id=999000111 (Test Operator). To verify a new bot flow end-to-end, send /start → callback menu:pre_ticket → text message → callback preticket:finalize, then GET /api/intake?source=telegram and look for source_bot=PDPV_INTERNAL_BOT items. Run regression: pytest /app/backend/tests/test_iteration_21_pdpv_internal.py /app/backend/tests/test_intake_module.py. Renting webhook lives at /api/renting/webhook (NOT /api/renting/telegram/webhook).",
+  "test_credentials": {
+    "admin": "admin@pdpv.pt / HCNMEnKMLq",
+    "telegram_internal_webhook_secret": "pdpv_internal_webhook_2026",
+    "authorized_telegram_user_id": 999000111
+  },
+  "verified_features": {
+    "intake_stats": {"status": "PASS", "endpoint": "GET /api/intake/stats"},
+    "intake_list_with_new_fields": {"status": "PASS", "fields_seen": ["ai_extracted", "source_bot", "reference", "telegram_user_id", "created_by_name"]},
+    "internal_webhook_secret_validation": {"status": "PASS"},
+    "internal_webhook_unauthorized_blocked": {"status": "PASS", "note": "Returns 200 but does not create intake"},
+    "internal_webhook_authorized_flow_creates_intake": {"status": "PASS", "note": "ai_extracted.confidence_score=0.9, reference PT2026..., source_bot=PDPV_INTERNAL_BOT"},
+    "pre_tickets_collection_empty": {"status": "PASS"},
+    "put_intake_ai_extracted_and_validated_by": {"status": "PASS"},
+    "convert_to_ticket": {"status": "PASS"},
+    "attachment_proxy_auth_required": {"status": "PASS"},
+    "admin_telegram_internal_endpoints": {"status": "PASS"},
+    "old_telegram_webhook_200": {"status": "PASS"},
+    "renting_webhook_200": {"status": "PASS", "note": "Path is /api/renting/webhook"},
+    "telegram_alerts_webhook": {"status": "PASS (not blocking)"},
+    "frontend_intake_page_loads": {"status": "PASS", "note": "53 records shown, >42 baseline"},
+    "frontend_origin_badges": {"status": "PASS", "note": "Bot Interno (indigo) and Bot Antigo (azul) both rendered"},
+    "frontend_convert_dialog_prefill": {"status": "PASS", "note": "Name/Phone/Plate/Description (incl. 'Resumo IA') prefilled from ai_extracted"},
+    "frontend_admin_telegram_users_page": {"status": "PASS", "note": "Shows seeded 999000111 Test Operator, AGENT, flows pre_ticket/renting/mech_alert, Ativo; bot info @pdpv_interno_bot"},
+    "frontend_sidebar_telegram_users_entry": {"status": "PASS"}
+  }
+}

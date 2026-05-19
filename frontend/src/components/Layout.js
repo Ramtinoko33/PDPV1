@@ -187,6 +187,12 @@ const Layout = ({ children }) => {
       icon: Send,
       roles: ['ADMIN']
     },
+    {
+      path: '/admin/telegram-users',
+      label: 'Telegram Users',
+      icon: Send,
+      roles: ['ADMIN']
+    },
     { 
       path: '/settings', 
       label: 'Configurações', 

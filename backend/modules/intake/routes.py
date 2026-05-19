@@ -220,6 +220,53 @@ async def delete_intake_request(
     return {"message": "Pedido eliminado"}
 
 
+@router.get("/{intake_id}/attachments/{attachment_id}")
+async def proxy_intake_attachment(
+    intake_id: str,
+    attachment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Stream-proxy a Telegram-hosted attachment through the backend.
+
+    The dashboard calls this endpoint with the user JWT; the bot token is never
+    exposed to the browser. Works only for attachments stored as structured
+    objects with `telegram_file_id` (new internal-bot pre-tickets); legacy
+    string URLs are not handled here.
+    """
+    from fastapi.responses import Response
+    intake = await db.intake_requests.find_one(
+        {"id": intake_id}, {"_id": 0, "attachments": 1}
+    )
+    if not intake:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+    atts = intake.get("attachments") or []
+    att = None
+    for a in atts:
+        if isinstance(a, dict) and a.get("id") == attachment_id:
+            att = a
+            break
+    if not att:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    file_id = att.get("telegram_file_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="Anexo sem file_id")
+    # Reuse the internal-bot Telegram client (only it has the right token configured)
+    from modules.telegram_internal.bot_api import download_file as _dl
+    data = await _dl(file_id)
+    if not data:
+        raise HTTPException(status_code=502, detail="Falha a obter ficheiro do Telegram")
+    media_type = att.get("mime_type") or {
+        "photo": "image/jpeg",
+        "voice": "audio/ogg",
+        "audio": "audio/mpeg",
+        "document": "application/octet-stream",
+    }.get(att.get("kind"), "application/octet-stream")
+    headers = {}
+    if att.get("file_name"):
+        headers["Content-Disposition"] = f'inline; filename="{att["file_name"]}"'
+    return Response(content=data, media_type=media_type, headers=headers)
+
+
 @router.post("/{intake_id}/notes", response_model=IntakeRequestResponse)
 async def add_review_note(
     intake_id: str,

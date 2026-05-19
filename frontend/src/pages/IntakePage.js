@@ -56,6 +56,280 @@ import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
+// ====== AI / open-flow detail sub-component ======
+// Renders conditionally only when the intake record carries the new fields:
+// ai_extracted, texts, audio_transcripts, image_hints, structured attachments.
+const IntakeAIDetails = ({ request, apiUrl, getAuthHeaders }) => {
+  const ai = request.ai_extracted || null;
+  const texts = request.texts || [];
+  const transcripts = request.audio_transcripts || [];
+  const hints = request.image_hints || [];
+  const attachments = request.attachments || [];
+  const structuredAtts = attachments.filter((a) => a && typeof a === 'object');
+  const legacyAtts = attachments.filter((a) => typeof a === 'string');
+
+  const hasAnything =
+    ai ||
+    texts.length > 0 ||
+    transcripts.length > 0 ||
+    hints.length > 0 ||
+    structuredAtts.length > 0;
+
+  if (!hasAnything) return null;
+
+  const confidence = Math.max(0, Math.min(1, Number(ai?.confidence_score) || 0));
+  const confidencePct = Math.round(confidence * 100);
+  const confidenceColor =
+    confidence >= 0.8 ? 'bg-green-500' : confidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500';
+  const missing = ai?.missing_fields || [];
+
+  return (
+    <div className="space-y-3 border-l-4 border-l-indigo-400 bg-indigo-50/40 p-3 rounded-md" data-testid="intake-ai-details">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {request.reference && (
+          <span className="font-mono px-2 py-0.5 rounded bg-white border text-zinc-700">
+            {request.reference}
+          </span>
+        )}
+        {request.source_bot && (
+          <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+            {request.source_bot}
+          </span>
+        )}
+        {request.created_by_name && (
+          <span className="text-zinc-600">
+            Criado por <strong>{request.created_by_name}</strong>
+            {request.telegram_user_id ? ` (TG #${request.telegram_user_id})` : ''}
+          </span>
+        )}
+      </div>
+
+      {ai && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-zinc-700">Confiança da IA</span>
+            <span className="text-xs font-mono text-zinc-700">{confidencePct}%</span>
+          </div>
+          <div className="h-2 bg-zinc-200 rounded overflow-hidden">
+            <div
+              className={`h-full ${confidenceColor} transition-all`}
+              style={{ width: `${confidencePct}%` }}
+              data-testid="intake-ai-confidence-bar"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {[
+              ['Cliente', ai.customer_name],
+              ['Telefone', ai.customer_phone],
+              ['Matrícula', ai.vehicle_plate],
+              ['Marca/Modelo', ai.vehicle_make_model],
+              ['Tipo de pedido', ai.request_type],
+              ['Urgência', ai.urgency],
+              ['Canal preferido', ai.preferred_contact_channel],
+            ].map(([label, val]) => (
+              <div key={label} className="bg-white rounded px-2 py-1 border border-indigo-100">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-400">{label}</div>
+                <div className="text-zinc-800 truncate">
+                  {val ? String(val) : <span className="text-zinc-400 italic">—</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {ai.description && (
+            <div className="bg-white rounded px-2 py-1 border border-indigo-100 text-sm">
+              <div className="text-[10px] uppercase tracking-wide text-zinc-400">
+                Resumo IA
+              </div>
+              <div className="text-zinc-800 whitespace-pre-wrap">{ai.description}</div>
+            </div>
+          )}
+          {ai.internal_notes && (
+            <div className="bg-white rounded px-2 py-1 border border-amber-200 text-sm">
+              <div className="text-[10px] uppercase tracking-wide text-amber-700">
+                Notas internas
+              </div>
+              <div className="text-zinc-800 whitespace-pre-wrap">{ai.internal_notes}</div>
+            </div>
+          )}
+          {missing.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              <span className="text-[11px] text-zinc-500">Em falta:</span>
+              {missing.map((m) => (
+                <span
+                  key={m}
+                  className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                  data-testid={`intake-missing-${m}`}
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {texts.length > 0 && (
+        <div className="bg-white rounded p-2 border border-zinc-200">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">
+            Mensagens originais ({texts.length})
+          </div>
+          <div className="space-y-1 text-sm">
+            {texts.map((t, i) => (
+              <div key={i} className="whitespace-pre-wrap text-zinc-700 border-l-2 border-zinc-200 pl-2">
+                {t}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {transcripts.length > 0 && (
+        <div className="bg-white rounded p-2 border border-zinc-200">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">
+            Áudios transcritos ({transcripts.length})
+          </div>
+          <div className="space-y-1 text-sm">
+            {transcripts.map((t, i) => (
+              <div key={i} className="text-zinc-700 italic border-l-2 border-blue-200 pl-2">
+                🎙️ {t}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hints.length > 0 && (
+        <div className="bg-white rounded p-2 border border-zinc-200">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">
+            Pistas das imagens / OCR ({hints.length})
+          </div>
+          <div className="space-y-1 text-sm">
+            {hints.map((h, i) => (
+              <div key={i} className="text-zinc-700 border-l-2 border-emerald-200 pl-2 whitespace-pre-wrap">
+                {h}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {structuredAtts.length > 0 && (
+        <div className="bg-white rounded p-2 border border-zinc-200">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-2">
+            Anexos ({structuredAtts.length})
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {structuredAtts.map((a) => {
+              const url = `${apiUrl}/api/intake/${request.id}/attachments/${a.id}`;
+              const headers = getAuthHeaders ? getAuthHeaders() : {};
+              const fetchWithAuth = async () => {
+                const res = await fetch(url, { headers });
+                if (!res.ok) throw new Error('Falha a carregar anexo');
+                const blob = await res.blob();
+                return URL.createObjectURL(blob);
+              };
+              return (
+                <AttachmentTile
+                  key={a.id}
+                  att={a}
+                  fetchWithAuth={fetchWithAuth}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {legacyAtts.length > 0 && (
+        <div className="text-xs text-zinc-500">
+          + {legacyAtts.length} anexo(s) em formato legado (URL)
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AttachmentTile = ({ att, fetchWithAuth }) => {
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const kind = att.kind || 'document';
+
+  const load = async () => {
+    if (blobUrl || loading) return;
+    setLoading(true);
+    try {
+      const u = await fetchWithAuth();
+      setBlobUrl(u);
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (kind === 'photo') load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
+  return (
+    <div className="border rounded p-1 bg-zinc-50 flex flex-col gap-1" data-testid={`intake-attachment-${att.id}`}>
+      <div className="text-[10px] uppercase text-zinc-500 flex items-center justify-between">
+        <span>{kind}</span>
+        {att.duration_sec ? <span>{att.duration_sec}s</span> : null}
+      </div>
+      {kind === 'photo' && (
+        <div className="aspect-square bg-zinc-100 rounded overflow-hidden flex items-center justify-center">
+          {blobUrl ? (
+            <img src={blobUrl} alt={att.filename || 'Anexo'} className="object-cover w-full h-full" />
+          ) : loading ? (
+            <RefreshCw className="h-4 w-4 animate-spin text-zinc-400" />
+          ) : (
+            <span className="text-xs text-red-500 p-1">{error || 'sem preview'}</span>
+          )}
+        </div>
+      )}
+      {(kind === 'voice' || kind === 'audio') && (
+        <div className="flex flex-col gap-1">
+          {blobUrl ? (
+            <audio controls src={blobUrl} className="w-full" />
+          ) : (
+            <Button size="sm" variant="outline" onClick={load} disabled={loading} className="text-xs">
+              {loading ? 'A carregar…' : '▶ Carregar áudio'}
+            </Button>
+          )}
+          {att.transcript && (
+            <div className="text-xs italic text-zinc-600 border-l-2 border-blue-200 pl-2">
+              {att.transcript}
+            </div>
+          )}
+        </div>
+      )}
+      {kind === 'document' && (
+        <Button size="sm" variant="outline" onClick={load} disabled={loading} className="text-xs">
+          {loading
+            ? 'A carregar…'
+            : blobUrl
+            ? (
+              <a href={blobUrl} target="_blank" rel="noopener noreferrer" download={att.filename || 'ficheiro'}>
+                ⬇ {att.filename || 'Descarregar'}
+              </a>
+            )
+            : `⬇ ${att.filename || 'Descarregar'}`}
+        </Button>
+      )}
+      {error && <span className="text-[10px] text-red-500">{error}</span>}
+    </div>
+  );
+};
+
 const IntakePage = () => {
   const { getAuthHeaders } = useAuth();
   const navigate = useNavigate();
@@ -236,7 +510,21 @@ const IntakePage = () => {
   };
 
   // Source badge
-  const getSourceBadge = (source) => {
+  const getSourceBadge = (source, sourceBot) => {
+    if (sourceBot === 'PDPV_INTERNAL_BOT') {
+      return (
+        <span className="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700 border border-indigo-200">
+          Bot Interno
+        </span>
+      );
+    }
+    if (sourceBot === 'PDPV_OFICINA_BOT' || (source === 'telegram' && !sourceBot)) {
+      return (
+        <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+          Bot Antigo
+        </span>
+      );
+    }
     const config = {
       telegram: { label: 'Telegram', className: 'bg-blue-100 text-blue-800' },
       whatsapp: { label: 'WhatsApp', className: 'bg-green-100 text-green-800' },
@@ -258,6 +546,7 @@ const IntakePage = () => {
     const config = {
       manual: { label: 'Manual', className: 'bg-zinc-100 text-zinc-600' },
       bot_telegram: { label: 'Bot TG', className: 'bg-blue-50 text-blue-600' },
+      telegram_internal_bot: { label: 'Bot Interno IA', className: 'bg-indigo-50 text-indigo-600' },
       bot_whatsapp: { label: 'Bot WA', className: 'bg-green-50 text-green-600' },
       api: { label: 'API', className: 'bg-violet-50 text-violet-600' },
       import: { label: 'Import', className: 'bg-amber-50 text-amber-600' }
@@ -315,8 +604,10 @@ const IntakePage = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingRequest.sender_name.trim() || !editingRequest.sender_contact.trim()) {
-      toast.error('Nome e contacto são obrigatórios');
+    // For internal-bot pre-tickets the customer name may legitimately be empty
+    // (AI did not identify it). Only block save when BOTH name and contact are empty.
+    if (!(editingRequest.sender_name?.trim() || editingRequest.sender_contact?.trim())) {
+      toast.error('Indica pelo menos nome ou contacto do cliente');
       return;
     }
 
@@ -394,14 +685,28 @@ const IntakePage = () => {
 
   // Convert handlers
   const handleConvert = (request) => {
+    const ai = request.ai_extracted || {};
+    const aiMakeModel = (ai.vehicle_make_model || '').trim();
+    // Prefer existing top-level field; fall back to AI extraction
     setConvertingRequest(request);
     setConvertData({
-      customer_name: request.sender_name,
-      customer_phone: request.sender_contact || '',  // Phone only, not telegram username
-      customer_email: request.sender_email || '',    // Pre-fill email from DB lookup
-      vehicle_plate: request.license_plate || '',
-      ticket_type: 'INFORMACAO',
-      description: request.raw_text,
+      customer_name: request.sender_name || ai.customer_name || '',
+      customer_phone: request.sender_contact || ai.customer_phone || '',
+      customer_email: request.sender_email || '',
+      vehicle_plate: request.license_plate || ai.vehicle_plate || '',
+      ticket_type: ai.request_type === 'tires'
+        ? 'ORCAMENTO_PNEUS'
+        : ai.request_type === 'service'
+        ? 'ORCAMENTO_MECANICA'
+        : ai.request_type === 'quote'
+        ? 'ORCAMENTO_PNEUS'
+        : 'INFORMACAO',
+      description: [
+        request.raw_text || '',
+        aiMakeModel ? `\nViatura: ${aiMakeModel}` : '',
+        ai.description && ai.description !== request.raw_text ? `\nResumo IA: ${ai.description}` : '',
+        ai.internal_notes ? `\nNotas internas IA: ${ai.internal_notes}` : '',
+      ].filter(Boolean).join(''),
       assigned_to: ''
     });
     setCustomerSearchResults([]);
@@ -409,8 +714,9 @@ const IntakePage = () => {
     setConvertDialog(true);
     
     // Auto-search by plate if available
-    if (request.license_plate) {
-      searchCustomerByField('plate', request.license_plate);
+    const plate = request.license_plate || ai.vehicle_plate;
+    if (plate) {
+      searchCustomerByField('plate', plate);
     }
   };
 
@@ -754,11 +1060,20 @@ const IntakePage = () => {
                     <TableRow key={request.id} data-testid={`intake-row-${request.id}`}>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          {getSourceBadge(request.source)}
+                          {getSourceBadge(request.source, request.source_bot)}
                           {getSourceTypeBadge(request.source_type)}
+                          {request.reference && (
+                            <span className="font-mono text-[10px] text-zinc-400">
+                              {request.reference}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium">{request.sender_name}</TableCell>
+                      <TableCell className="font-medium">
+                        {request.sender_name || (
+                          <span className="text-amber-600 italic text-xs">— por validar —</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-mono text-sm">{request.sender_contact || '-'}</span>
@@ -1017,18 +1332,21 @@ const IntakePage = () => {
           </DialogHeader>
           {editingRequest && (
             <div className="space-y-4">
+              {/* === New: AI / open-flow detail panel === */}
+              <IntakeAIDetails request={editingRequest} apiUrl={API_URL} getAuthHeaders={getAuthHeaders} />
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nome *</Label>
                   <Input
-                    value={editingRequest.sender_name}
+                    value={editingRequest.sender_name || ''}
                     onChange={(e) => setEditingRequest({...editingRequest, sender_name: e.target.value})}
                   />
                 </div>
                 <div>
                   <Label>Contacto *</Label>
                   <Input
-                    value={editingRequest.sender_contact}
+                    value={editingRequest.sender_contact || ''}
                     onChange={(e) => setEditingRequest({...editingRequest, sender_contact: e.target.value})}
                   />
                 </div>

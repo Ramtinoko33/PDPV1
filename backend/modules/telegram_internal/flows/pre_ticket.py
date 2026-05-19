@@ -265,41 +265,67 @@ async def _finalize(chat_id: int, telegram_user_id: int, user_auth: dict, state:
         await log_event(telegram_user_id, chat_id, "ai_error", FLOW, STEP_FINALIZING,
                         success=False, error=str(e))
 
-    now = datetime.now(timezone.utc).isoformat()
-    pre_ticket_id = str(uuid.uuid4())
     reference = _build_reference()
 
-    doc = {
-        "id": pre_ticket_id,
-        "reference": reference,
-        "source": "TELEGRAM_INTERNAL_BOT",
-        "status": "NOVO",
-        "created_by_telegram_user_id": telegram_user_id,
-        "created_by_telegram_chat_id": chat_id,
-        "created_by_name": user_auth.get("name"),
-        "raw_text": raw_text,
-        "texts": texts,
-        "audio_transcripts": transcripts,
-        "attachments": attachments,
-        "image_hints": image_hints,
-        "ai_extracted": extracted,
-        "validated_by": None,
-        "converted_to_ticket_id": None,
-        "created_at": now,
-        "updated_at": now,
-    }
+    # Normalize attachments into a stable structured shape that the dashboard
+    # frontend can render directly. The proxy endpoint uses `telegram_file_id`.
+    normalized_attachments = []
+    for a in attachments or []:
+        if not isinstance(a, dict):
+            continue
+        normalized_attachments.append({
+            "id": a.get("id") or str(uuid.uuid4()),
+            "kind": a.get("kind") or "document",
+            "telegram_file_id": a.get("telegram_file_id"),
+            "url": None,  # served via /api/intake/{id}/attachments/{aid} proxy
+            "filename": a.get("file_name") or a.get("filename"),
+            "mime_type": a.get("mime_type"),
+            "size": a.get("size_bytes") or a.get("size"),
+            "duration_sec": a.get("duration_sec"),
+            "transcript": a.get("transcript"),
+            "created_at": a.get("received_at") or datetime.now(timezone.utc).isoformat(),
+        })
 
+    # === Map open-flow payload → intake_requests (unified module) ===
+    # `sender_*` represents the CUSTOMER (extracted by AI). `created_by_name`
+    # represents the INTERNAL EMPLOYEE that submitted via the Telegram bot.
     try:
-        await db.pre_tickets.insert_one(doc)
+        from modules.intake.service import create_intake_request as create_intake
+        from modules.intake.models import IntakeSourceType
+
+        ai_customer_name = (extracted.get("customer_name") or "").strip() if extracted else ""
+        ai_customer_phone = (extracted.get("customer_phone") or "").strip() if extracted else ""
+
+        intake_doc = await create_intake(
+            source="telegram",
+            source_type=IntakeSourceType.TELEGRAM_INTERNAL_BOT,
+            sender_name=ai_customer_name,           # may be "" → frontend shows "—" + missing_fields
+            sender_contact=ai_customer_phone,       # may be ""
+            raw_text=raw_text,
+            attachments=normalized_attachments,
+            source_bot="PDPV_INTERNAL_BOT",
+            origin_channel="TELEGRAM_INTERNAL_BOT",
+            reference=reference,
+            created_by_name=user_auth.get("name"),
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=chat_id,
+            texts=texts,
+            audio_transcripts=transcripts,
+            image_hints=image_hints,
+            ai_extracted=extracted,
+        )
+        intake_id = intake_doc["id"]
     except Exception as e:
         await log_event(telegram_user_id, chat_id, "create_error", FLOW, STEP_FINALIZING,
                         success=False, error=str(e))
+        logger.error("intake create failed: %s", e, exc_info=True)
         await send_message(chat_id, "❌ Erro ao criar pré-ticket. Tenta novamente.")
         return
 
     await state_mgr.reset_state(telegram_user_id)
     await log_event(telegram_user_id, chat_id, "preticket_created", FLOW, STEP_FINALIZING,
-                    success=True, extra={"reference": reference, "id": pre_ticket_id})
+                    success=True, extra={"reference": reference, "id": intake_id,
+                                          "collection": "intake_requests"})
 
     low_confidence = (extracted.get("confidence_score") or 0) < 0.5
     missing = extracted.get("missing_fields") or []
@@ -322,6 +348,6 @@ async def _finalize(chat_id: int, telegram_user_id: int, user_auth: dict, state:
 
     await send_message(
         chat_id, text,
-        reply_markup=created_record_keyboard("pre_ticket", f"/pre-tickets/{pre_ticket_id}"),
+        reply_markup=created_record_keyboard("pre_ticket", f"/intake?focus={intake_id}"),
     )
     await send_message(chat_id, "Pronto para outro pedido?", reply_markup=main_menu_markup(user_auth))
