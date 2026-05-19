@@ -58,7 +58,14 @@ const Dashboard = () => {
 
   const fetchData = async () => {
     try {
-      const ticketsUrl = `${API_URL}/api/tickets?limit=100`;
+      // When "only mine" preference is enabled for non-agent roles, ask the API
+      // to filter server-side by assigned_to. Otherwise the client-side filter
+      // operates on a globally-truncated list (limit=100 newest tickets) and
+      // misses older tickets assigned to this user — including overdue ones.
+      const onlyMineForApi = user?.dashboard_only_mine && user?.role !== 'AGENT' && user?.id;
+      const ticketsUrl = onlyMineForApi
+        ? `${API_URL}/api/tickets?limit=100&assigned_to=${encodeURIComponent(user.id)}`
+        : `${API_URL}/api/tickets?limit=100`;
       const [statsRes, ticketsRes, remindersRes] = await Promise.all([
         axios.get(`${API_URL}/api/dashboard/stats`, { headers: getAuthHeaders() }),
         axios.get(ticketsUrl, { headers: getAuthHeaders() }),
@@ -87,12 +94,16 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    // Wait for user (with dashboard prefs) to be hydrated so we can choose
+    // the correct tickets endpoint (server-side filter when only_mine).
+    if (!user) return;
     fetchData();
     // Fetch available statuses for config modal
     axios.get(`${API_URL}/api/ticket-statuses`, { headers: getAuthHeaders() })
       .then(r => setAllStatuses(r.data || []))
       .catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.dashboard_only_mine, user?.role]);
 
   // Initialize prefs from user on load
   useEffect(() => {
