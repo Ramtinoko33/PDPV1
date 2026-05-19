@@ -71,6 +71,10 @@ def load_module_router(module_name: str) -> Optional[APIRouter]:
             from modules.renting import router
             logger.info(f"[MODULES] Loaded module: {module_name}")
             return router
+        elif module_name == "telegram_internal":
+            from modules.telegram_internal import router
+            logger.info(f"[MODULES] Loaded module: {module_name}")
+            return router
         else:
             logger.warning(f"[MODULES] Unknown module: {module_name}")
             return None

@@ -3,5 +3,6 @@
   "telegram": true,
   "whatsapp": true,
   "telegram_alerts": true,
-  "renting": true
+  "renting": true,
+  "telegram_internal": true
 }
