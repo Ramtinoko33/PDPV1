@@ -9,6 +9,7 @@
 - Notifications: Telegram Bot + Web Push (VAPID) + Resend
 
 ## Completed Features
+- [x] **Pré-tickets unification (Feb 2026):** PDPV Bot Interno (`@PDPV_INTERNAL_BOT`, TELEGRAM_INTERNAL_BOT_TOKEN) deixou de criar em `pre_tickets`; passa a gravar em **`intake_requests`** (módulo `/intake` existente). `source=telegram, source_type=telegram_internal_bot, source_bot=PDPV_INTERNAL_BOT, origin_channel=TELEGRAM_INTERNAL_BOT`. `sender_name` = cliente (extraído pela IA); `created_by_name` = funcionário Telegram. Coleção `pre_tickets` mantida intocada (0 docs) por enquanto. `/intake` enriquecido com painel IA (confidence_score, missing_fields, mensagens originais, transcrições, image_hints), proxy de anexos `GET /api/intake/{id}/attachments/{aid}` (descarrega via Telegram CDN com bot token), badges discriminadoras (Bot Interno indigo / Bot Antigo azul). Convert dialog pré-preenche a partir de `ai_extracted`. Conversão para ticket continua 100% manual via `/convert_to_ticket`. Página admin `/admin/telegram-users` para gerir `telegram_internal_authorized_users` (ADMIN-only).
 - [x] Ticket CRUD, SLA engine, Quote management, PDF generation
 - [x] Public quote links (accept/reject), Acceptance questionnaire
 - [x] Telegram Alerts module (bot, Vision, convert, notifications)

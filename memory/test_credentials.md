@@ -21,3 +21,12 @@
   In production this MUST be replaced by a different strong random secret.
 - Authorized test users live in collection `telegram_internal_authorized_users`
   (admin endpoints under `/api/telegram/internal/authorized-users`).
+
+### Seeded test operator for the internal bot
+- `telegram_user_id=999000111`, `name="Test Operator"`, `role=AGENT`,
+  `allowed_flows=[pre_ticket, renting, mech_alert]`, `active=true`.
+- Used by `/app/backend/tests/test_intake_internal_bot.py` and webhook e2e shell tests.
+
+### Where pré-tickets land
+- Internal bot finalize → inserts into **`intake_requests`** (NOT `pre_tickets`)
+  with `source_bot=PDPV_INTERNAL_BOT`. Visible in `/intake` UI.
