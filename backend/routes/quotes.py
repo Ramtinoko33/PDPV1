@@ -95,6 +95,7 @@ ACCEPTANCE_INTENT_CODES = {
 
 class QuoteResponseData(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    ticket_id: str
     ticket_number: str
     customer_name: str
     vehicle_plate: Optional[str] = None
@@ -368,6 +369,7 @@ async def get_public_quote(token: str):
         ))
     
     return QuoteResponseData(
+        ticket_id=ticket["id"],
         ticket_number=ticket["ticket_number"],
         customer_name=ticket["customer_name"],
         vehicle_plate=ticket.get("vehicle_plate"),
