@@ -26,16 +26,14 @@ def main_menu_markup(user_auth: dict) -> dict:
 
 
 WELCOME_TEMPLATE = (
-    "👋 Olá <b>{name}</b>!\n\n"
-    "Sou o <b>PDPV Bot Interno</b>. Escolhe uma opção abaixo:\n\n"
-    "<i>Lembrete:</i> usa este bot apenas para <b>criar</b> pedidos rapidamente. "
-    "Para consultar, filtrar e tratar pedidos abre a dashboard."
+    "👋 Olá. O que queres fazer?\n\n"
+    "<i>Telegram serve para criar/capturar informação rapidamente. "
+    "Para gerir, validar e concluir pedidos abre a dashboard.</i>"
 )
 
 
 async def send_main_menu(chat_id: int, user_auth: dict) -> None:
-    text = WELCOME_TEMPLATE.format(name=user_auth.get("name") or "equipa PDPV")
-    await send_message(chat_id, text, reply_markup=main_menu_markup(user_auth))
+    await send_message(chat_id, WELCOME_TEMPLATE, reply_markup=main_menu_markup(user_auth))
 
 
 CONFLICT_MARKUP = inline_keyboard(
@@ -60,10 +58,9 @@ async def send_active_flow_conflict(chat_id: int, current_flow: str, current_ste
 
 
 async def cancel_flow(chat_id: int, telegram_user_id: int, user_auth: dict) -> None:
-    had = await state_mgr.has_active_flow(telegram_user_id)
     await state_mgr.reset_state(telegram_user_id)
-    msg = "🚫 Fluxo cancelado." if had else "ℹ️ Não tinhas nenhum fluxo ativo."
-    await send_message(chat_id, msg, reply_markup=main_menu_markup(user_auth))
+    await send_message(chat_id, "❌ Processo cancelado.")
+    await send_main_menu(chat_id, user_auth)
 
 
 def created_record_keyboard(record_type: str, dashboard_path: str) -> dict:

@@ -39,15 +39,21 @@ async def telegram_webhook(
     skip the check (development convenience) but log a warning.
     """
     expected_secret = os.environ.get("TELEGRAM_INTERNAL_WEBHOOK_SECRET", "")
-    if expected_secret:
-        if x_telegram_bot_api_secret_token != expected_secret:
-            logger.warning("Internal bot webhook rejected: bad/missing secret token")
-            raise HTTPException(status_code=403, detail="Invalid webhook secret")
-    else:
+    in_production = (os.environ.get("ENVIRONMENT", "development").strip().lower()
+                     in ("prod", "production"))
+    if not expected_secret:
+        if in_production:
+            logger.error(
+                "Internal bot webhook in production but TELEGRAM_INTERNAL_WEBHOOK_SECRET unset; rejecting"
+            )
+            raise HTTPException(status_code=503, detail="Bot not configured")
         logger.warning(
             "Internal bot webhook: TELEGRAM_INTERNAL_WEBHOOK_SECRET unset — accepting "
             "request without secret validation (dev mode)"
         )
+    elif x_telegram_bot_api_secret_token != expected_secret:
+        logger.warning("Internal bot webhook rejected: bad/missing secret token")
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     try:
         update = await request.json()
@@ -142,6 +148,116 @@ async def configure_webhook(body: SetWebhookIn, current_user: dict = Depends(get
     return res
 
 
+# ============== PRE-TICKETS DASHBOARD ENDPOINTS ==============
+
+@router.get("/pre-tickets/stats")
+async def pre_tickets_stats(current_user: dict = Depends(get_current_user)):
+    """Counts by status for the dashboard pre-tickets section."""
+    from db import db as _db
+    pipeline = [{"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+    rows = await _db.pre_tickets.aggregate(pipeline).to_list(20)
+    stats = {"NOVO": 0, "EM_VALIDACAO": 0, "CONVERTIDO": 0, "DESCARTADO": 0, "total": 0}
+    for r in rows:
+        s = r.get("_id") or "NOVO"
+        if s in stats:
+            stats[s] = r["n"]
+        stats["total"] += r["n"]
+    return stats
+
+
+@router.get("/pre-tickets")
+async def list_pre_tickets(
+    status: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 30,
+    current_user: dict = Depends(get_current_user),
+):
+    from db import db as _db
+    q = {}
+    if status:
+        q["status"] = status
+    cursor = _db.pre_tickets.find(q, {"_id": 0}).sort("created_at", -1)
+    total = await _db.pre_tickets.count_documents(q)
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    items = await cursor.skip((page - 1) * page_size).limit(page_size).to_list(page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/pre-tickets/{pre_ticket_id}")
+async def get_pre_ticket(pre_ticket_id: str, current_user: dict = Depends(get_current_user)):
+    from db import db as _db
+    doc = await _db.pre_tickets.find_one({"id": pre_ticket_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pré-ticket não encontrado")
+    return doc
+
+
+class PreTicketUpdate(BaseModel):
+    ai_extracted: Optional[dict] = None
+    status: Optional[str] = None
+    validated_by: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.put("/pre-tickets/{pre_ticket_id}")
+async def update_pre_ticket(
+    pre_ticket_id: str,
+    body: PreTicketUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    from db import db as _db
+    from datetime import datetime, timezone
+    updates = body.dict(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Sem alterações")
+    valid_status = {"NOVO", "EM_VALIDACAO", "CONVERTIDO", "DESCARTADO"}
+    if "status" in updates and updates["status"] not in valid_status:
+        raise HTTPException(status_code=400, detail="Estado inválido")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    r = await _db.pre_tickets.update_one({"id": pre_ticket_id}, {"$set": updates})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pré-ticket não encontrado")
+    return await _db.pre_tickets.find_one({"id": pre_ticket_id}, {"_id": 0})
+
+
+@router.get("/pre-tickets/{pre_ticket_id}/attachments/{attachment_id}")
+async def proxy_pre_ticket_attachment(
+    pre_ticket_id: str,
+    attachment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Stream-proxy an attachment from Telegram CDN through the backend.
+
+    The dashboard calls this endpoint with JWT; it never exposes the bot token.
+    """
+    from db import db as _db
+    from fastapi.responses import Response
+    from .bot_api import download_file as _dl
+    doc = await _db.pre_tickets.find_one({"id": pre_ticket_id}, {"_id": 0, "attachments": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pré-ticket não encontrado")
+    att = next((a for a in (doc.get("attachments") or []) if a.get("id") == attachment_id), None)
+    if not att:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    file_id = att.get("telegram_file_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="Anexo sem file_id")
+    data = await _dl(file_id)
+    if not data:
+        raise HTTPException(status_code=502, detail="Falha a obter ficheiro do Telegram")
+    media_type = att.get("mime_type") or {
+        "photo": "image/jpeg",
+        "voice": "audio/ogg",
+        "audio": "audio/mpeg",
+        "document": "application/octet-stream",
+    }.get(att.get("kind"), "application/octet-stream")
+    headers = {}
+    if att.get("file_name"):
+        headers["Content-Disposition"] = f'inline; filename="{att["file_name"]}"'
+    return Response(content=data, media_type=media_type, headers=headers)
+
+
 # ============== DISPATCH ==============
 
 def _extract_user_id(update: dict) -> Optional[int]:
@@ -200,16 +316,40 @@ async def _handle_message(message: dict, user_auth: dict) -> None:
             await log_event(user_id, chat_id, "command", current_step=cmd, success=True)
             return
 
-    # Forward to active flow if any
+    # Detect expired flow: a state existed but was just auto-cleared by get_state()
+    raw_state = await state_mgr.db_state_raw(user_id) if hasattr(state_mgr, "db_state_raw") else None
     state = await state_mgr.get_state(user_id)
+    expired = raw_state and not state  # had state, now None → was expired
+
+    if expired:
+        await send_message(chat_id, "⏰ Este processo expirou. Vamos começar novamente.")
+        await menu_mgr.send_main_menu(chat_id, user_auth)
+        await log_event(user_id, chat_id, "timeout", success=True)
+        return
+
+    # Forward to active flow if any
     if state and state.get("active_flow"):
-        flow_mod = FLOW_REGISTRY.get(state["active_flow"])
-        if flow_mod:
-            await flow_mod.handle_message(chat_id, user_id, text, photo_file_id, state)
-            await log_event(user_id, chat_id, "message",
-                            active_flow=state.get("active_flow"),
-                            current_step=state.get("current_step"), success=True)
+        flow_key = state["active_flow"]
+        flow_mod = FLOW_REGISTRY.get(flow_key)
+        if not flow_mod:
             return
+
+        # Try the attachment-raw handler first (voice/audio/document) when the flow
+        # supports it (currently pre_ticket only).
+        consumed = False
+        if hasattr(flow_mod, "handle_attachment_raw"):
+            try:
+                consumed = await flow_mod.handle_attachment_raw(chat_id, user_id, message, state)
+            except Exception as e:
+                logger.warning("attachment_raw handler failed: %s", e)
+                consumed = False
+        if consumed:
+            return
+        await flow_mod.handle_message(chat_id, user_id, text, photo_file_id, state)
+        await log_event(user_id, chat_id, "message",
+                        active_flow=state.get("active_flow"),
+                        current_step=state.get("current_step"), success=True)
+        return
 
     # No active flow: just show menu
     await menu_mgr.send_main_menu(chat_id, user_auth)

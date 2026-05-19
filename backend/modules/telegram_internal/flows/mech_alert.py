@@ -22,15 +22,12 @@ async def start(chat_id: int, telegram_user_id: int, user_auth: dict) -> None:
     await send_message(
         chat_id,
         (
-            "🔧 <b>Alerta Mecânica</b>\n\n"
-            "O fluxo completo de alertas (foto do GENES + análise IA + anexos extra "
-            "+ comentário texto/áudio com transcrição + escolha de rececionista) "
-            "está disponível no bot dedicado.\n\n"
-            "Toca no botão para o abrir e enviar <code>/start</code>:"
+            "🔧 Os alertas de mecânica continuam temporariamente no bot antigo.\n\n"
+            "Carrega no botão abaixo para abrir."
         ),
         reply_markup=inline_keyboard(
             [
-                [{"text": "➡️ Abrir @pdpv_alerts_bot", "url": ALERTS_BOT_URL}],
+                [{"text": "Abrir Bot Alertas Mecânica", "url": ALERTS_BOT_URL}],
                 [{"text": "🔙 Voltar ao menu", "callback_data": "menu:back"}],
             ]
         ),

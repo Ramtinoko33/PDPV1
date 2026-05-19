@@ -101,3 +101,28 @@ async def set_webhook(url: str, secret_token: Optional[str] = None) -> Optional[
 
 async def get_me() -> Optional[dict]:
     return await _post("getMe", {})
+
+
+async def download_file(file_id: str) -> Optional[bytes]:
+    """Download a file (photo/voice/document) using the internal bot's token.
+
+    Returns bytes or None on failure. Never raises.
+    """
+    token = _token()
+    if not token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            meta = await client.get(
+                f"{API_BASE}/bot{token}/getFile", params={"file_id": file_id}
+            )
+            meta.raise_for_status()
+            file_path = ((meta.json() or {}).get("result") or {}).get("file_path")
+            if not file_path:
+                return None
+            r = await client.get(f"{API_BASE}/file/bot{token}/{file_path}")
+            r.raise_for_status()
+            return r.content
+    except Exception as e:
+        logger.warning("download_file %s failed: %s", file_id, e)
+        return None

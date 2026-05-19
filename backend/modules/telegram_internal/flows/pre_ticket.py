@@ -1,264 +1,327 @@
-"""Pré-ticket flow — creates a ticket in the existing `tickets` collection
-(via the normal flow) with channel='TELEGRAM_INTERNAL_BOT'.
+"""Pré-ticket — open free-form flow.
 
-State steps:
-  customer_name -> customer_phone -> plate -> request_type -> description
-  -> attachments_question -> attachments_collect -> summary -> done
+User clicks 📋 → bot says "Envia tudo o que tiveres" and accumulates:
+- text → texts[]
+- photo → attachments[] (downloaded immediately + saved to storage)
+- document → attachments[]
+- voice/audio → attachments[] + audio_transcripts[]
+
+When user clicks ✅ Criar pré-ticket:
+1. Concatenate texts + transcripts → raw_text
+2. Run IA extraction (extract_pre_ticket_fields)
+3. Optionally analyze first image for OCR hints
+4. Insert into `pre_tickets` collection (NEVER `tickets`)
+5. Reset state, send summary + dashboard link
+
+ABSOLUTE RULES:
+- Never writes to `tickets`
+- Never auto-converts
+- The dashboard is responsible for validation + conversion
 """
-import re
+import os
 import uuid
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from db import db
-from ..bot_api import send_message, inline_keyboard
+from ..bot_api import send_message, inline_keyboard, download_file
 from .. import state as state_mgr
 from ..menu import created_record_keyboard, main_menu_markup
 from ..logs import log_event
+from .. import ai as ai_mod
+
+logger = logging.getLogger(__name__)
 
 FLOW = "pre_ticket"
+STEP_COLLECTING = "collecting"
+STEP_FINALIZING = "finalizing"
 
-REQUEST_TYPES = [
-    ("tires", "🛞 Pneus"),
-    ("service", "🔧 Serviço"),
-    ("info", "ℹ️ Informação"),
-    ("quote", "📝 Orçamento"),
-    ("other", "📦 Outro"),
-]
+INSTRUCTIONS = (
+    "📋 <b>Novo pré-ticket</b>\n\n"
+    "Envia tudo o que tiveres sobre o pedido:\n"
+    "- texto\n"
+    "- áudio (voice)\n"
+    "- fotos\n"
+    "- documentos\n\n"
+    "Podes enviar várias mensagens.\n"
+    "Quando terminares, carrega em <b>✅ Criar pré-ticket</b>."
+)
 
-PLATE_RE = re.compile(r"^[A-Z0-9]{2}-?[A-Z0-9]{2}-?[A-Z0-9]{2}$", re.IGNORECASE)
+ACTION_MARKUP = inline_keyboard([
+    [{"text": "✅ Criar pré-ticket", "callback_data": "preticket:finalize"}],
+    [{"text": "❌ Cancelar", "callback_data": "menu:cancel"}],
+])
+
+
+def _empty_payload(user_auth: dict) -> dict:
+    return {
+        "_created_by": user_auth.get("name"),
+        "texts": [],
+        "attachments": [],
+        "audio_transcripts": [],
+        "image_hints": [],
+    }
 
 
 async def start(chat_id: int, telegram_user_id: int, user_auth: dict) -> None:
     await state_mgr.start_flow(
-        telegram_user_id,
-        chat_id,
-        flow=FLOW,
-        initial_step="customer_name",
-        initial_payload={"_created_by": user_auth.get("name"),
-                         "_attachments": []},
+        telegram_user_id, chat_id,
+        flow=FLOW, initial_step=STEP_COLLECTING,
+        initial_payload=_empty_payload(user_auth),
     )
-    await send_message(
-        chat_id,
-        "📋 <b>Novo Pré-ticket</b>\n\n"
-        "1️⃣ Qual o <b>nome do cliente</b>?\n"
-        "<i>(escreve /cancel para sair)</i>",
-    )
+    await send_message(chat_id, INSTRUCTIONS, reply_markup=ACTION_MARKUP)
+    await log_event(telegram_user_id, chat_id, "flow_start", FLOW, STEP_COLLECTING, success=True)
 
 
 async def handle_message(chat_id: int, telegram_user_id: int, text: Optional[str],
                          photo_file_id: Optional[str], state: dict) -> None:
-    step = state.get("current_step")
     payload = state.get("temporary_payload") or {}
+    step = state.get("current_step")
 
-    if step == "customer_name":
-        if not text or len(text.strip()) < 2:
-            await send_message(chat_id, "⚠️ Nome inválido. Indica o nome completo do cliente.")
-            return
-        await state_mgr.update_state(telegram_user_id, current_step="customer_phone",
-                                     payload_merge={"customer_name": text.strip()})
-        await send_message(chat_id, "2️⃣ <b>Contacto telefónico</b> do cliente?")
+    # We accept anything during STEP_COLLECTING; during STEP_FINALIZING we ignore
+    if step == STEP_FINALIZING:
+        await send_message(chat_id, "⏳ A processar o pré-ticket. Aguarda um momento…")
         return
 
-    if step == "customer_phone":
-        digits = re.sub(r"\D+", "", text or "")
-        if len(digits) < 9:
-            await send_message(chat_id, "⚠️ Contacto inválido. Indica pelo menos 9 dígitos.")
-            return
-        await state_mgr.update_state(telegram_user_id, current_step="plate",
-                                     payload_merge={"customer_phone": digits})
-        await send_message(chat_id, "3️⃣ <b>Matrícula</b> da viatura? <i>(formato XX-XX-XX)</i>")
-        return
-
-    if step == "plate":
-        plate = (text or "").upper().strip().replace(" ", "")
-        if not PLATE_RE.match(plate):
-            await send_message(chat_id, "⚠️ Matrícula inválida. Exemplo: <code>AB-12-CD</code>")
-            return
-        # normalize with dashes
-        clean = plate.replace("-", "")
-        plate = f"{clean[0:2]}-{clean[2:4]}-{clean[4:6]}"
-        await state_mgr.update_state(telegram_user_id, current_step="request_type",
-                                     payload_merge={"plate": plate})
-        markup = inline_keyboard(
-            [[{"text": label, "callback_data": f"preticket:type:{key}"}]
-             for key, label in REQUEST_TYPES]
-        )
-        await send_message(chat_id, "4️⃣ Qual o <b>tipo de pedido</b>?", reply_markup=markup)
-        return
-
-    if step == "description":
-        if not text or len(text.strip()) < 3:
-            await send_message(chat_id, "⚠️ Descrição muito curta. Diz-me um pouco mais.")
-            return
-        await state_mgr.update_state(telegram_user_id, current_step="attachments_question",
-                                     payload_merge={"description": text.strip()})
-        markup = inline_keyboard(
-            [
-                [{"text": "📎 Sim, adicionar anexos", "callback_data": "preticket:att:yes"}],
-                [{"text": "⏭ Continuar sem anexos", "callback_data": "preticket:att:no"}],
-            ]
-        )
-        await send_message(chat_id, "6️⃣ Queres <b>anexar fotos</b>?", reply_markup=markup)
-        return
-
-    if step == "attachments_collect":
-        # Photos arrive on the photo branch; here we treat text == "pronto" or /done
-        if text and text.strip().lower() in ("/done", "pronto", "ok", "fim"):
-            await _show_summary(chat_id, telegram_user_id, state)
-            return
-        if photo_file_id:
-            atts = list(payload.get("_attachments") or [])
-            atts.append({"telegram_file_id": photo_file_id, "added_at": datetime.now(timezone.utc).isoformat()})
-            await state_mgr.update_state(telegram_user_id, payload_merge={"_attachments": atts})
-            await send_message(
-                chat_id,
-                f"📎 Foto registada ({len(atts)} no total). Envia mais ou escreve <b>pronto</b> para terminar.",
-            )
-            return
-        await send_message(chat_id, "⚠️ Envia uma foto ou escreve <b>pronto</b> para terminar.")
-        return
-
-    if step == "summary_confirm":
+    # If the user sent text, accumulate
+    if text:
+        texts = list(payload.get("texts") or [])
+        texts.append(text.strip())
+        await state_mgr.update_state(telegram_user_id, payload_merge={"texts": texts})
+        await log_event(telegram_user_id, chat_id, "text_received", FLOW, step,
+                        success=True, extra={"len": len(text)})
         await send_message(
             chat_id,
-            "⚠️ Usa os botões de confirmação acima ou /cancel.",
+            "✅ Informação recebida. Podes enviar mais informação ou criar o pré-ticket.",
+            reply_markup=ACTION_MARKUP,
         )
         return
 
-    # Fallback
-    await send_message(chat_id, "⚠️ Etapa desconhecida. Usa /cancel para reiniciar.")
+    if photo_file_id:
+        # Photo → download bytes for IA + save metadata
+        bytes_ = await download_file(photo_file_id)
+        att = {
+            "id": str(uuid.uuid4()),
+            "kind": "photo",
+            "telegram_file_id": photo_file_id,
+            "size_bytes": len(bytes_) if bytes_ else None,
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        }
+        atts = list(payload.get("attachments") or [])
+        atts.append(att)
+        merge = {"attachments": atts}
+        # Best-effort image hint via GPT-4o (does not block on failure)
+        hints = list(payload.get("image_hints") or [])
+        if bytes_:
+            hint = await ai_mod.analyze_image(bytes_)
+            if hint:
+                hints.append(hint)
+                merge["image_hints"] = hints
+        await state_mgr.update_state(telegram_user_id, payload_merge=merge)
+        await log_event(telegram_user_id, chat_id, "photo_received", FLOW, step,
+                        success=True, extra={"file_id": photo_file_id})
+        await send_message(
+            chat_id,
+            "📎 Anexo recebido. Podes enviar mais informação ou criar o pré-ticket.",
+            reply_markup=ACTION_MARKUP,
+        )
+        return
+
+    # Fallback (no text and no photo handled here — voice/doc handled in routes via raw)
+    await send_message(chat_id, "ℹ️ Envia texto, foto, áudio ou documento.")
+
+
+async def handle_attachment_raw(chat_id: int, telegram_user_id: int, message: dict, state: dict) -> bool:
+    """Handle voice/audio/document messages that arrive in the raw Telegram message.
+
+    Returns True if it consumed the message, False otherwise (so caller can keep dispatching).
+    """
+    if state.get("current_step") != STEP_COLLECTING:
+        return False
+    payload = state.get("temporary_payload") or {}
+
+    voice = message.get("voice")
+    audio = message.get("audio")
+    document = message.get("document")
+
+    if voice or audio:
+        media = voice or audio
+        file_id = media.get("file_id")
+        ext = "ogg" if voice else (media.get("mime_type", "").split("/")[-1] or "mp3")
+        att = {
+            "id": str(uuid.uuid4()),
+            "kind": "voice" if voice else "audio",
+            "telegram_file_id": file_id,
+            "mime_type": media.get("mime_type"),
+            "duration_sec": media.get("duration"),
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        }
+        atts = list(payload.get("attachments") or [])
+        atts.append(att)
+        merge = {"attachments": atts}
+
+        # Try Whisper transcription
+        transcripts = list(payload.get("audio_transcripts") or [])
+        bytes_ = await download_file(file_id)
+        transcript = await ai_mod.transcribe_audio(bytes_, ext) if bytes_ else None
+
+        if transcript:
+            transcripts.append(transcript)
+            att["transcript"] = transcript
+            merge["audio_transcripts"] = transcripts
+            await state_mgr.update_state(telegram_user_id, payload_merge=merge)
+            await log_event(telegram_user_id, chat_id, "audio_transcribed", FLOW,
+                            state.get("current_step"), success=True,
+                            extra={"file_id": file_id, "len": len(transcript)})
+            await send_message(
+                chat_id,
+                "🎙️ Áudio recebido e transcrito. Podes enviar mais informação ou criar o pré-ticket.",
+                reply_markup=ACTION_MARKUP,
+            )
+        else:
+            await state_mgr.update_state(telegram_user_id, payload_merge=merge)
+            await log_event(telegram_user_id, chat_id, "audio_received_no_transcript", FLOW,
+                            state.get("current_step"), success=False,
+                            error="whisper_failed", extra={"file_id": file_id})
+            await send_message(
+                chat_id,
+                "🎙️ Áudio recebido, mas não consegui transcrever automaticamente. "
+                "O ficheiro ficará anexado ao pré-ticket.",
+                reply_markup=ACTION_MARKUP,
+            )
+        return True
+
+    if document:
+        att = {
+            "id": str(uuid.uuid4()),
+            "kind": "document",
+            "telegram_file_id": document.get("file_id"),
+            "file_name": document.get("file_name"),
+            "mime_type": document.get("mime_type"),
+            "size_bytes": document.get("file_size"),
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        }
+        atts = list(payload.get("attachments") or [])
+        atts.append(att)
+        await state_mgr.update_state(telegram_user_id, payload_merge={"attachments": atts})
+        await log_event(telegram_user_id, chat_id, "document_received", FLOW,
+                        state.get("current_step"), success=True,
+                        extra={"file_id": document.get("file_id")})
+        await send_message(
+            chat_id,
+            "📎 Anexo recebido. Podes enviar mais informação ou criar o pré-ticket.",
+            reply_markup=ACTION_MARKUP,
+        )
+        return True
+
+    return False
 
 
 async def handle_callback(chat_id: int, telegram_user_id: int, data: str,
                           user_auth: dict, state: dict) -> None:
-    if data.startswith("preticket:type:"):
-        type_key = data.split(":", 2)[2]
-        type_label = next((label for key, label in REQUEST_TYPES if key == type_key), type_key)
-        await state_mgr.update_state(
-            telegram_user_id, current_step="description",
-            payload_merge={"request_type": type_key, "request_type_label": type_label},
-        )
-        await send_message(
-            chat_id,
-            f"5️⃣ Descreve o pedido em poucas palavras.\n<i>(Tipo: {type_label})</i>",
-        )
-        return
-
-    if data == "preticket:att:yes":
-        await state_mgr.update_state(telegram_user_id, current_step="attachments_collect")
-        await send_message(
-            chat_id,
-            "📎 Envia até 4 fotos. Quando terminares, escreve <b>pronto</b>.",
-        )
-        return
-
-    if data == "preticket:att:no":
-        await _show_summary(chat_id, telegram_user_id, state)
-        return
-
-    if data == "preticket:confirm":
+    if data == "preticket:finalize":
         await _finalize(chat_id, telegram_user_id, user_auth, state)
-        return
-
-    if data == "preticket:edit":
-        await send_message(
-            chat_id,
-            "✏️ Para alterar agora, usa /cancel e cria de novo. (Edição inline ficará para uma próxima versão.)",
-        )
-        return
 
 
-async def _show_summary(chat_id: int, telegram_user_id: int, state: dict) -> None:
-    payload = state.get("temporary_payload") or {}
-    atts = payload.get("_attachments") or []
-    summary = (
-        "📋 <b>Resumo do Pré-ticket</b>\n\n"
-        f"👤 Cliente: <b>{payload.get('customer_name','—')}</b>\n"
-        f"📞 Contacto: <b>{payload.get('customer_phone','—')}</b>\n"
-        f"🚘 Matrícula: <b>{payload.get('plate','—')}</b>\n"
-        f"🏷 Tipo: <b>{payload.get('request_type_label','—')}</b>\n"
-        f"📝 Descrição: <i>{payload.get('description','—')}</i>\n"
-        f"📎 Anexos: <b>{len(atts)}</b>\n"
-    )
-    await state_mgr.update_state(telegram_user_id, current_step="summary_confirm")
-    markup = inline_keyboard(
-        [
-            [{"text": "✅ Confirmar e criar", "callback_data": "preticket:confirm"}],
-            [{"text": "❌ Cancelar", "callback_data": "menu:cancel"}],
-        ]
-    )
-    await send_message(chat_id, summary, reply_markup=markup)
-
-
-async def _generate_ticket_number() -> str:
-    """Use the same numbering style as the rest of the system: TKYYYYMMDDXXXXXX (uppercase hex)."""
+def _build_reference() -> str:
     now = datetime.now(timezone.utc)
-    suffix = uuid.uuid4().hex[:6].upper()
-    return f"TK{now.strftime('%Y%m%d')}{suffix}"
+    return f"PT{now.strftime('%Y%m%d')}{uuid.uuid4().hex[:5].upper()}"
 
 
 async def _finalize(chat_id: int, telegram_user_id: int, user_auth: dict, state: dict) -> None:
     payload = state.get("temporary_payload") or {}
-    now = datetime.now(timezone.utc).isoformat()
-    ticket_id = str(uuid.uuid4())
-    ticket_number = await _generate_ticket_number()
 
-    # Build a minimal ticket compatible with the existing schema. The dashboard
-    # treats `channel="TELEGRAM_INTERNAL_BOT"` as a marker for triage.
+    # Need at least one piece of information to create a pre-ticket
+    texts = payload.get("texts") or []
+    transcripts = payload.get("audio_transcripts") or []
+    attachments = payload.get("attachments") or []
+    image_hints = payload.get("image_hints") or []
+
+    if not texts and not transcripts and not attachments:
+        await send_message(
+            chat_id,
+            "⚠️ Ainda não enviaste nada. Manda texto, áudio, foto ou documento primeiro.",
+            reply_markup=ACTION_MARKUP,
+        )
+        return
+
+    await state_mgr.update_state(telegram_user_id, current_step=STEP_FINALIZING)
+
+    raw_text_parts = []
+    if texts:
+        raw_text_parts.append("\n".join(texts))
+    if transcripts:
+        raw_text_parts.append("\n".join(f"[áudio] {t}" for t in transcripts))
+    raw_text = "\n\n".join(raw_text_parts)
+
+    # IA extraction (never raises)
+    try:
+        extracted = await ai_mod.extract_pre_ticket_fields(raw_text, image_hints=image_hints)
+    except Exception as e:
+        extracted = {k: None for k in ai_mod.ALL_FIELDS}
+        extracted["missing_fields"] = list(ai_mod.ALL_FIELDS)
+        extracted["confidence_score"] = 0.0
+        await log_event(telegram_user_id, chat_id, "ai_error", FLOW, STEP_FINALIZING,
+                        success=False, error=str(e))
+
+    now = datetime.now(timezone.utc).isoformat()
+    pre_ticket_id = str(uuid.uuid4())
+    reference = _build_reference()
+
     doc = {
-        "id": ticket_id,
-        "ticket_number": ticket_number,
-        "channel": "TELEGRAM_INTERNAL_BOT",
+        "id": pre_ticket_id,
+        "reference": reference,
+        "source": "TELEGRAM_INTERNAL_BOT",
         "status": "NOVO",
-        "priority": "NORMAL",
-        "customer_name": payload.get("customer_name"),
-        "customer_phone": payload.get("customer_phone"),
-        "vehicle_plate": payload.get("plate"),
-        "request_type": payload.get("request_type"),
-        "subject": f"[Telegram Interno] {payload.get('request_type_label','Pré-ticket')}",
-        "description": payload.get("description"),
-        "attachments": [
-            {
-                "id": str(uuid.uuid4()),
-                "telegram_file_id": a.get("telegram_file_id"),
-                "added_at": a.get("added_at"),
-                "source": "telegram_internal_bot",
-            }
-            for a in (payload.get("_attachments") or [])
-        ],
-        "created_by_telegram": {
-            "telegram_user_id": telegram_user_id,
-            "name": user_auth.get("name"),
-        },
+        "created_by_telegram_user_id": telegram_user_id,
+        "created_by_telegram_chat_id": chat_id,
+        "created_by_name": user_auth.get("name"),
+        "raw_text": raw_text,
+        "texts": texts,
+        "audio_transcripts": transcripts,
+        "attachments": attachments,
+        "image_hints": image_hints,
+        "ai_extracted": extracted,
+        "validated_by": None,
+        "converted_to_ticket_id": None,
         "created_at": now,
         "updated_at": now,
-        "first_response_done": False,
-        "archived_at": None,
     }
+
     try:
-        await db.tickets.insert_one(doc)
+        await db.pre_tickets.insert_one(doc)
     except Exception as e:
-        await log_event(telegram_user_id, chat_id, "flow_error",
-                        active_flow=FLOW, current_step="finalize",
+        await log_event(telegram_user_id, chat_id, "create_error", FLOW, STEP_FINALIZING,
                         success=False, error=str(e))
         await send_message(chat_id, "❌ Erro ao criar pré-ticket. Tenta novamente.")
         return
 
     await state_mgr.reset_state(telegram_user_id)
-    await log_event(telegram_user_id, chat_id, "flow_done",
-                    active_flow=FLOW, current_step="finalize", success=True,
-                    extra={"ticket_id": ticket_id, "ticket_number": ticket_number})
+    await log_event(telegram_user_id, chat_id, "preticket_created", FLOW, STEP_FINALIZING,
+                    success=True, extra={"reference": reference, "id": pre_ticket_id})
+
+    low_confidence = (extracted.get("confidence_score") or 0) < 0.5
+    missing = extracted.get("missing_fields") or []
+
+    if low_confidence:
+        text = (
+            f"⚠️ <b>Pré-ticket criado, mas alguns dados precisam de validação.</b>\n"
+            f"Referência: <b>{reference}</b>\n"
+        )
+        if missing:
+            text += f"\nCampos em falta: <i>{', '.join(missing)}</i>"
+        text += "\n\nValida e trata na dashboard."
+    else:
+        text = (
+            f"✅ <b>Pré-ticket criado com sucesso.</b>\n"
+            f"Referência: <b>{reference}</b>\n\n"
+            f"A IA preencheu os dados possíveis.\n"
+            f"Valida e trata na dashboard."
+        )
 
     await send_message(
-        chat_id,
-        (
-            f"✅ <b>Pré-ticket criado com sucesso.</b>\n\n"
-            f"Tipo: 📋 Pré-ticket\n"
-            f"Referência: <b>#{ticket_number}</b>\n\n"
-            f"Para acompanhar ou tratar, abre na dashboard."
-        ),
-        reply_markup=created_record_keyboard("ticket", f"/tickets/{ticket_id}"),
+        chat_id, text,
+        reply_markup=created_record_keyboard("pre_ticket", f"/pre-tickets/{pre_ticket_id}"),
     )
-    # Send menu again
     await send_message(chat_id, "Pronto para outro pedido?", reply_markup=main_menu_markup(user_auth))

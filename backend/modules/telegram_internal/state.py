@@ -117,3 +117,12 @@ async def reset_state(telegram_user_id: int) -> None:
     await db.telegram_internal_states.delete_one(
         {"telegram_user_id": telegram_user_id}
     )
+
+
+async def db_state_raw(telegram_user_id: int) -> Optional[dict]:
+    """Return the raw state document (does NOT auto-clear when expired).
+    Used to detect 'expired since last hit' for friendly UX messaging.
+    """
+    return await db.telegram_internal_states.find_one(
+        {"telegram_user_id": telegram_user_id}, {"_id": 0}
+    )

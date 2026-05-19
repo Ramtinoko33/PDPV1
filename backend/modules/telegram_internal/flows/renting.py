@@ -24,14 +24,12 @@ async def start(chat_id: int, telegram_user_id: int, user_auth: dict) -> None:
     await send_message(
         chat_id,
         (
-            "🚗 <b>Pedido Renting</b>\n\n"
-            "O fluxo completo de Renting (com fotos das 4 rodas, OCR de matrícula e KM, "
-            "marca/modelo/DOT/piso por pneu) está disponível no bot dedicado.\n\n"
-            "Toca no botão para o abrir e enviar <code>/novo_renting</code>:"
+            "🚗 Os pedidos de Renting continuam temporariamente no bot antigo.\n\n"
+            "Carrega no botão abaixo para abrir."
         ),
         reply_markup=inline_keyboard(
             [
-                [{"text": "➡️ Abrir @pdpv_rentingpneus_bot", "url": RENTING_BOT_URL}],
+                [{"text": "Abrir Bot Renting", "url": RENTING_BOT_URL}],
                 [{"text": "🔙 Voltar ao menu", "callback_data": "menu:back"}],
             ]
         ),
