@@ -22,7 +22,10 @@ import {
   RefreshCw,
   CircleDot,
   Tag,
-  Wrench
+  Wrench,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -48,6 +51,7 @@ const AdminReports = () => {
   
   const [users, setUsers] = useState([]);
   const [ticketTypes, setTicketTypes] = useState([]);
+  const [agentSort, setAgentSort] = useState({ key: 'quotes_accepted_value', dir: 'desc' });
 
   useEffect(() => {
     fetchUsers();
@@ -172,6 +176,43 @@ const AdminReports = () => {
       'FECHADO': 'Fechado'
     };
     return labels[status] || status;
+  };
+
+  const toggleAgentSort = (key) => {
+    setAgentSort((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      // numeric columns default to desc (top performers first), name asc
+      return { key, dir: key === 'user_name' ? 'asc' : 'desc' };
+    });
+  };
+
+  const sortedAgents = (() => {
+    if (!report?.agent_performance) return [];
+    const list = [...report.agent_performance];
+    const { key, dir } = agentSort;
+    list.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      let cmp;
+      if (typeof av === 'string' || typeof bv === 'string') {
+        cmp = String(av || '').localeCompare(String(bv || ''), 'pt');
+      } else {
+        cmp = (av || 0) - (bv || 0);
+      }
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  })();
+
+  const SortIcon = ({ column }) => {
+    if (agentSort.key !== column) {
+      return <ArrowUpDown className="inline h-3 w-3 ml-1 text-zinc-400" />;
+    }
+    return agentSort.dir === 'asc'
+      ? <ArrowUp className="inline h-3 w-3 ml-1 text-orange-600" />
+      : <ArrowDown className="inline h-3 w-3 ml-1 text-orange-600" />;
   };
 
   return (
@@ -514,16 +555,52 @@ const AdminReports = () => {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-semibold text-zinc-600">Agente</th>
-                        <th className="text-center py-3 px-4 font-semibold text-zinc-600">Tickets Atribuídos</th>
-                        <th className="text-center py-3 px-4 font-semibold text-zinc-600">Tickets Fechados</th>
-                        <th className="text-center py-3 px-4 font-semibold text-emerald-700">Aceites (Qtd)</th>
-                        <th className="text-center py-3 px-4 font-semibold text-emerald-700">Valor Aceite</th>
-                        <th className="text-center py-3 px-4 font-semibold text-zinc-600">Taxa SLA</th>
+                        <th
+                          className="text-left py-3 px-4 font-semibold text-zinc-600 cursor-pointer select-none hover:bg-zinc-50"
+                          onClick={() => toggleAgentSort('user_name')}
+                          data-testid="sort-user-name"
+                        >
+                          Agente<SortIcon column="user_name" />
+                        </th>
+                        <th
+                          className="text-center py-3 px-4 font-semibold text-zinc-600 cursor-pointer select-none hover:bg-zinc-50"
+                          onClick={() => toggleAgentSort('tickets_assigned')}
+                          data-testid="sort-tickets-assigned"
+                        >
+                          Tickets Atribuídos<SortIcon column="tickets_assigned" />
+                        </th>
+                        <th
+                          className="text-center py-3 px-4 font-semibold text-zinc-600 cursor-pointer select-none hover:bg-zinc-50"
+                          onClick={() => toggleAgentSort('tickets_closed')}
+                          data-testid="sort-tickets-closed"
+                        >
+                          Tickets Fechados<SortIcon column="tickets_closed" />
+                        </th>
+                        <th
+                          className="text-center py-3 px-4 font-semibold text-emerald-700 cursor-pointer select-none hover:bg-emerald-50"
+                          onClick={() => toggleAgentSort('quotes_accepted_count')}
+                          data-testid="sort-accepted-count"
+                        >
+                          Aceites (Qtd)<SortIcon column="quotes_accepted_count" />
+                        </th>
+                        <th
+                          className="text-center py-3 px-4 font-semibold text-emerald-700 cursor-pointer select-none hover:bg-emerald-50"
+                          onClick={() => toggleAgentSort('quotes_accepted_value')}
+                          data-testid="sort-accepted-value"
+                        >
+                          Valor Aceite<SortIcon column="quotes_accepted_value" />
+                        </th>
+                        <th
+                          className="text-center py-3 px-4 font-semibold text-zinc-600 cursor-pointer select-none hover:bg-zinc-50"
+                          onClick={() => toggleAgentSort('sla_compliance_rate')}
+                          data-testid="sort-sla"
+                        >
+                          Taxa SLA<SortIcon column="sla_compliance_rate" />
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {report.agent_performance.map((agent) => (
+                      {sortedAgents.map((agent) => (
                         <tr key={agent.user_id} className="border-b hover:bg-zinc-50" data-testid={`agent-row-${agent.user_id}`}>
                           <td className="py-3 px-4 font-medium">{agent.user_name}</td>
                           <td className="text-center py-3 px-4">{agent.tickets_assigned}</td>
