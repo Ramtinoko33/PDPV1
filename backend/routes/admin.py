@@ -159,12 +159,15 @@ class TicketMetrics(BaseModel):
     quotes_accepted: int = 0
     quotes_rejected: int = 0
     total_quote_value: float = 0.0
+    total_accepted_value: float = 0.0
 
 class AgentPerformance(BaseModel):
     user_id: str
     user_name: str
     tickets_assigned: int = 0
     tickets_closed: int = 0
+    quotes_accepted_count: int = 0
+    quotes_accepted_value: float = 0.0
     avg_response_time_hours: Optional[float] = None
     sla_compliance_rate: float = 0.0
 
@@ -720,6 +723,7 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
     quotes_accepted = 0
     quotes_rejected = 0
     total_quote_value = 0.0
+    total_accepted_value = 0.0
     sla_compliant = 0
     
     for t in tickets:
@@ -748,6 +752,8 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
                 total_quote_value += t["quote_value"]
         if t.get("quote_response_status") == "ACCEPTED":
             quotes_accepted += 1
+            if t.get("quote_value"):
+                total_accepted_value += t["quote_value"]
         elif t.get("quote_response_status") == "REJECTED":
             quotes_rejected += 1
     
@@ -759,6 +765,7 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
     metrics.quotes_accepted = quotes_accepted
     metrics.quotes_rejected = quotes_rejected
     metrics.total_quote_value = total_quote_value
+    metrics.total_accepted_value = total_accepted_value
     
     if metrics.total_tickets > 0:
         metrics.sla_compliance_rate = round((sla_compliant / metrics.total_tickets) * 100, 1)
@@ -772,6 +779,8 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
     for agent in agents:
         agent_tickets = [t for t in tickets if t.get("assigned_to_user_id") == agent["id"]]
         closed_tickets = [t for t in agent_tickets if t.get("status") == "FECHADO"]
+        accepted_tickets = [t for t in agent_tickets if t.get("quote_response_status") == "ACCEPTED"]
+        accepted_value = sum((t.get("quote_value") or 0) for t in accepted_tickets)
         compliant = sum(1 for t in agent_tickets if t.get("first_response_done"))
         
         perf = AgentPerformance(
@@ -779,6 +788,8 @@ async def generate_report(filters: ReportFilters, current_user: dict = Depends(g
             user_name=agent["name"],
             tickets_assigned=len(agent_tickets),
             tickets_closed=len(closed_tickets),
+            quotes_accepted_count=len(accepted_tickets),
+            quotes_accepted_value=round(accepted_value, 2),
             sla_compliance_rate=round((compliant / len(agent_tickets) * 100), 1) if agent_tickets else 0
         )
         agent_performance.append(perf)

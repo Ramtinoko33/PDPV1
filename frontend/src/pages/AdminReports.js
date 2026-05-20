@@ -408,8 +408,11 @@ const AdminReports = () => {
                     <CheckCircle className="h-5 w-5 text-emerald-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-emerald-600">{report.metrics.quotes_accepted}</p>
+                    <p className="text-2xl font-bold text-emerald-600" data-testid="quotes-accepted-count">{report.metrics.quotes_accepted}</p>
                     <p className="text-sm text-zinc-500">Orçamentos Aceites</p>
+                    <p className="text-xs text-emerald-700 font-semibold mt-1" data-testid="quotes-accepted-value">
+                      {formatCurrency(report.metrics.total_accepted_value || 0)}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -514,15 +517,25 @@ const AdminReports = () => {
                         <th className="text-left py-3 px-4 font-semibold text-zinc-600">Agente</th>
                         <th className="text-center py-3 px-4 font-semibold text-zinc-600">Tickets Atribuídos</th>
                         <th className="text-center py-3 px-4 font-semibold text-zinc-600">Tickets Fechados</th>
+                        <th className="text-center py-3 px-4 font-semibold text-emerald-700">Aceites (Qtd)</th>
+                        <th className="text-center py-3 px-4 font-semibold text-emerald-700">Valor Aceite</th>
                         <th className="text-center py-3 px-4 font-semibold text-zinc-600">Taxa SLA</th>
                       </tr>
                     </thead>
                     <tbody>
                       {report.agent_performance.map((agent) => (
-                        <tr key={agent.user_id} className="border-b hover:bg-zinc-50">
+                        <tr key={agent.user_id} className="border-b hover:bg-zinc-50" data-testid={`agent-row-${agent.user_id}`}>
                           <td className="py-3 px-4 font-medium">{agent.user_name}</td>
                           <td className="text-center py-3 px-4">{agent.tickets_assigned}</td>
                           <td className="text-center py-3 px-4">{agent.tickets_closed}</td>
+                          <td className="text-center py-3 px-4">
+                            <Badge className="bg-emerald-100 text-emerald-700" data-testid={`agent-accepted-count-${agent.user_id}`}>
+                              {agent.quotes_accepted_count || 0}
+                            </Badge>
+                          </td>
+                          <td className="text-center py-3 px-4 font-semibold text-emerald-700" data-testid={`agent-accepted-value-${agent.user_id}`}>
+                            {formatCurrency(agent.quotes_accepted_value || 0)}
+                          </td>
                           <td className="text-center py-3 px-4">
                             <Badge className={
                               agent.sla_compliance_rate >= 80 ? 'bg-emerald-100 text-emerald-700' :
