@@ -60,9 +60,15 @@
 - GET /api/admin/quote-context-stats - Admin stats view
 
 ## Pending
-- [ ] P1: WhatsApp module (blocked - needs Meta token)
 - [ ] P3: Excel import
 - [ ] P3: Client portal
+- [ ] P3: Estatísticas por empresa de renting + exportação CSV
+- [ ] Future: WhatsApp module (blocked - needs Meta token)
+- [ ] Future: Mover fluxos Renting/Alertas inline no bot interno (desligar 2 bots antigos)
+- [ ] Cleanup: apagar endpoints DEPRECATED `pre_tickets` em `telegram_internal/routes.py`
+
+## Status
+**Sistema considerado pronto pelo utilizador (Feb 2026).** Backlog acima é opcional/futuro.
 
 ## Environments
 - Preview: https://intake-ai-gateway.preview.emergentagent.com
