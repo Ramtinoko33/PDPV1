@@ -64,5 +64,5 @@
 - [ ] P3: Client portal
 
 ## Environments
-- Preview: https://quote-management-4.preview.emergentagent.com
+- Preview: https://intake-ai-gateway.preview.emergentagent.com
 - Production: https://tickets.pneusdpedrov.com

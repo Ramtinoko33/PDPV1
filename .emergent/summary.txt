@@ -1,151 +1,118 @@
-<analysis>**original_problem_statement:** 
-O utilizador está a desenvolver o PDPV Tickets, um sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. Pedro V). 
-PRODUCT REQUIREMENTS:
-- Manter o sistema rápido e livre de bugs.
-- Implementar lógicas complexas de SLA baseadas no horário de funcionamento da oficina.
-- Melhorar o fluxo de orçamentos (recolha de motivos de rejeição).
-- Integrar WhatsApp Business Cloud API para criação e gestão automática de tickets.
-- Refatorar o backend monolítico () para uma arquitetura modular.
-- Permitir configuração de feriados para o cálculo de SLA.
+<analysis>**original_problem_statement**: 
+O utilizador solicitou inicialmente a criação de uma página Frontend Web (Dashboard) separada para gerir Pré-tickets provenientes do novo bot de Telegram (PDPV Bot Interno).
+**CRITICAL ARCHITECTURE PIVOT:** Durante esta sessão, o utilizador alterou o requisito arquitetural. Decidiu-se **não** ter dois sistemas paralelos. O novo bot de Telegram não deve utilizar a coleção . Em vez disso, deve ser integrado no módulo legado existente  (coleção ). A página web  existente deve ser enriquecida para suportar os novos campos extraídos pela IA do novo bot. A conversão de pedido para ticket final mantém-se estritamente manual via Frontend.
 
 **User's preferred language**: Portuguese
-*(INSTRUCTION FOR NEXT AGENT: You MUST respond to the user in Portuguese only)*
+(INSTRUCT NEXT AGENT: You MUST automatically detect the user's primary language from their messages and INSTRUCT next agent to respond in Portuguese only)
 
 **what currently exists?** 
-Uma aplicação full-stack (FastAPI backend + React frontend + MongoDB). O backend foi massivamente refatorado nesta sessão: a lógica de negócio foi extraída para a pasta  e grande parte das rotas para a pasta . O sistema de SLA agora suporta configuração dinâmica de feriados (com UI no painel de administração). Funcionalidades core incluem: gestão de tickets, webhooks, persistência via Emergent Object Storage, e links públicos para aprovação/rejeição de orçamentos.
+A unificação dos sistemas foi concluída com sucesso. O novo PDPV Bot Interno (que suporta texto, áudios e imagens em fluxo aberto processados por GPT-4o) grava agora os dados estruturados diretamente na coleção central . A página Frontend  foi substancialmente melhorada para apresentar a origem do pedido (botões e badges coloridos), as extrações da IA (confidence score, missing fields), player de áudio para transcrições e visualização de anexos de imagem via um novo endpoint de proxy seguro. Foi também criada a página  para gerir os acessos ao novo bot interno. 
 
 **Last working item**: 
-    - Last item agent was working: Debugging de um erro crítico nos links públicos de orçamento (QuoteResponse). O utilizador reportou que em produção os pedidos de rede do frontend estão a ser bloqueados pelo browser (erro blocked:oth). O agente estava a analisar o ficheiro  para perceber que URL a página está a tentar chamar.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N (O contexto terminou enquanto o agente lia o ficheiro).
-    - Which testing method agent to use? screenshot tool para ver a consola do browser no frontend, manual testing by curl para validar os endpoints .
+    - Last item agent was working: Unificação do backend do novo bot com o módulo intake legado e melhoria da UI da página  para exibir dados da IA, anexos e metadados. Testes end-to-end e submissão ao testing agent.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? testing_agent_v3_fork
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  Issue 1: Erro de Rede (blocked:oth) na visualização pública de orçamentos (P0)
-  Issue 2: Extração final das rotas de Quotes do  (P1)
+  N/A
 
-  Issues Detail:
-  - Issue 1: 
-     - Attempted fixes: O agente corrigiu a variável  nas definições de email para garantir que os novos links gerados apontam para o domínio correto em produção. No entanto, ao abrir a página, os pedidos AJAX do frontend falham.
-     - Next debug checklist: 
-       * Verificar o ficheiro .
-       * Perceber como  está a ser resolvido em produção dentro desse componente. Se  estiver  ou a apontar para , o browser irá bloquear (blocked:oth ou CORS).
-       * Corrigir a chamada à API no frontend para garantir que usa o URL base correto.
-     - Why fix this issue and what will be achieved with the fix? Os clientes finais não conseguem ver ou responder aos orçamentos enviados pela oficina, bloqueando o fluxo de negócio.
-     - Status: IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend
-     - Blocked on other issue: None
-
-  - Issue 2: 
-     - Attempted fixes: O agente extraiu Tickets e Admin, reduzindo o ficheiro em 48%. As rotas de Quotes foram deixadas no  temporariamente devido à complexidade das dependências (Geração de PDF e Envio de Email).
-     - Next debug checklist: Extrair a secção QUOTE OPTIONS e PUBLIC QUOTE RESPONSE do  para .
-     - Why fix this issue and what will be achieved with the fix? Finaliza a refatoração do backend, removendo a restante dívida técnica do monolito.
-     - Status: NOT STARTED
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on other issue: Issue 1 (Prioridade P0).
-
-**In progress Task List**:
-  Task 1: Integração WhatsApp (MVP)
-  
-  Task Detail:
-  - Task 1: 
-     - Where to resume: . Os ficheiros foram criados no job anterior, mas o utilizador pediu explicitamente para não completar essa parte por enquanto logo no início desta sessão.
-     - What will be achieved with this? Criação de tickets via mensagens de WhatsApp.
-     - Status: BLOCKED (Pausado por pedido do utilizador até nova ordem).
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on something: Decisão do utilizador.
+**In progress Task List**: 
+  N/A (A tarefa principal de unificação foi terminada e testada).
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: Extração de rotas de Quotes para  (completar a refatoração).
-    - P2: Retomar a integração WhatsApp quando o utilizador solicitar.
+    - P1: Dashboard - Conversão Pedido Renting → Ticket Normal (botão no detalhe que cria ticket regular pré-preenchido).
+    - P2: Renting - Notificação Telegram à rececionista quando um pedido entra Em tratamento.
+    - P2: Renting - Comando  rascunhos no Telegram em vez de começar de novo.
+    - P2: Renting - Reabrir roda específica no painel Renting para refazer a OCR de apenas 1 pneu.
+    - P3: Estatísticas por empresa de renting e exportação CSV.
     Future Tasks:
-    - P3: Funcionalidade de importação de Excel.
-    - P3: Desenvolvimento de um Portal do Cliente dedicado.
+    - Phase 2 do PDPV Bot Interno: Colocar os fluxos Renting e Alertas Mecânica diretamente *inline* no novo bot (reaproveitando as lógicas atuais) para depois desligar os 2 bots antigos.
+    - Integração UI WhatsApp: Tab de WhatsApp na Dashboard após o cliente providenciar as credenciais de Produção Meta.
+    - Melhoria sugerida: Adicionar comando  no Telegram bot interno para listar os últimos 5 pré-tickets criados pelo operador (ver estado pendente/convertido sem abrir a web).
 
 **Completed work in this session**
-- Refatoração profunda do  (Reduzido de ~4957 para ~2560 linhas) (DONE)
-- Criação da camada de serviços: , , ,  (DONE)
-- Criação de routers modulares: , , ,  (DONE)
-- Painel de Configuração de Feriados: CRUD no backend e interface de gestão no AdminSettings. Integração com cálculo de SLA para ignorar feriados (DONE)
-- Resolução de Bug: Erro 404 no . Os endpoints de types e statuses foram expostos para utilizadores autenticados não-admins (DONE)
-- Resolução de Bug: Painel de configurações de email falhava ao guardar. Corrigido URL no frontend de  para  e adicionado endpoint  (DONE)
+- Unificação arquitetural: Bot interno redirecionado de  para  (DONE)
+- Atualização do  e  para suportar campos de IA e novos formatos de anexo (DONE)
+- Criação de endpoint proxy para anexos do Telegram em  (DONE)
+- UI: Enriquecimento da página  com badges de origem, cards de IA, visualizador de anexos e pré-preenchimento de conversão (DONE)
+- UI: Criação de  para gerir autorizações do bot (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-   - O utilizador estava confuso sobre a perda de dados de configurações e links inválidos. O agente explicou que o ambiente de Produção e o ambiente de Preview (onde o agente trabalha) usam **bases de dados MongoDB separadas**. Alterações de configuração feitas no Preview não refletem em Produção. O utilizador deve fazer a configuração de email/frontend URL manualmente no painel de administração em Produção.
+   - N/A
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Refatoração do .
-  - Recurrence count: Resolvido em 90%. Falta apenas a parte de Quotes.
-  - Status: IN PROGRESS
+  - N/A
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- Arquitetura de 3 camadas no backend (Routes -> Services -> DB).
-- SLA Engine ciente de horários úteis, fins de semana e, agora, feriados dinâmicos.
+- **Unificação Intake:** A coleção  é a única fonte da verdade para pré-tickets, aceitando inputs de formulários Web, do bot antigo e do novo bot com IA.
+- **AI Extraction & Mapping:** O bot extrai dados via GPT-4o e mapeia inteligentemente (ex: o cliente é colocado em , enquanto o funcionário do Telegram é o ).
+- **Backward Compatibility:** O frontend  suporta graciosamente registos antigos (onde attachments eram strings) e registos novos (onde attachments são objetos com ).
 
 **key DB schema**
-  -  (Nova coleção): 
+  - : Adicionados campos opcionais para suportar o novo bot: , , , ,  (array),  (array),  (array),  (dict com confidence_score, missing_fields), e  (agora suporta list of dicts).
+  - : .
+  - : *Coleção agora descontinuada/obsoleta*.
 
 **changes in tech stack**
-  - Nenhuma alteração no tech stack. Introdução do padrão Service/Repository no backend FastAPI.
+  - Nenhum.
 
-**All files of reference**
-- : Onde ocorre o erro atual de rede do cliente (blocked:oth).
-- : Onde as rotas de Quote ainda residem.
-- : Motor de cálculo de horas modificado.
-- : Atualizado com separador de Feriados e fixes nas configurações de email.
+**All files of reference** 
+-  e : Atualizados para as novas estruturas de dados.
+- : Atualizado para gravar na DB através do service de Intake.
+- : Profundamente editado para apresentar a secção visual da IA e anexos.
+- : Ficheiro novo criado.
 
 **Areas that need refactoring**:
-- : Restante extração de  e  para um módulo próprio.
+- Em , os endpoints originais que faziam CRUD à coleção  (, etc.) ficaram orfãos e marcados como . Numa fase futura de limpeza, devem ser apagados.
 
 **key api endpoints**
-- : Obtém detalhes do orçamento para cliente final.
-- : Lista feriados configurados.
-- : Modificado para ser acessível a qualquer utilizador logado.
+-  (Usado pela Dashboard para listar todos os pedidos)
+-  (NOVO proxy para contornar auth do Telegram ao renderizar imagens na Web)
+-  (Conversão manual)
 
-**Critical Info for New Agent**
-- **CUIDADO COM AMBIENTES:** O utilizador testa os links gerados no seu domínio de produção (). O teu ambiente de execução é apenas um Preview. Os tokens de links criados em Produção **não existem** na base de dados de Preview, e vice-versa. 
-- O bug blocked:oth reportado no último passo no frontend de orçamentos públicos acontece geralmente quando o React tenta fazer chamadas a uma API com URL mal formatado, a extensões de browser que bloqueiam pedidos, ou a erros de polling mal implementados. Foca-te no .
+**Critical Info for New Agent** 
+- **Decisão Arquitetural Fixa:** NÃO crie a coleção  nem a página . O utilizador exige expressamente que TUDO se concentre em  e na página . 
+- **Conversão Manual:** Nunca automatize a criação de tickets a partir do bot. A conversão de um intake request para ticket tem de ser sempre feita por um humano a clicar no botão Converter na página .
 
-**documents and test reports created in this job**
-  - 
+**documents and test reports created in this job** 
+  - /app/memory/PRD.md
+  - /app/test_reports/iteration_21.json
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. *User*: Aprova o plano de refatoração do , mas pede para adiar o WhatsApp. *(Completed)*.
-2. *User*: Exige continuar a refatoração de tickets, storage, sla, notificações com segurança. *(Completed)*.
-3. *User*: Pede para separar rotas de tickets e quotes. *(Completed em parte - tickets feitos)*.
-4. *User*: Pede para terminar refatoração de admin. *(Completed)*.
-5. *User*: Pede implementação do painel de Feriados para SLA. *(Completed)*.
-6. *User*: Pede as senhas dos utilizadores de teste. *(Completed)*.
-7. *User*: Reporta que links gerados são inválidos (passou link de produção). *(Agente explicou separação de BDs)*.
-8. *User*: Usa deployment agent para analisar logs, que mostram 404 em . *(Completed - Agente corrigiu endpoint)*.
-9. *User*: Reporta erro Not found ao guardar definições de email (screenshot). *(Completed - Agente corrigiu rotas no frontend e backend)*.
-10. *User (Pending)*: Envia print de um Quote aberto no frontend público onde os requests AJAX estão a falhar com erro blocked:oth na consola do browser. *(IN PROGRESS)*.
+1. *User*: Perguntou para onde iam os dados do bot de uma screenshot enviada. (O bot era antigo, os dados iam para ).
+2. *User*: Pediu para criar o novo sistema e desativar o antigo.
+3. *User*: **PIVOT** - Revogou o pedido anterior. Afirmou não querer sistemas paralelos. Exigiu que o bot novo enviasse os dados para o módulo legado  e que a UI existente fosse adaptada.
+4. *Agent*: Preparou plano detalhado para unificar no  e não usar o .
+5. *User*: Aprovou o plano com regras estritas (mapeamento específico de nomes, retrocompatibilidade). (Implementação e testes concluídos pelo agente).
 
 **Project Health Check:**
-- Broken: Interface Pública de Resposta a Orçamentos () - Pedidos de rede a falhar.
-- Mocked: Nenhum.
+- Broken: Nenhum.
+- Mocked: Webhook secret não tem enforce forte em dev.
 
 **3rd Party Integrations** 
-- Emergent Object Storage — uses Emergent LLM Key.
-- Resend (Emails) — requires User API Key.
-- Telegram Bot — requires User API Key.
-- WhatsApp Business Cloud API — requires User API Key (Em pausa).
+	•	OpenAI GPT-4o — uses Emergent LLM Key
+	•	Telegram Bots — requires User API Key
+	•	WhatsApp Meta Graph API — requires User API Key (Standby)
 
 **Testing status**
-  - Testing agent used after significant changes: NO
-  - Troubleshoot agent used after agent stuck in loop: NO (Foi usado Deployment Agent para analisar logs).
-  - Test files created: Atualizado  (Passando 17/17).
-  - Known regressions: Nenhuma identificada, exceto o problema pendente no frontend público.
+  - Testing agent used after significant changes: YES (iteration_21.json)
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: N/A
+  - Known regressions: None (Passed 15/15 new and 24/24 regression tests).
 
 **Credentials to test flow:**
-- Admin:  / 
+- Admin Portal:  /  (JWT)
+- Telegram Seeding Test User:  (Autorizado via UI ou shell)
 
 **What agent forgot to execute**
-- A extração das rotas de Quotes (Orçamentos) do  foi iniciada mas não concluída para evitar quebrar dependências complexas durante a refatoração massiva, sendo adiada para a próxima iteração.</analysis>
+Nenhum item pendente imediato.
+
+<TESTING METHOD>
+testing_agent_v3_fork
+</TESTING METHOD></analysis>

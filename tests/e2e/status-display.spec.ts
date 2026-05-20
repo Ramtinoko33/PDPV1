@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const API_URL = 'https://quote-management-4.preview.emergentagent.com';
+const API_URL = 'https://intake-ai-gateway.preview.emergentagent.com';
 
 // Test credentials
 const ADMIN_EMAIL = 'admin@pdpv.pt';

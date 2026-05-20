@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL || 'https://quote-management-4.preview.emergentagent.com';
+const BASE_URL = process.env.BASE_URL || 'https://intake-ai-gateway.preview.emergentagent.com';
 const ADMIN_EMAIL = 'admin@pdpv.pt';
 const ADMIN_PASSWORD = 'HCNMEnKMLq';
 

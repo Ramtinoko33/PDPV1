@@ -21,7 +21,7 @@ import pytest
 
 BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://quote-management-4.preview.emergentagent.com",
+    "https://intake-ai-gateway.preview.emergentagent.com",
 ).rstrip("/")
 INTERNAL_WEBHOOK_SECRET = "pdpv_internal_webhook_2026"
 ADMIN_EMAIL = "admin@pdpv.pt"
