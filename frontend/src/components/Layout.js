@@ -16,6 +16,7 @@ import {
   X,
   Wrench,
   ChevronRight,
+  ChevronDown,
   Archive,
   Settings,
   BarChart3,
@@ -33,6 +34,7 @@ const Layout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const [pendingIntakeCount, setPendingIntakeCount] = useState(0);
   const [pendingAlertsCount, setPendingAlertsCount] = useState(0);
   const [pendingRentingCount, setPendingRentingCount] = useState(0);
@@ -182,16 +184,13 @@ const Layout = ({ children }) => {
       roles: ['ADMIN', 'SUPERVISOR']
     },
     { 
-      path: '/telegram', 
       label: 'Telegram', 
       icon: Send,
-      roles: ['ADMIN']
-    },
-    {
-      path: '/admin/telegram-users',
-      label: 'Telegram Users',
-      icon: Send,
-      roles: ['ADMIN']
+      roles: ['ADMIN'],
+      children: [
+        { path: '/telegram', label: 'Configuração', icon: Send, roles: ['ADMIN'] },
+        { path: '/admin/telegram-users', label: 'Utilizadores', icon: Users, roles: ['ADMIN'] },
+      ]
     },
     { 
       path: '/settings', 
@@ -214,7 +213,27 @@ const Layout = ({ children }) => {
     // For renting: ADMIN/SUPERVISOR always see it, AGENT only if has_renting_access
     if (item.requireRentingAccess && user?.role === 'AGENT' && !user?.has_renting_access) return false;
     return true;
+  }).map(item => {
+    // Filter children by role too
+    if (item.children) {
+      return { ...item, children: item.children.filter(c => c.roles.includes(user?.role)) };
+    }
+    return item;
   });
+
+  // Auto-expand groups whose child is currently active
+  useEffect(() => {
+    filteredNavItems.forEach(item => {
+      if (item.children && item.children.some(c => c.path === location.pathname)) {
+        setExpandedGroups(prev => prev[item.label] ? prev : { ...prev, [item.label]: true });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, user?.role]);
+
+  const toggleGroup = (label) => {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const roleLabels = {
     ADMIN: 'Administrador',
@@ -263,6 +282,64 @@ const Layout = ({ children }) => {
             <nav className="px-3 space-y-1">
               {filteredNavItems.map((item) => {
                 const Icon = item.icon;
+
+                // Group with children (collapsible)
+                if (item.children) {
+                  const isOpen = !!expandedGroups[item.label];
+                  const hasActiveChild = item.children.some(c => c.path === location.pathname);
+                  return (
+                    <div key={item.label}>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(item.label)}
+                        data-testid={`nav-group-${item.label.toLowerCase()}`}
+                        className={`
+                          w-full flex items-center gap-3 px-4 py-3 rounded-lg
+                          font-medium transition-all
+                          ${hasActiveChild
+                            ? 'bg-slate-800 text-white'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          }
+                        `}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span>{item.label}</span>
+                        {isOpen
+                          ? <ChevronDown className="h-4 w-4 ml-auto" />
+                          : <ChevronRight className="h-4 w-4 ml-auto" />}
+                      </button>
+                      {isOpen && (
+                        <div className="mt-1 ml-3 pl-3 border-l border-slate-700 space-y-1">
+                          {item.children.map(child => {
+                            const ChildIcon = child.icon;
+                            const childActive = location.pathname === child.path;
+                            return (
+                              <Link
+                                key={child.path}
+                                to={child.path}
+                                onClick={() => setSidebarOpen(false)}
+                                data-testid={`nav-${child.path.replace(/\//g, '-').slice(1)}`}
+                                className={`
+                                  flex items-center gap-3 px-3 py-2 rounded-lg text-sm
+                                  font-medium transition-all
+                                  ${childActive
+                                    ? 'bg-orange-600 text-white shadow'
+                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                  }
+                                `}
+                              >
+                                <ChildIcon className="h-4 w-4" />
+                                <span>{child.label}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Regular link item
                 const isActive = location.pathname === item.path;
                 const badgeCount = item.badge === 'intake' ? pendingIntakeCount : item.badge === 'alerts' ? pendingAlertsCount : item.badge === 'renting' ? pendingRentingCount : 0;
                 return (
