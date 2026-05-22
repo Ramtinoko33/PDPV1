@@ -23,9 +23,9 @@ BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
     "https://intake-ai-gateway.preview.emergentagent.com",
 ).rstrip("/")
-INTERNAL_WEBHOOK_SECRET = "pdpv_internal_webhook_2026"
-ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+INTERNAL_WEBHOOK_SECRET = os.environ.get("TELEGRAM_INTERNAL_WEBHOOK_SECRET", "pdpv_internal_webhook_2026")
+ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "admin@pdpv.pt")
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 
 AUTH_USER_ID = 999000111  # seeded authorized
 UNAUTH_USER_ID = 888888888  # not authorized

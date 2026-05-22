@@ -13,10 +13,10 @@ import io
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
-# Known test ticket with existing reply token
-TEST_TICKET_ID = "69251e37-d787-4a25-9365-b289a1d3803b"
-TEST_TICKET_NUMBER = "TK20260225FBCA47"
-TEST_REPLY_TOKEN = "4ef74aac-a780-41b3-950c-ec9753dfd373"
+# Known test ticket with existing reply token (override via env for other envs)
+TEST_TICKET_ID = os.environ.get("TEST_TICKET_ID", "69251e37-d787-4a25-9365-b289a1d3803b")
+TEST_TICKET_NUMBER = os.environ.get("TEST_TICKET_NUMBER", "TK20260225FBCA47")
+TEST_REPLY_TOKEN = os.environ.get("TEST_REPLY_TOKEN", "4ef74aac-a780-41b3-950c-ec9753dfd373")
 
 ADMIN_EMAIL = "admin@pdpv.pt"
 ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")

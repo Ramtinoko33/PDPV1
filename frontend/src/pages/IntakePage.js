@@ -175,7 +175,7 @@ const IntakeAIDetails = ({ request, apiUrl, getAuthHeaders }) => {
           </div>
           <div className="space-y-1 text-sm">
             {texts.map((t, i) => (
-              <div key={i} className="whitespace-pre-wrap text-zinc-700 border-l-2 border-zinc-200 pl-2">
+              <div key={`text-${i}-${t.length}`} className="whitespace-pre-wrap text-zinc-700 border-l-2 border-zinc-200 pl-2">
                 {t}
               </div>
             ))}
@@ -190,7 +190,7 @@ const IntakeAIDetails = ({ request, apiUrl, getAuthHeaders }) => {
           </div>
           <div className="space-y-1 text-sm">
             {transcripts.map((t, i) => (
-              <div key={i} className="text-zinc-700 italic border-l-2 border-blue-200 pl-2">
+              <div key={`tr-${i}-${t.length}`} className="text-zinc-700 italic border-l-2 border-blue-200 pl-2">
                 🎙️ {t}
               </div>
             ))}

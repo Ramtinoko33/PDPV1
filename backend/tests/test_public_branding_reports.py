@@ -16,7 +16,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://intake-ai-gateway.pr
 # Test credentials
 ADMIN_EMAIL = "admin@pdpv.pt"
 ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "changeme")
-VALID_QUOTE_TOKEN = "0e0e05ea-ecfb-48a6-bfb3-d593ab488f52"
+VALID_QUOTE_TOKEN = os.environ.get("TEST_VALID_QUOTE_TOKEN", "0e0e05ea-ecfb-48a6-bfb3-d593ab488f52")
 
 
 @pytest.fixture(scope="module")

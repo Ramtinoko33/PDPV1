@@ -468,6 +468,7 @@ const CustomerManagement = () => {
               </div>
               <div className="space-y-2">
                 {formData.phones.map((phone, index) => (
+                  // eslint-disable-next-line react/no-array-index-key -- append-only form list, no mid-list removal
                   <Input
                     key={index}
                     value={phone}
@@ -521,6 +522,7 @@ const CustomerManagement = () => {
               </div>
               <div className="space-y-3">
                 {formData.vehicles.map((vehicle, index) => (
+                  // eslint-disable-next-line react/no-array-index-key -- append-only form list, no mid-list removal
                   <div key={index} className="grid grid-cols-2 gap-2">
                     <Input
                       value={vehicle.plate}

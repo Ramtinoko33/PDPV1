@@ -26,7 +26,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-TEST_APP_SECRET = "test-app-secret-hardening-12345"
+TEST_APP_SECRET = os.environ.get("TEST_WHATSAPP_APP_SECRET", "test-app-secret-hardening-12345")
 
 
 # ---------- Helpers ----------

@@ -2844,7 +2844,7 @@ const ProblemImagesSection = ({ ticketId, getAuthHeaders, canEdit }) => {
           headers: getAuthHeaders()
         });
         setImages(resp.data.problem_images || []);
-      } catch { /* silent - ticket may not have problem images */ }
+      } catch (err) { console.error('Failed to load problem images:', err); }
       finally { setLoading(false); }
     };
     fetch();
@@ -2860,7 +2860,7 @@ const ProblemImagesSection = ({ ticketId, getAuthHeaders, canEdit }) => {
       setImages(prev => prev.map(img =>
         img.id === imageId ? { ...img, visible_to_customer: !currentVisible } : img
       ));
-    } catch { /* silent */ }
+    } catch (err) { console.error('Failed to toggle image visibility:', err); }
   };
 
   const removeImage = async (imageId) => {
@@ -2871,7 +2871,7 @@ const ProblemImagesSection = ({ ticketId, getAuthHeaders, canEdit }) => {
         { headers: getAuthHeaders() }
       );
       setImages(prev => prev.filter(img => img.id !== imageId));
-    } catch { /* silent */ }
+    } catch (err) { console.error('Failed to remove image:', err); }
   };
 
   if (loading || images.length === 0) return null;
@@ -2993,7 +2993,7 @@ const MechanicCommentSection = ({ ticketId, getAuthHeaders, canEdit }) => {
           { headers: getAuthHeaders() }
         );
         if (!cancelled) setMc(resp.data.mechanic_comment);
-      } catch { /* silent */ }
+      } catch (err) { console.error('Failed to load mechanic comment:', err); }
       finally { if (!cancelled) setLoading(false); }
     };
     load();
@@ -3013,7 +3013,7 @@ const MechanicCommentSection = ({ ticketId, getAuthHeaders, canEdit }) => {
         if (!cancelled && resp.data.base64) {
           setAudioSrc(`data:${resp.data.file_type || 'audio/ogg'};base64,${resp.data.base64}`);
         }
-      } catch { /* silent */ }
+      } catch (err) { console.error('Failed to load mechanic audio:', err); }
       finally { if (!cancelled) setAudioLoading(false); }
     };
     load();

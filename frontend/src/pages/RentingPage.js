@@ -58,7 +58,7 @@ const RentingPage = () => {
       setStats(statsRes.data || {});
       setPendingUnseen(unseenRes.data.items || []);
     } catch (e) {
-      // silent
+      console.error('Failed to load renting data:', e);
     } finally {
       setLoading(false);
     }

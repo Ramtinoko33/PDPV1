@@ -367,8 +367,8 @@ const CreateTicket = () => {
                         <SelectValue placeholder="Selecionar veículo" />
                       </SelectTrigger>
                       <SelectContent>
-                        {selectedCustomer.vehicles.map((v, idx) => (
-                          <SelectItem key={idx} value={v.plate}>
+                        {selectedCustomer.vehicles.map((v) => (
+                          <SelectItem key={v.plate} value={v.plate}>
                             {v.plate} {v.model && `- ${v.model}`}
                           </SelectItem>
                         ))}
@@ -389,8 +389,8 @@ const CreateTicket = () => {
                         <SelectValue placeholder="Selecionar email" />
                       </SelectTrigger>
                       <SelectContent>
-                        {selectedCustomer.emails.map((email, idx) => (
-                          <SelectItem key={idx} value={email}>
+                        {selectedCustomer.emails.map((email) => (
+                          <SelectItem key={email} value={email}>
                             {email}
                           </SelectItem>
                         ))}

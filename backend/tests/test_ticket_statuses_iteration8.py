@@ -86,7 +86,7 @@ class TestTicketStatusesAPI:
         
         rejeitado_status = next((s for s in statuses if s["code"] == "REJEITADO_LINK"), None)
         assert rejeitado_status is not None, "REJEITADO_LINK status not found"
-        assert rejeitado_status["is_auto"] is True, "REJEITADO_LINK should have is_auto: true"
+        assert rejeitado_status["is_auto"] == True, "REJEITADO_LINK should have is_auto: true"
     
     def test_manual_statuses_have_is_auto_false(self, auth_headers):
         """Test ABERTO, EM_TRATAMENTO, AGUARDA_CLIENTE, AGENDADO, FECHADO have is_auto: false"""
@@ -100,7 +100,7 @@ class TestTicketStatusesAPI:
         for code in manual_codes:
             status = next((s for s in statuses if s["code"] == code), None)
             assert status is not None, f"{code} status not found"
-            assert status["is_auto"] is False, f"{code} should have is_auto: false, got {status['is_auto']}"
+            assert status["is_auto"] == False, f"{code} should have is_auto: false, got {status['is_auto']}"
     
     def test_agendado_status_exists_with_correct_label(self, auth_headers):
         """Test AGENDADO status exists with correct label"""
@@ -112,7 +112,7 @@ class TestTicketStatusesAPI:
         agendado_status = next((s for s in statuses if s["code"] == "AGENDADO"), None)
         assert agendado_status is not None, "AGENDADO status not found"
         assert agendado_status["label"] == "Agendado", f"AGENDADO label incorrect: {agendado_status['label']}"
-        assert agendado_status["is_auto"] is False, "AGENDADO should be manual (is_auto: false)"
+        assert agendado_status["is_auto"] == False, "AGENDADO should be manual (is_auto: false)"
 
 
 class TestQuoteLinkResponse:

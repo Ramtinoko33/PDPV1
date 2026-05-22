@@ -9,6 +9,7 @@
 - Notifications: Telegram Bot + Web Push (VAPID) + Resend
 
 ## Completed Features
+- [x] **Code quality safe fixes (Feb 2026):** Resolveu 7 catch blocks silenciosos (TicketDetail.js, RentingPage.js) → `console.error`. Substituiu 9 `key={index}` por keys estáveis (CreateTicket: valor único; IntakePage: composite; CustomerManagement: eslint-disable justificado). Movidos secrets hardcoded de 5 ficheiros de teste para `os.environ.get()` com defaults. Substituído `is True/False` por `==` em test_ticket_statuses_iteration8.py.
 - [x] **SLA pause on AGENDADO (Feb 2026):** `routes/tickets.py` — status AGENDADO agora pausa o SLA (igual a AGUARDA_CLIENTE) em vez de o terminar como "final". Resume automaticamente ao voltar a EM_TRATAMENTO/ABERTO/ACEITE_LINK, com nota de sistema diferenciada ("aguarda resposta do cliente" vs "ticket agendado").
 - [x] **Renting admin delete (Feb 2026):** `RentingDetail.js` — botão vermelho "Eliminar" visível apenas a ADMIN, com `AlertDialog` de confirmação (mostra matrícula, avisa que é irreversível). Reaproveita endpoint existente `DELETE /api/renting/records/{id}` (já admin-only no backend).
 - [x] **Sidebar Telegram grouped (Feb 2026):** Layout.js — "Telegram" e "Telegram Users" fundidos num único grupo colapsável (sub-items Configuração + Utilizadores), com auto-expand quando rota filha está ativa.
