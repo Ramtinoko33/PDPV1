@@ -24,6 +24,12 @@ import NormalizationSettings from "./pages/NormalizationSettings";
 import AdminTelegramUsers from "./pages/AdminTelegramUsers";
 import Layout from "./components/Layout";
 
+// Module-level constants prevent new array creation on each render (avoids prop reference churn)
+const ROLES_ALL = ['ADMIN', 'SUPERVISOR', 'AGENT'];
+const ROLES_ALL_WITH_CREATOR = ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR'];
+const ROLES_MANAGERS = ['ADMIN', 'SUPERVISOR'];
+const ROLES_ADMIN_ONLY = ['ADMIN'];
+
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
   
@@ -69,98 +75,98 @@ function AppRoutes() {
       } />
       
       <Route path="/tickets" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <TicketList />
         </ProtectedRoute>
       } />
       
       <Route path="/tickets/new" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL_WITH_CREATOR}>
           <CreateTicket />
         </ProtectedRoute>
       } />
       
       <Route path="/tickets/:id" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <TicketDetail />
         </ProtectedRoute>
       } />
       
       <Route path="/tickets/archived" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+        <ProtectedRoute allowedRoles={ROLES_MANAGERS}>
           <ArchivedTickets />
         </ProtectedRoute>
       } />
       
       <Route path="/reminders" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <Reminders />
         </ProtectedRoute>
       } />
       
       <Route path="/customers" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <CustomerManagement />
         </ProtectedRoute>
       } />
       
       <Route path="/users" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
           <UserManagement />
         </ProtectedRoute>
       } />
       
       <Route path="/settings" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
           <AdminSettings />
         </ProtectedRoute>
       } />
       
       <Route path="/settings/normalization" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+        <ProtectedRoute allowedRoles={ROLES_MANAGERS}>
           <NormalizationSettings />
         </ProtectedRoute>
       } />
       
       <Route path="/reports" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+        <ProtectedRoute allowedRoles={ROLES_MANAGERS}>
           <AdminReports />
         </ProtectedRoute>
       } />
       
       {/* Hidden module pages - only visible if module enabled */}
       <Route path="/intake" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR']}>
+        <ProtectedRoute allowedRoles={ROLES_MANAGERS}>
           <IntakePage />
         </ProtectedRoute>
       } />
       
       <Route path="/telegram" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
           <TelegramPage />
         </ProtectedRoute>
       } />
       
       <Route path="/alertas" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <AlertsPage />
         </ProtectedRoute>
       } />
 
       <Route path="/renting" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <RentingPage />
         </ProtectedRoute>
       } />
 
       <Route path="/renting/:id" element={
-        <ProtectedRoute allowedRoles={['ADMIN', 'SUPERVISOR', 'AGENT']}>
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
           <RentingDetail />
         </ProtectedRoute>
       } />
 
       <Route path="/admin/telegram-users" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
           <AdminTelegramUsers />
         </ProtectedRoute>
       } />

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
@@ -368,18 +368,30 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [token, user, fetchNotifications, connectWebSocket, checkPushSubscription]);
 
+  const value = useMemo(() => ({
+    notifications,
+    unreadCount,
+    webPushEnabled,
+    pushLoading,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+    requestWebPushPermission,
+    disableWebPush
+  }), [
+    notifications,
+    unreadCount,
+    webPushEnabled,
+    pushLoading,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+    requestWebPushPermission,
+    disableWebPush
+  ]);
+
   return (
-    <NotificationContext.Provider value={{
-      notifications,
-      unreadCount,
-      webPushEnabled,
-      pushLoading,
-      fetchNotifications,
-      markAsRead,
-      markAllAsRead,
-      requestWebPushPermission,
-      disableWebPush
-    }}>
+    <NotificationContext.Provider value={value}>
       {children}
     </NotificationContext.Provider>
   );

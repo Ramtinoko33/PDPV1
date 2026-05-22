@@ -271,6 +271,7 @@ const NormalizationSettings = () => {
                     <div className="flex flex-wrap gap-1.5 items-center">
                       <span className="text-[11px] text-zinc-400 font-medium">Aliases:</span>
                       {brand.aliases.map((alias, aIdx) => (
+                        // eslint-disable-next-line react/no-array-index-key -- controlled input, alias values may be empty/duplicate
                         <div key={aIdx} className="flex items-center gap-0.5">
                           <Input
                             value={alias}

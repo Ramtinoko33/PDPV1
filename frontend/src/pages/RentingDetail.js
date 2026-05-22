@@ -614,8 +614,8 @@ const PhotoBox = ({ recordId, kind, wheelIndex, sub, label }) => {
         { headers: getAuthHeaders() }
       );
       setSrc(`data:${resp.data.file_type};base64,${resp.data.base64}`);
-    } catch {
-      // silent
+    } catch (err) {
+      console.error('Failed to load renting photo:', err);
     } finally {
       setLoading(false);
     }
@@ -654,7 +654,7 @@ const ObservationsAudio = ({ recordId, transcription, status }) => {
       try {
         const r = await axios.get(`${API_URL}/api/renting/records/${recordId}/observations-audio`, { headers: getAuthHeaders() });
         if (!cancel && r.data.base64) setAudioSrc(`data:${r.data.file_type || 'audio/ogg'};base64,${r.data.base64}`);
-      } catch { /* */ }
+      } catch (err) { console.error('Failed to load observations audio:', err); }
       finally { if (!cancel) setLoading(false); }
     })();
     return () => { cancel = true; };

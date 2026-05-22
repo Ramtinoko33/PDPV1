@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext(null);
@@ -62,12 +62,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const getAuthHeaders = () => ({
+  const getAuthHeaders = useCallback(() => ({
     Authorization: `Bearer ${token}`
-  });
+  }), [token]);
+
+  const value = useMemo(
+    () => ({ user, token, loading, login, logout, getAuthHeaders, refreshUser }),
+    [user, token, loading, getAuthHeaders]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, getAuthHeaders, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
