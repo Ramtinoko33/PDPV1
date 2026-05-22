@@ -396,7 +396,7 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
         new_status = ticket_data.status
         
         if SLA_PAUSE_ON_AGUARDA_CLIENTE:
-            sla_pause_statuses = [TicketStatus.AGUARDA_CLIENTE.value]
+            sla_pause_statuses = [TicketStatus.AGUARDA_CLIENTE.value, TicketStatus.AGENDADO.value]
             sla_resume_statuses = [
                 TicketStatus.EM_TRATAMENTO.value,
                 TicketStatus.ACEITE_LINK.value,
@@ -405,7 +405,6 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
             sla_final_statuses = [
                 TicketStatus.FECHADO.value,
                 TicketStatus.REJEITADO_LINK.value,
-                TicketStatus.AGENDADO.value,
             ]
             
             # Check if we need to PAUSE SLA
@@ -414,12 +413,13 @@ async def update_ticket(ticket_id: str, ticket_data: TicketUpdate, current_user:
                     sla_pause_update = {"sla_paused_at": now.isoformat()}
                     await db.tickets.update_one({"id": ticket_id}, {"$set": sla_pause_update})
                     
+                    pause_reason = "aguarda resposta do cliente" if new_status == TicketStatus.AGUARDA_CLIENTE.value else "ticket agendado"
                     pause_note = {
                         "id": str(uuid.uuid4()),
                         "ticket_id": ticket_id,
                         "created_at": now.isoformat(),
                         "created_by_user_id": user["id"],
-                        "body": "⏸️ SLA pausado - aguarda resposta do cliente",
+                        "body": f"⏸️ SLA pausado - {pause_reason}",
                         "is_system": True
                     }
                     await db.notes.insert_one(pause_note)

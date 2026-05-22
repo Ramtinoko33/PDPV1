@@ -8,8 +8,19 @@ import { Textarea } from '../components/ui/textarea';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
-import { ArrowLeft, Save, Loader2, Image as ImageIcon, History, CheckCircle2, ShieldAlert, PlayCircle, FileDown, Copy } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Image as ImageIcon, History, CheckCircle2, ShieldAlert, PlayCircle, FileDown, Copy, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../components/ui/alert-dialog';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -125,10 +136,11 @@ const FieldWithConfidence = ({ label, value, confidence, confirmed, onChange, ty
 const RentingDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getAuthHeaders } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
   const [rec, setRec] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -228,6 +240,21 @@ const RentingDetail = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!rec) return;
+    setDeleting(true);
+    try {
+      await axios.delete(`${API_URL}/api/renting/records/${id}`, { headers: getAuthHeaders() });
+      toast.success('Registo eliminado');
+      navigate('/renting');
+    } catch (e) {
+      const detail = e?.response?.data?.detail || 'Erro ao eliminar';
+      toast.error(detail);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const updateField = (k, v) => setRec((prev) => ({ ...prev, [k]: v }));
   const updateWheelData = (idx, k, v) => {
     setRec((prev) => {
@@ -306,6 +333,39 @@ const RentingDetail = () => {
           <Button onClick={() => handleSave()} disabled={saving} size="sm" data-testid="save-btn">
             <Save className="h-4 w-4 mr-1" />{saving ? 'A guardar...' : 'Guardar'}
           </Button>
+          {user?.role === 'ADMIN' && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  disabled={deleting}
+                  data-testid="delete-renting-btn"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent data-testid="delete-renting-dialog">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar pedido de Renting?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta ação é permanente. O registo <strong>{rec.license_plate || id}</strong> e todas as fotos/áudios associados serão removidos. Não é possível desfazer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel data-testid="cancel-delete-btn">Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    data-testid="confirm-delete-btn"
+                  >
+                    Eliminar definitivamente
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </div>
 
