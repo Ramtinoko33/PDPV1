@@ -38,6 +38,7 @@ class UserResponse(BaseModel):
     has_alerts_access: bool = False
     can_create_tickets: bool = False
     has_renting_access: bool = False
+    has_assistencias_access: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -47,6 +48,7 @@ class UserUpdate(BaseModel):
     has_alerts_access: Optional[bool] = None
     can_create_tickets: Optional[bool] = None
     has_renting_access: Optional[bool] = None
+    has_assistencias_access: Optional[bool] = None
 
 
 class DashboardConfigUpdate(BaseModel):

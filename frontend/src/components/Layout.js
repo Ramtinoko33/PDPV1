@@ -15,6 +15,7 @@ import {
   Menu, 
   X,
   Wrench,
+  Truck,
   ChevronRight,
   ChevronDown,
   Archive,
@@ -153,6 +154,13 @@ const Layout = ({ children }) => {
       badge: 'renting',
       requireRentingAccess: true
     },
+    {
+      path: '/assistencias',
+      label: 'Assistências',
+      icon: Truck,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
+      requireAssistenciasAccess: true
+    },
     { 
       path: '/tickets/archived', 
       label: 'Arquivados', 
@@ -212,6 +220,7 @@ const Layout = ({ children }) => {
     if (item.requireAlertsAccess && user?.role === 'AGENT' && !user?.has_alerts_access) return false;
     // For renting: ADMIN/SUPERVISOR always see it, AGENT only if has_renting_access
     if (item.requireRentingAccess && user?.role === 'AGENT' && !user?.has_renting_access) return false;
+    if (item.requireAssistenciasAccess && user?.role === 'AGENT' && !user?.has_assistencias_access) return false;
     return true;
   }).map(item => {
     // Filter children by role too

@@ -20,6 +20,8 @@ import TelegramPage from "./pages/TelegramPage";
 import AlertsPage from "./pages/AlertsPage";
 import RentingPage from "./pages/RentingPage";
 import RentingDetail from "./pages/RentingDetail";
+import AssistenciasPage from "./pages/AssistenciasPage";
+import AssistenciasDetail from "./pages/AssistenciasDetail";
 import NormalizationSettings from "./pages/NormalizationSettings";
 import AdminTelegramUsers from "./pages/AdminTelegramUsers";
 import Layout from "./components/Layout";
@@ -162,6 +164,18 @@ function AppRoutes() {
       <Route path="/renting/:id" element={
         <ProtectedRoute allowedRoles={ROLES_ALL}>
           <RentingDetail />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/assistencias" element={
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
+          <AssistenciasPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/assistencias/:id" element={
+        <ProtectedRoute allowedRoles={ROLES_ALL}>
+          <AssistenciasDetail />
         </ProtectedRoute>
       } />
 

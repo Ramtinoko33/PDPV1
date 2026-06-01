@@ -35,7 +35,8 @@ const UserManagement = () => {
     role: 'AGENT',
     has_alerts_access: false,
     can_create_tickets: false,
-    has_renting_access: false
+    has_renting_access: false,
+    has_assistencias_access: false,
   });
 
   const fetchUsers = async () => {
@@ -95,7 +96,8 @@ const UserManagement = () => {
         role: user.role,
         has_alerts_access: user.has_alerts_access || false,
         can_create_tickets: user.can_create_tickets || false,
-        has_renting_access: user.has_renting_access || false
+        has_renting_access: user.has_renting_access || false,
+        has_assistencias_access: user.has_assistencias_access || false,
       });
     } else {
       setEditingUser(null);
@@ -106,7 +108,8 @@ const UserManagement = () => {
         role: 'AGENT',
         has_alerts_access: false,
         can_create_tickets: false,
-        has_renting_access: false
+        has_renting_access: false,
+        has_assistencias_access: false,
       });
     }
     setShowDialog(true);
@@ -118,7 +121,7 @@ const UserManagement = () => {
     try {
       if (editingUser) {
         // Update
-        const updateData = { name: formData.name, role: formData.role, has_alerts_access: formData.has_alerts_access, can_create_tickets: formData.can_create_tickets, has_renting_access: formData.has_renting_access };
+        const updateData = { name: formData.name, role: formData.role, has_alerts_access: formData.has_alerts_access, can_create_tickets: formData.can_create_tickets, has_renting_access: formData.has_renting_access, has_assistencias_access: formData.has_assistencias_access };
         if (formData.password) {
           updateData.password = formData.password;
         }
@@ -479,6 +482,20 @@ const UserManagement = () => {
                 checked={formData.has_renting_access}
                 onCheckedChange={(checked) => setFormData(prev => ({ ...prev, has_renting_access: checked }))}
                 data-testid="user-renting-access-toggle"
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-zinc-50 rounded-lg border">
+              <div>
+                <Label className="font-semibold flex items-center gap-1.5">
+                  <Plus className="h-4 w-4 text-orange-600" /> Acesso ao módulo Assistências
+                </Label>
+                <p className="text-xs text-zinc-500 mt-0.5">Permite criar assistências via bot e ver as próprias na dashboard</p>
+              </div>
+              <Switch
+                checked={formData.has_assistencias_access}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, has_assistencias_access: checked }))}
+                data-testid="user-assistencias-access-toggle"
               />
             </div>
 

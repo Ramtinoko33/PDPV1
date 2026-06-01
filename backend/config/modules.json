@@ -4,5 +4,6 @@
   "whatsapp": true,
   "telegram_alerts": true,
   "renting": true,
-  "telegram_internal": true
+  "telegram_internal": true,
+  "assistencias": true
 }
