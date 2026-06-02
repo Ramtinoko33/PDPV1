@@ -495,6 +495,21 @@ async def _finalize_creation(chat_id: int) -> None:
     await db.assistencias.insert_one(record)
     _reset_state(chat_id)
 
+    # Notify office (admins + supervisors) about the new assistance
+    try:
+        from services.notification_service import notify_supervisors
+        plate = record["registration_plate"] or "—"
+        msg_body = f"{record.get('employee_name') or 'Funcionário'} criou assistência {plate}"
+        if initial_status == AssistenciaStatus.DADOS_INCOMPLETOS.value:
+            msg_body += " (dados incompletos)"
+        await notify_supervisors(
+            title="Nova Assistência",
+            body=msg_body,
+            notification_type="info",
+        )
+    except Exception as e:
+        logger.warning(f"[ASSIST_BOT] notify_supervisors failed: {e}")
+
     summary_lines = [
         "✅ <b>Assistência registada com sucesso!</b>",
         f"<b>Matrícula:</b> {record['registration_plate']}",
@@ -571,7 +586,7 @@ async def get_record(record_id: str) -> Optional[dict]:
     return await db.assistencias.find_one({"id": record_id}, {"_id": 0})
 
 
-async def get_stats() -> dict:
+async def get_stats(record_filter: dict = None) -> dict:
     """Aggregated counters for dashboard cards."""
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     pipeline = [
@@ -593,6 +608,104 @@ async def get_stats() -> dict:
         if agg[0].get("today"):
             out["today"] = agg[0]["today"][0]["n"]
     return out
+
+
+async def get_stats_advanced(start: Optional[str], end: Optional[str]) -> dict:
+    """Per-employee, per-status, monthly aggregates + totals."""
+    match: dict = {}
+    if start:
+        match.setdefault("created_at", {})["$gte"] = start
+    if end:
+        match.setdefault("created_at", {})["$lte"] = end + "T23:59:59"
+    base = [{"$match": match}] if match else []
+    pipeline = base + [{"$facet": {
+        "by_employee": [
+            {"$group": {
+                "_id": {"id": "$employee_id", "name": "$employee_name"},
+                "count": {"$sum": 1},
+                "billed_total": {"$sum": {"$ifNull": ["$invoice_total", 0]}},
+                "billed_count": {"$sum": {"$cond": [{"$eq": ["$status", "FATURADA_CONCLUIDA"]}, 1, 0]}},
+            }},
+            {"$sort": {"count": -1}},
+        ],
+        "by_status": [{"$group": {"_id": "$status", "n": {"$sum": 1}}}],
+        "by_month": [
+            {"$addFields": {"month": {"$substr": ["$created_at", 0, 7]}}},
+            {"$group": {
+                "_id": "$month",
+                "count": {"$sum": 1},
+                "billed_total": {"$sum": {"$ifNull": ["$invoice_total", 0]}},
+            }},
+            {"$sort": {"_id": 1}},
+        ],
+        "totals": [
+            {"$group": {
+                "_id": None,
+                "count": {"$sum": 1},
+                "billed_total": {"$sum": {"$ifNull": ["$invoice_total", 0]}},
+            }},
+        ],
+    }}]
+    agg = await db.assistencias.aggregate(pipeline).to_list(1)
+    res = agg[0] if agg else {}
+    employees = [
+        {"employee_id": r["_id"].get("id"), "employee_name": r["_id"].get("name"),
+         "count": r["count"], "billed_total": round(r["billed_total"], 2),
+         "billed_count": r["billed_count"]}
+        for r in res.get("by_employee", [])
+    ]
+    return {
+        "by_employee": employees,
+        "by_status": {r["_id"]: r["n"] for r in res.get("by_status", [])},
+        "by_month": [
+            {"month": r["_id"], "count": r["count"], "billed_total": round(r["billed_total"], 2)}
+            for r in res.get("by_month", [])
+        ],
+        "totals": (res.get("totals") or [{}])[0],
+    }
+
+
+async def export_csv(status: Optional[str], employee_id: Optional[str],
+                     start: Optional[str], end: Optional[str]) -> bytes:
+    import io
+    import csv as _csv
+    query: dict = {}
+    if status:
+        query["status"] = status
+    if employee_id:
+        query["employee_id"] = employee_id
+    if start:
+        query.setdefault("created_at", {})["$gte"] = start
+    if end:
+        query.setdefault("created_at", {})["$lte"] = end + "T23:59:59"
+    rows = await db.assistencias.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    buf = io.StringIO()
+    writer = _csv.writer(buf, delimiter=";", quoting=_csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "Data Criação", "Funcionário", "Matrícula", "Estado",
+        "Latitude", "Longitude", "Google Maps",
+        "Nº Fatura", "Data Fatura", "Total €", "Cliente", "NIF",
+        "Motivo Não Faturável", "Entrega Confirmada", "Observações",
+    ])
+    for r in rows:
+        writer.writerow([
+            r.get("created_at", ""),
+            r.get("employee_name", ""),
+            r.get("registration_plate", ""),
+            r.get("status", ""),
+            r.get("latitude", ""),
+            r.get("longitude", ""),
+            r.get("google_maps_url", ""),
+            r.get("invoice_number", ""),
+            r.get("invoice_date", ""),
+            r.get("invoice_total", ""),
+            r.get("invoice_customer", ""),
+            r.get("invoice_nif", ""),
+            r.get("non_billable_reason", ""),
+            r.get("delivery_confirmed_at", ""),
+            (r.get("text_notes") or "").replace("\n", " ")[:300],
+        ])
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 async def update_status(record_id: str, new_status: str, user: dict) -> Optional[dict]:

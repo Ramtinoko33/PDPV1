@@ -177,6 +177,33 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     return await service.get_stats()
 
 
+@router.get("/stats/advanced")
+async def get_stats_advanced(
+    start: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
+    end: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
+    current_user: dict = Depends(get_current_user),
+):
+    _require_office_or_admin(current_user)
+    return await service.get_stats_advanced(start, end)
+
+
+@router.get("/export/csv")
+async def export_csv(
+    status: Optional[str] = Query(None),
+    employee_id: Optional[str] = Query(None),
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
+):
+    _require_office_or_admin(current_user)
+    csv_bytes = await service.export_csv(status, employee_id, start, end)
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="assistencias.csv"'},
+    )
+
+
 @router.get("/records")
 async def list_records(
     status: Optional[str] = Query(None),

@@ -10,8 +10,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '../components/ui/select';
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle
+} from '../components/ui/dialog';
+import {
   Search, Loader2, ChevronRight, Calendar, FileText, AlertCircle,
-  FileCheck, CheckCircle2, Ban, Truck
+  FileCheck, CheckCircle2, Ban, Truck, Download, BarChart3
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -52,13 +55,18 @@ const StatCard = ({ icon: Icon, label, value, tone, testid }) => (
 );
 
 const AssistenciasPage = () => {
-  const { getAuthHeaders } = useAuth();
+  const { user, getAuthHeaders } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState({});
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [advancedStats, setAdvancedStats] = useState(null);
+  const [showStats, setShowStats] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const isOffice = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +89,37 @@ const AssistenciasPage = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  const onExportCSV = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      const r = await axios.get(`${API_URL}/api/assistencias/export/csv?${params.toString()}`, {
+        headers: getAuthHeaders(), responseType: 'blob',
+      });
+      const blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `assistencias_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      console.error('CSV export failed:', e);
+    }
+  };
+
+  const onOpenStats = async () => {
+    setShowStats(true);
+    setStatsLoading(true);
+    try {
+      const r = await axios.get(`${API_URL}/api/assistencias/stats/advanced`, { headers: getAuthHeaders() });
+      setAdvancedStats(r.data);
+    } catch (e) {
+      console.error('Stats failed:', e);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -90,6 +129,16 @@ const AssistenciasPage = () => {
           </h1>
           <p className="text-zinc-500 mt-1">Assistências externas e faturação associada.</p>
         </div>
+        {isOffice && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onOpenStats} data-testid="stats-btn">
+              <BarChart3 className="h-4 w-4 mr-1" /> Estatísticas
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExportCSV} data-testid="csv-btn">
+              <Download className="h-4 w-4 mr-1" /> CSV
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
@@ -180,6 +229,76 @@ const AssistenciasPage = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showStats} onOpenChange={setShowStats}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Estatísticas Avançadas</DialogTitle>
+          </DialogHeader>
+          {statsLoading ? (
+            <div className="py-8 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
+          ) : advancedStats ? (
+            <div className="space-y-6 max-h-[600px] overflow-y-auto">
+              {/* Totals */}
+              {advancedStats.totals?.count != null && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <div className="text-xs text-zinc-500">Total assistências</div>
+                    <div className="text-2xl font-bold">{advancedStats.totals.count}</div>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <div className="text-xs text-zinc-500">Faturado total</div>
+                    <div className="text-2xl font-bold">{(advancedStats.totals.billed_total || 0).toFixed(2)} €</div>
+                  </div>
+                </div>
+              )}
+              {/* By employee */}
+              {advancedStats.by_employee?.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-2">Por Funcionário</h3>
+                  <table className="w-full text-sm">
+                    <thead className="bg-zinc-50 text-xs">
+                      <tr>
+                        <th className="text-left py-2 px-3">Funcionário</th>
+                        <th className="text-center py-2 px-3">Total</th>
+                        <th className="text-center py-2 px-3">Concluídas</th>
+                        <th className="text-right py-2 px-3">Faturado €</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {advancedStats.by_employee.map((e) => (
+                        <tr key={e.employee_id || e.employee_name} className="border-t">
+                          <td className="py-2 px-3">{e.employee_name || '—'}</td>
+                          <td className="text-center py-2 px-3 font-semibold">{e.count}</td>
+                          <td className="text-center py-2 px-3 text-emerald-700">{e.billed_count}</td>
+                          <td className="text-right py-2 px-3 font-mono">{e.billed_total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {/* By month */}
+              {advancedStats.by_month?.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-2">Por Mês</h3>
+                  <div className="space-y-1">
+                    {advancedStats.by_month.map(m => (
+                      <div key={m.month} className="flex items-center justify-between text-sm border-b py-1">
+                        <span className="font-mono">{m.month}</span>
+                        <span className="text-zinc-500">{m.count} assistências</span>
+                        <span className="font-semibold">{m.billed_total.toFixed(2)} €</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center text-zinc-500 py-8">Sem dados</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

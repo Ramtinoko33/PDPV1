@@ -155,11 +155,14 @@ const Layout = ({ children }) => {
       requireRentingAccess: true
     },
     {
-      path: '/assistencias',
       label: 'Assistências',
       icon: Truck,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
-      requireAssistenciasAccess: true
+      requireAssistenciasAccess: true,
+      children: [
+        { path: '/assistencias', label: 'Lista', icon: Truck, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/admin/assistencias-users', label: 'Bot & Utilizadores', icon: Users, roles: ['ADMIN'] },
+      ]
     },
     { 
       path: '/tickets/archived', 

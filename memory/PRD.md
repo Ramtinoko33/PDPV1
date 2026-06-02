@@ -9,6 +9,13 @@
 - Notifications: Telegram Bot + Web Push (VAPID) + Resend
 
 ## Completed Features
+- [x] **Módulo Assistências - Fase 2 (Feb 2026):**
+  - Notificações push aos office users (admin+supervisor) ao criar nova assistência via bot (`notify_supervisors`).
+  - Endpoint `GET /api/assistencias/stats/advanced` — totais, por funcionário, por status, por mês (com € faturado).
+  - Endpoint `GET /api/assistencias/export/csv` — exportação CSV com BOM UTF-8 e separador `;` (compatível Excel PT).
+  - Admin UI `/admin/assistencias-users` — gestão do bot (estado, configurar webhook) + autorizar funcionários (linka telegram_user_id ↔ User).
+  - Sidebar: "Assistências" passou a grupo colapsável com sub-items "Lista" + "Bot & Utilizadores".
+  - Frontend: botões "Estatísticas" (modal) e "CSV" (download) na AssistenciasPage (admin/supervisor only).
 - [x] **Módulo Assistências - Fase 1 (Feb 2026):** Novo módulo independente para gerir assistências externas de campo, com ciclo de vida completo Funcionário → Bot Telegram → Faturação → Confirmação de Entrega.
   - **Backend** (`/app/backend/modules/assistencias/`): models.py (status flow + 7 estados + transições válidas), service.py (state machine bot 6 passos, OCR matrícula via GPT-4o, audit logs por ação), routes.py (`/api/assistencias/*`), pdf_extraction.py (extração de fatura via GPT-4o vision, PyMuPDF para render), bot_api.py (Telegram API wrapper).
   - **Schema MongoDB**: coleção `assistencias` (registo + audit_logs[]), `assistencias_bot_users` (autorizações).

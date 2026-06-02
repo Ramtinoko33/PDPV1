@@ -22,6 +22,7 @@ import RentingPage from "./pages/RentingPage";
 import RentingDetail from "./pages/RentingDetail";
 import AssistenciasPage from "./pages/AssistenciasPage";
 import AssistenciasDetail from "./pages/AssistenciasDetail";
+import AdminAssistenciasUsers from "./pages/AdminAssistenciasUsers";
 import NormalizationSettings from "./pages/NormalizationSettings";
 import AdminTelegramUsers from "./pages/AdminTelegramUsers";
 import Layout from "./components/Layout";
@@ -176,6 +177,12 @@ function AppRoutes() {
       <Route path="/assistencias/:id" element={
         <ProtectedRoute allowedRoles={ROLES_ALL}>
           <AssistenciasDetail />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/assistencias-users" element={
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
+          <AdminAssistenciasUsers />
         </ProtectedRoute>
       } />
 
