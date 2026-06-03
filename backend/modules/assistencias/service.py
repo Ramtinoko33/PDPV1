@@ -188,7 +188,8 @@ async def get_employee_for_chat(telegram_user_id: int) -> Optional[dict]:
     user = await db.users.find_one({"id": rec.get("user_id")}, {"_id": 0, "password_hash": 0})
     if not user:
         return None
-    if not user.get("has_assistencias_access"):
+    # ADMIN/SUPERVISOR always have access; AGENT needs the explicit flag
+    if user.get("role") not in ("ADMIN", "SUPERVISOR") and not user.get("has_assistencias_access"):
         return None
     return user
 
