@@ -192,6 +192,8 @@ const AssistenciasPage = () => {
                   <tr>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Data</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Matrícula</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Cliente</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">NIF</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Funcionário</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Estado</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-zinc-600 uppercase">Fatura</th>
@@ -211,6 +213,8 @@ const AssistenciasPage = () => {
                       >
                         <td className="py-3 px-4 text-sm">{formatDateTime(r.created_at)}</td>
                         <td className="py-3 px-4 font-mono font-semibold text-zinc-900">{r.registration_plate || '—'}</td>
+                        <td className="py-3 px-4 text-sm">{r.invoice_customer || <span className="text-zinc-400">—</span>}</td>
+                        <td className="py-3 px-4 text-sm font-mono">{r.invoice_nif || <span className="text-zinc-400">—</span>}</td>
                         <td className="py-3 px-4 text-sm">{r.employee_name || '—'}</td>
                         <td className="py-3 px-4"><Badge className={m.color}>{m.label}</Badge></td>
                         <td className="py-3 px-4 text-sm">{r.invoice_number || <span className="text-zinc-400">—</span>}</td>

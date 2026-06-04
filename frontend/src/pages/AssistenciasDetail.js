@@ -56,7 +56,7 @@ const formatDateTime = (iso) => {
   } catch { return iso; }
 };
 
-const PhotoTile = ({ recordId, kind, index = 0, label }) => {
+const PhotoTile = ({ recordId, kind, index = 0, label, onPreview }) => {
   const { getAuthHeaders } = useAuth();
   const [src, setSrc] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -90,9 +90,10 @@ const PhotoTile = ({ recordId, kind, index = 0, label }) => {
       {!loading && src && (
         <button
           type="button"
-          onClick={() => window.open(src, '_blank')}
-          className="block w-full h-full bg-transparent border-0 p-0 cursor-pointer"
-          aria-label={`Abrir ${label}`}
+          onClick={() => onPreview && onPreview(src, label)}
+          className="block w-full h-full bg-transparent border-0 p-0 cursor-zoom-in"
+          aria-label={`Ampliar ${label}`}
+          data-testid={`photo-${kind}-${index}`}
         >
           <img src={src} alt={label} className="w-full h-full object-cover" />
         </button>
@@ -145,6 +146,7 @@ const AssistenciasDetail = () => {
   const [invoiceForm, setInvoiceForm] = useState({});
   const [nonBillReason, setNonBillReason] = useState('');
   const [nonBillNote, setNonBillNote] = useState('');
+  const [lightbox, setLightbox] = useState(null); // {src, label}
   const fileInputRef = useRef(null);
 
   const isOffice = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
@@ -428,10 +430,10 @@ const AssistenciasDetail = () => {
             <CardHeader><CardTitle className="text-base">Anexos</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {rec.plate_photo && <PhotoTile recordId={id} kind="plate" label="Matrícula" />}
-                {rec.worksheet_photo && <PhotoTile recordId={id} kind="worksheet" label="Folha de Obra" />}
+                {rec.plate_photo && <PhotoTile recordId={id} kind="plate" label="Matrícula" onPreview={(s, l) => setLightbox({ src: s, label: l })} />}
+                {rec.worksheet_photo && <PhotoTile recordId={id} kind="worksheet" label="Folha de Obra" onPreview={(s, l) => setLightbox({ src: s, label: l })} />}
                 {(rec.additional_photos || []).map((_, i) => (
-                  <PhotoTile key={`add-${i}`} recordId={id} kind="additional" index={i} label={`Foto ${i + 1}`} />
+                  <PhotoTile key={`add-${i}`} recordId={id} kind="additional" index={i} label={`Foto ${i + 1}`} onPreview={(s, l) => setLightbox({ src: s, label: l })} />
                 ))}
               </div>
             </CardContent>
@@ -494,6 +496,25 @@ const AssistenciasDetail = () => {
           </Card>
         </div>
       </div>
+
+      {/* Lightbox for full-size photos */}
+      <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="max-w-5xl p-2 bg-black/95 border-0">
+          <DialogHeader>
+            <DialogTitle className="text-white text-sm">{lightbox?.label}</DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <div className="flex items-center justify-center" style={{ maxHeight: '85vh' }}>
+              <img
+                src={lightbox.src}
+                alt={lightbox.label}
+                className="max-w-full max-h-[85vh] object-contain"
+                data-testid="lightbox-image"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Invoice extraction confirmation modal */}
       <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
