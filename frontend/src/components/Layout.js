@@ -39,6 +39,7 @@ const Layout = ({ children }) => {
   const [pendingIntakeCount, setPendingIntakeCount] = useState(0);
   const [pendingAlertsCount, setPendingAlertsCount] = useState(0);
   const [pendingRentingCount, setPendingRentingCount] = useState(0);
+  const [pendingAssistenciasCount, setPendingAssistenciasCount] = useState(0);
 
   // Fetch pending intake count for badge
   useEffect(() => {
@@ -104,6 +105,26 @@ const Layout = ({ children }) => {
     return () => clearInterval(interval);
   }, [user, getAuthHeaders]);
 
+  // Fetch pending Assistências count for badge
+  useEffect(() => {
+    const fetchAssistenciasCount = async () => {
+      if (!user) return;
+      const hasAccess = ['ADMIN', 'SUPERVISOR'].includes(user.role) || user.has_assistencias_access;
+      if (!hasAccess) return;
+      try {
+        const response = await axios.get(`${API_URL}/api/assistencias/pending-count`, {
+          headers: getAuthHeaders()
+        });
+        setPendingAssistenciasCount(response.data.count || 0);
+      } catch (error) {
+        // Module might be disabled - silent
+      }
+    };
+    fetchAssistenciasCount();
+    const interval = setInterval(fetchAssistenciasCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, getAuthHeaders]);
+
   // Note: Removed auto-refresh that was causing data loss when typing
   // Notifications are now handled via NotificationContext polling
 
@@ -159,6 +180,7 @@ const Layout = ({ children }) => {
       icon: Truck,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
       requireAssistenciasAccess: true,
+      badge: 'assistencias',
       children: [
         { path: '/assistencias', label: 'Lista', icon: Truck, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/admin/assistencias-users', label: 'Bot & Utilizadores', icon: Users, roles: ['ADMIN'] },
@@ -299,6 +321,7 @@ const Layout = ({ children }) => {
                 if (item.children) {
                   const isOpen = !!expandedGroups[item.label];
                   const hasActiveChild = item.children.some(c => c.path === location.pathname);
+                  const groupBadge = item.badge === 'assistencias' ? pendingAssistenciasCount : 0;
                   return (
                     <div key={item.label}>
                       <button
@@ -316,9 +339,17 @@ const Layout = ({ children }) => {
                       >
                         <Icon className="h-5 w-5" />
                         <span>{item.label}</span>
-                        {isOpen
-                          ? <ChevronDown className="h-4 w-4 ml-auto" />
-                          : <ChevronRight className="h-4 w-4 ml-auto" />}
+                        {groupBadge > 0 && (
+                          <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                            {groupBadge > 99 ? '99+' : groupBadge}
+                          </span>
+                        )}
+                        {groupBadge > 0
+                          ? null
+                          : (isOpen
+                              ? <ChevronDown className="h-4 w-4 ml-auto" />
+                              : <ChevronRight className="h-4 w-4 ml-auto" />)
+                        }
                       </button>
                       {isOpen && (
                         <div className="mt-1 ml-3 pl-3 border-l border-slate-700 space-y-1">

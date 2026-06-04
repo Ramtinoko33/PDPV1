@@ -177,6 +177,18 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     return await service.get_stats()
 
 
+@router.get("/pending-count")
+async def pending_count(current_user: dict = Depends(get_current_user)):
+    """Count of records still requiring office attention (everything except FATURADA_CONCLUIDA and NAO_FATURAVEL)."""
+    _check_access(current_user)
+    q = {"status": {"$nin": ["FATURADA_CONCLUIDA", "NAO_FATURAVEL"]}}
+    if current_user.get("role") not in ("ADMIN", "SUPERVISOR"):
+        q["employee_id"] = current_user.get("id")
+    from db import db as _db
+    n = await _db.assistencias.count_documents(q)
+    return {"count": n}
+
+
 @router.get("/stats/advanced")
 async def get_stats_advanced(
     start: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
