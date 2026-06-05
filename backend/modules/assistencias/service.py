@@ -161,20 +161,30 @@ async def ocr_plate(image_bytes: bytes) -> Optional[str]:
     return None
 
 
-# ============== Telegram bot state (per chat) ==============
-_states: dict = {}
+# ============== Telegram bot state (persisted in MongoDB so multi-pod / restarts don't lose context) ==============
+
+async def _load_state(chat_id: int) -> dict:
+    rec = await db.assistencias_bot_state.find_one({"chat_id": int(chat_id)}, {"_id": 0})
+    if not rec:
+        return {"state": STATE_IDLE, "draft": {}}
+    return {"state": rec.get("state", STATE_IDLE), "draft": rec.get("draft", {})}
 
 
-def _state(chat_id: int) -> dict:
-    s = _states.get(chat_id)
-    if not s:
-        s = {"state": STATE_IDLE, "draft": {}}
-        _states[chat_id] = s
-    return s
+async def _save_state(chat_id: int, state: dict) -> None:
+    await db.assistencias_bot_state.update_one(
+        {"chat_id": int(chat_id)},
+        {"$set": {
+            "chat_id": int(chat_id),
+            "state": state.get("state", STATE_IDLE),
+            "draft": state.get("draft", {}),
+            "updated_at": _now_iso(),
+        }},
+        upsert=True,
+    )
 
 
-def _reset_state(chat_id: int) -> None:
-    _states[chat_id] = {"state": STATE_IDLE, "draft": {}}
+async def _reset_state(chat_id: int) -> None:
+    await db.assistencias_bot_state.delete_one({"chat_id": int(chat_id)})
 
 
 # ============== Authorized employees ==============
@@ -206,8 +216,8 @@ async def start_new_assistance(chat_id: int, telegram_user: dict) -> None:
             "<b>Assistências → Utilizadores</b>.",
         )
         return
-    _reset_state(chat_id)
-    state = _state(chat_id)
+    await _reset_state(chat_id)
+    state = await _load_state(chat_id)
     state["state"] = STATE_WAIT_LOCATION
     state["draft"] = {
         "employee_id": employee["id"],
@@ -215,6 +225,7 @@ async def start_new_assistance(chat_id: int, telegram_user: dict) -> None:
         "telegram_chat_id": chat_id,
         "telegram_user_id": telegram_user["id"],
     }
+    await _save_state(chat_id, state)
     await bot_api.send_message(
         chat_id,
         "🚐 <b>Nova Assistência</b>\n\n"
@@ -225,12 +236,12 @@ async def start_new_assistance(chat_id: int, telegram_user: dict) -> None:
 
 
 async def cancel_session(chat_id: int) -> None:
-    _reset_state(chat_id)
+    await _reset_state(chat_id)
     await bot_api.send_message(chat_id, "❌ Sessão cancelada. Use /nova_assistencia para começar de novo.")
 
 
 async def handle_location(chat_id: int, telegram_user: dict, location: dict) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     if state["state"] != STATE_WAIT_LOCATION:
         await bot_api.send_message(chat_id, "Use /nova_assistencia para começar.")
         return
@@ -244,6 +255,7 @@ async def handle_location(chat_id: int, telegram_user: dict, location: dict) -> 
     state["draft"]["google_maps_url"] = f"https://www.google.com/maps?q={lat},{lon}"
     state["draft"]["location_timestamp"] = _now_iso()
     state["state"] = STATE_WAIT_PLATE
+    await _save_state(chat_id, state)
     await bot_api.send_message(
         chat_id,
         "✅ Localização recebida.\n\n"
@@ -253,7 +265,7 @@ async def handle_location(chat_id: int, telegram_user: dict, location: dict) -> 
 
 
 async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     if state["state"] == STATE_WAIT_PLATE:
         img_bytes, _ = await bot_api.download_file(photo["file_id"])
         if not img_bytes:
@@ -267,6 +279,7 @@ async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
             state["draft"]["registration_plate_ocr"] = plate
             state["draft"]["registration_plate"] = plate
             state["state"] = STATE_CONFIRM_PLATE
+            await _save_state(chat_id, state)
             kb = {"inline_keyboard": [
                 [{"text": f"✅ Confirmar {plate}", "callback_data": "plate_ok"}],
                 [{"text": "✏️ Corrigir manualmente", "callback_data": "plate_edit"}],
@@ -274,6 +287,7 @@ async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
             await bot_api.send_message(chat_id, f"Matrícula detectada: <b>{plate}</b>", reply_markup=kb)
         else:
             state["state"] = STATE_EDIT_PLATE
+            await _save_state(chat_id, state)
             await bot_api.send_message(
                 chat_id, "Não consegui ler a matrícula automaticamente. Por favor escreva-a (ex: AA-00-AA)."
             )
@@ -287,6 +301,7 @@ async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
         rec = await _store_image(img_bytes, "worksheets")
         state["draft"]["worksheet_photo"] = rec
         state["state"] = STATE_ASK_ADDITIONAL
+        await _save_state(chat_id, state)
         kb = {"inline_keyboard": [
             [{"text": "📷 Sim, anexar fotos", "callback_data": "addl_yes"}],
             [{"text": "⏭️ Não, continuar", "callback_data": "addl_no"}],
@@ -306,6 +321,7 @@ async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
         rec = await _store_image(img_bytes, "additional")
         state["draft"].setdefault("additional_photos", []).append(rec)
         count = len(state["draft"]["additional_photos"])
+        await _save_state(chat_id, state)
         if count >= MAX_ADDITIONAL_PHOTOS:
             await bot_api.send_message(chat_id, f"📷 {count}/{MAX_ADDITIONAL_PHOTOS} fotos recebidas. Limite atingido.")
             await _ask_notes(chat_id)
@@ -324,7 +340,7 @@ async def handle_photo(chat_id: int, telegram_user: dict, photo: dict) -> None:
 
 
 async def handle_voice(chat_id: int, telegram_user: dict, voice: dict) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     if state["state"] not in (STATE_COLLECT_AUDIO_NOTES, STATE_ASK_NOTES):
         await bot_api.send_message(chat_id, "Áudio recebido fora de contexto.")
         return
@@ -346,16 +362,18 @@ async def handle_voice(chat_id: int, telegram_user: dict, voice: dict) -> None:
             state["draft"]["audio_transcription"] = transcript
     except Exception as e:
         logger.warning(f"[ASSIST_BOT] transcription failed: {e}")
+    await _save_state(chat_id, state)
     await _finalize_creation(chat_id)
 
 
 async def handle_text(chat_id: int, telegram_user: dict, text: str) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     if state["state"] in (STATE_WAIT_PLATE, STATE_EDIT_PLATE):
         import re
         plate_clean = re.sub(r"\s+", "", text.upper())
         state["draft"]["registration_plate"] = plate_clean
         state["state"] = STATE_WAIT_WORKSHEET
+        await _save_state(chat_id, state)
         await bot_api.send_message(
             chat_id,
             f"✅ Matrícula registada: <b>{plate_clean}</b>\n\n"
@@ -365,6 +383,7 @@ async def handle_text(chat_id: int, telegram_user: dict, text: str) -> None:
 
     if state["state"] == STATE_COLLECT_TEXT_NOTES:
         state["draft"]["text_notes"] = text.strip()
+        await _save_state(chat_id, state)
         await _finalize_creation(chat_id)
         return
 
@@ -375,11 +394,12 @@ async def handle_text(chat_id: int, telegram_user: dict, text: str) -> None:
 
 
 async def handle_callback(chat_id: int, data: str, callback_id: str = "") -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     await bot_api.answer_callback_query(callback_id)
 
     if data == "plate_ok" and state["state"] == STATE_CONFIRM_PLATE:
         state["state"] = STATE_WAIT_WORKSHEET
+        await _save_state(chat_id, state)
         await bot_api.send_message(
             chat_id,
             "📄 <b>Passo 3/3:</b> Envie a <b>foto da folha de obra preenchida</b>.",
@@ -388,11 +408,13 @@ async def handle_callback(chat_id: int, data: str, callback_id: str = "") -> Non
 
     if data == "plate_edit" and state["state"] == STATE_CONFIRM_PLATE:
         state["state"] = STATE_EDIT_PLATE
+        await _save_state(chat_id, state)
         await bot_api.send_message(chat_id, "Escreva a matrícula correcta (ex: AA-00-AA).")
         return
 
     if data == "addl_yes" and state["state"] == STATE_ASK_ADDITIONAL:
         state["state"] = STATE_COLLECT_ADDITIONAL
+        await _save_state(chat_id, state)
         await bot_api.send_message(
             chat_id, f"📷 Envie até {MAX_ADDITIONAL_PHOTOS} fotos. Toque em concluído quando terminar."
         )
@@ -408,11 +430,13 @@ async def handle_callback(chat_id: int, data: str, callback_id: str = "") -> Non
 
     if data == "notes_text" and state["state"] == STATE_ASK_NOTES:
         state["state"] = STATE_COLLECT_TEXT_NOTES
+        await _save_state(chat_id, state)
         await bot_api.send_message(chat_id, "✏️ Escreva as observações.")
         return
 
     if data == "notes_voice" and state["state"] == STATE_ASK_NOTES:
         state["state"] = STATE_COLLECT_AUDIO_NOTES
+        await _save_state(chat_id, state)
         await bot_api.send_message(chat_id, "🎤 Grave e envie a sua mensagem de voz.")
         return
 
@@ -428,8 +452,9 @@ async def handle_callback(chat_id: int, data: str, callback_id: str = "") -> Non
 
 
 async def _ask_notes(chat_id: int) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     state["state"] = STATE_ASK_NOTES
+    await _save_state(chat_id, state)
     kb = {"inline_keyboard": [
         [{"text": "📝 Texto", "callback_data": "notes_text"}],
         [{"text": "🎤 Voz", "callback_data": "notes_voice"}],
@@ -439,7 +464,7 @@ async def _ask_notes(chat_id: int) -> None:
 
 
 async def _finalize_creation(chat_id: int) -> None:
-    state = _state(chat_id)
+    state = await _load_state(chat_id)
     draft = state.get("draft", {})
 
     # Validate mandatory fields
@@ -494,7 +519,7 @@ async def _finalize_creation(chat_id: int) -> None:
         ],
     }
     await db.assistencias.insert_one(record)
-    _reset_state(chat_id)
+    await _reset_state(chat_id)
 
     # Notify office (admins + supervisors) about the new assistance
     try:
