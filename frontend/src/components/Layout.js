@@ -134,34 +134,27 @@ const Layout = ({ children }) => {
   };
 
   const navItems = [
-    { 
-      path: '/dashboard', 
-      label: 'Painel', 
+    {
+      path: '/dashboard',
+      label: 'Painel',
       icon: LayoutDashboard,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
     },
-    { 
-      path: '/tickets', 
-      label: 'Tickets', 
+    {
+      label: 'Tickets',
       icon: Ticket,
-      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR'],
+      badge: 'intake',
+      children: [
+        { path: '/tickets', label: 'Lista', icon: Ticket, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/tickets/new', label: 'Criar Novo', icon: Plus, roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR'] },
+        { path: '/intake', label: 'Pré-Tickets', icon: ClipboardList, roles: ['ADMIN', 'SUPERVISOR'], badge: 'intake' },
+        { path: '/tickets/archived', label: 'Arquivados', icon: Archive, roles: ['ADMIN', 'SUPERVISOR'] },
+      ]
     },
-    { 
-      path: '/tickets/new', 
-      label: 'Novo Ticket', 
-      icon: Plus,
-      roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATOR']
-    },
-    { 
-      path: '/intake', 
-      label: 'Pré-Tickets', 
-      icon: ClipboardList,
-      roles: ['ADMIN', 'SUPERVISOR'],
-      badge: 'intake'
-    },
-    { 
-      path: '/alertas', 
-      label: 'Alertas', 
+    {
+      path: '/alertas',
+      label: 'Alertas',
       icon: Zap,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
       badge: 'alerts',
@@ -186,56 +179,35 @@ const Layout = ({ children }) => {
         { path: '/admin/assistencias-users', label: 'Bot & Utilizadores', icon: Users, roles: ['ADMIN'] },
       ]
     },
-    { 
-      path: '/tickets/archived', 
-      label: 'Arquivados', 
-      icon: Archive,
-      roles: ['ADMIN', 'SUPERVISOR']
-    },
-    { 
-      path: '/reminders', 
-      label: 'Lembretes', 
-      icon: Bell,
-      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
-    },
-    { 
-      path: '/customers', 
-      label: 'Clientes', 
+    {
+      path: '/customers',
+      label: 'Clientes',
       icon: UsersRound,
       roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
     },
-    { 
-      path: '/users', 
-      label: 'Utilizadores', 
-      icon: Users,
-      roles: ['ADMIN']
+    {
+      path: '/reminders',
+      label: 'Lembretes',
+      icon: Bell,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT']
     },
-    { 
-      path: '/reports', 
-      label: 'Relatórios', 
+    {
+      path: '/reports',
+      label: 'Relatórios',
       icon: BarChart3,
       roles: ['ADMIN', 'SUPERVISOR']
     },
-    { 
-      label: 'Telegram', 
-      icon: Send,
-      roles: ['ADMIN'],
-      children: [
-        { path: '/telegram', label: 'Configuração', icon: Send, roles: ['ADMIN'] },
-        { path: '/admin/telegram-users', label: 'Utilizadores', icon: Users, roles: ['ADMIN'] },
-      ]
-    },
-    { 
-      path: '/settings', 
-      label: 'Configurações', 
+    {
+      label: 'Administração',
       icon: Settings,
-      roles: ['ADMIN']
-    },
-    { 
-      path: '/settings/normalization', 
-      label: 'Normalização', 
-      icon: Wrench,
-      roles: ['ADMIN', 'SUPERVISOR']
+      roles: ['ADMIN', 'SUPERVISOR'],
+      children: [
+        { path: '/users', label: 'Utilizadores', icon: Users, roles: ['ADMIN'] },
+        { path: '/settings', label: 'Configurações Gerais', icon: Settings, roles: ['ADMIN'] },
+        { path: '/settings/normalization', label: 'Normalização', icon: Wrench, roles: ['ADMIN', 'SUPERVISOR'] },
+        { path: '/telegram', label: 'Telegram (Bot Principal)', icon: Send, roles: ['ADMIN'] },
+        { path: '/admin/telegram-users', label: 'Telegram (Utilizadores)', icon: Users, roles: ['ADMIN'] },
+      ]
     },
   ];
 
@@ -321,7 +293,10 @@ const Layout = ({ children }) => {
                 if (item.children) {
                   const isOpen = !!expandedGroups[item.label];
                   const hasActiveChild = item.children.some(c => c.path === location.pathname);
-                  const groupBadge = item.badge === 'assistencias' ? pendingAssistenciasCount : 0;
+                  const groupBadge =
+                    item.badge === 'assistencias' ? pendingAssistenciasCount :
+                    item.badge === 'intake' ? pendingIntakeCount :
+                    0;
                   return (
                     <div key={item.label}>
                       <button
