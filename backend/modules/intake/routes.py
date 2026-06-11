@@ -4,11 +4,13 @@ API endpoints for intake requests.
 Only loaded if module is enabled in config/modules.json
 """
 import uuid
+import logging
 from datetime import datetime, timezone, timedelta, date, time
 from typing import Optional, List, Tuple
 from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 
 from db import db
 from core.security import get_current_user
@@ -24,7 +26,57 @@ from .models import (
 )
 from . import service
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/intake", tags=["intake"])
+
+
+# Legacy/seed-tolerant defaults — kept narrow on purpose. Real writes still
+# go through IntakeRequestCreate so we don't want to silently accept garbage.
+_INTAKE_LEGACY_STATUS_MAP = {
+    "NEW": "PENDING",
+    "REVIEW": "PROCESSING",
+    "TRIAGED": "PROCESSING",
+    "OPEN": "PENDING",
+}
+
+
+def _safe_intake_response(r: dict) -> Optional[IntakeRequestResponse]:
+    """Coerce a possibly-legacy intake doc into IntakeRequestResponse.
+
+    - Maps legacy statuses (NEW/REVIEW/TRIAGED/OPEN) to the canonical enum.
+    - Fills `source` from `origin_channel`/`source_bot`/`channel` heuristics.
+    - Returns None when the doc is too broken to coerce.
+    """
+    if not r.get("id"):
+        logger.warning("Intake doc missing id — skipping")
+        return None
+    patched = {**r}
+    # Status mapping
+    st = patched.get("status")
+    if isinstance(st, str) and st in _INTAKE_LEGACY_STATUS_MAP:
+        patched["status"] = _INTAKE_LEGACY_STATUS_MAP[st]
+    # Infer source if missing
+    if not patched.get("source"):
+        oc = (patched.get("origin_channel") or patched.get("channel") or "").lower()
+        sb = (patched.get("source_bot") or "").lower()
+        if "whatsapp" in oc or "whatsapp" in sb or "meta" in sb:
+            patched["source"] = "whatsapp"
+        elif "telegram" in oc or "telegram" in sb:
+            patched["source"] = "telegram"
+        else:
+            patched["source"] = "manual"
+    # raw_text fallback
+    if not patched.get("raw_text"):
+        patched["raw_text"] = patched.get("description") or ""
+    try:
+        return IntakeRequestResponse(**patched)
+    except ValidationError as e:
+        logger.warning(
+            "Skipping malformed intake_request id=%s: %s",
+            patched.get("id"), e.errors(),
+        )
+        return None
 
 # ============== SLA BUSINESS HOURS (duplicated from server.py for module isolation) ==============
 BUSINESS_HOURS = {
@@ -140,7 +192,7 @@ async def list_intake_requests(
     total_pages = ceil(total / page_size) if total > 0 else 1
     
     return IntakeListResponse(
-        items=[IntakeRequestResponse(**r) for r in items],
+        items=[r for r in (_safe_intake_response(it) for it in items) if r is not None],
         total=total,
         page=page,
         page_size=page_size,
@@ -157,7 +209,13 @@ async def get_intake_request(
     request = await service.get_intake_request(intake_id)
     if not request:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
-    return IntakeRequestResponse(**request)
+    resp = _safe_intake_response(request)
+    if resp is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Pedido com dados em falta — contacte o administrador",
+        )
+    return resp
 
 
 @router.post("", response_model=IntakeRequestResponse)

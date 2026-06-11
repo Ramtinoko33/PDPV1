@@ -209,7 +209,8 @@ class TestWebhookInbound:
         intake = run(_find_intake())
         assert intake is not None, "no intake_request created"
         assert intake["channel"] == "WHATSAPP"
-        assert intake["status"] == "NEW"
+        assert intake["status"] == "PENDING"
+        assert intake["source"] == "whatsapp"
         assert intake["sender_phone"] == phone
         # Verify ticket_messages entry was saved with intake_id
         async def _find_msg():

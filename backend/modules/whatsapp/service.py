@@ -125,8 +125,8 @@ async def route_inbound_message(
     # 2) Existing open intake (pre-ticket) for same phone
     intake = await db.intake_requests.find_one(
         {
-            "sender_phone": phone,
-            "status": {"$in": ["NEW", "REVIEW", "TRIAGED", "PENDING"]},
+            "$or": [{"sender_phone": phone}, {"sender_contact": phone}],
+            "status": {"$in": ["PENDING", "PROCESSING", "NEW", "REVIEW", "TRIAGED"]},
         },
         {"_id": 0}, sort=[("created_at", -1)],
     )
@@ -156,17 +156,22 @@ async def route_inbound_message(
         )
     intake_doc = {
         "id": str(uuid.uuid4()),
+        "source": "whatsapp",
+        "source_type": "bot_whatsapp",
+        "origin_channel": "WHATSAPP",
         "channel": "WHATSAPP",
         "source_bot": "whatsapp_meta",
         "sender_name": name or f"WhatsApp {phone[-4:]}",
         "sender_phone": phone,
+        "sender_contact": phone,
+        "raw_text": (message_text or "")[:2000],
         "description": (message_text or "")[:1000],
         "texts": [message_text] if message_text else [],
         "image_hints": [],
         "audio_transcripts": [],
         "attachments": [],
         "ai_extracted": None,
-        "status": "NEW",
+        "status": "PENDING",
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
         "last_inbound_whatsapp_at": now.isoformat(),
@@ -290,7 +295,22 @@ async def save_ticket_message(
         "created_at": now.isoformat(),
         "created_by_user_id": created_by_user_id,
     }
-    await db.ticket_messages.insert_one(message_doc)
+    try:
+        await db.ticket_messages.insert_one(message_doc)
+    except Exception as e:
+        # Catch DuplicateKeyError from the unique index on external_message_id
+        # (race between two webhook deliveries of the same wamid).
+        if "duplicate key" in str(e).lower() and external_message_id:
+            logger.info(
+                "WhatsApp dedupe via unique index (external_message_id=%s)",
+                external_message_id,
+            )
+            existing = await db.ticket_messages.find_one(
+                {"external_message_id": external_message_id}, {"_id": 0}
+            )
+            if existing:
+                return existing
+        raise
 
     # Legacy mirror only for ticket-attached messages (kept for backward compat with other modules)
     if parent_kind == "ticket":
@@ -327,7 +347,14 @@ async def ensure_indexes() -> None:
         await db.whatsapp_raw_payloads.create_index(
             "received_at", expireAfterSeconds=90 * 24 * 3600,
         )
-        await db.ticket_messages.create_index("external_message_id", sparse=True)
+        # Unique sparse index — DB-level guarantee against duplicate Meta wamid
+        # (belt + suspenders alongside the application-level dedupe in save_ticket_message).
+        await db.ticket_messages.create_index(
+            "external_message_id",
+            unique=True,
+            sparse=True,
+            name="external_message_id_unique",
+        )
         await db.ticket_messages.create_index("ticket_id", sparse=True)
         await db.ticket_messages.create_index("intake_id", sparse=True)
     except Exception as e:

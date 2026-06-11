@@ -14,6 +14,15 @@
 - Uses in-process FastAPI TestClient — no admin login required.
 - Uses test-only `WHATSAPP_APP_SECRET = "test-app-secret-hardening-12345"` via `monkeypatch.setenv`.
 
+## WhatsApp Phase 1.5 (preview/staging)
+- Backend env vars expected (slots em `/app/backend/.env`):
+  - `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`,
+    `WHATSAPP_VERIFY_TOKEN` (default `pdpv_whatsapp_verify_2024`), `WHATSAPP_APP_SECRET`,
+    `WHATSAPP_ENABLED` (true/false hard kill-switch).
+- Preview currently: `WHATSAPP_ENABLED="true"` with empty Meta creds → webhook works,
+  outbound send returns 503 `WhatsApp not configured` (expected).
+- Smoke-test post go-live: `python /app/backend/scripts/whatsapp_smoke_test.py --base-url <URL> --admin-email admin@pdpv.pt --admin-password HCNMEnKMLq --phone <test_phone>`
+
 ## PDPV Bot Interno (Telegram)
 - Webhook: `POST /api/telegram/internal/webhook` requires header
   `X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_INTERNAL_WEBHOOK_SECRET>`.

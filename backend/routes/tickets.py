@@ -4,10 +4,12 @@ Contains endpoints for ticket CRUD, archive, status history, messages, notes, al
 """
 import uuid
 import asyncio
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import ValidationError
 
 from db import db
 from schemas.user import UserRole
@@ -26,7 +28,52 @@ from services.sla_service import (
 )
 from services.storage_service import UPLOAD_DIR, APP_NAME, put_object, get_object
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+# Defaults applied when legacy/seeded tickets are missing required fields.
+# This keeps list/detail endpoints resilient instead of returning 500 because
+# of a single malformed doc. Real writes still go through TicketCreate.
+_TICKET_RESPONSE_DEFAULTS = {
+    "ticket_number": "—",
+    "channel": "WEB",
+    "type": "ORCAMENTO",
+    "status": "ABERTO",
+    "priority": "MEDIA",
+    "description": "",
+    "customer_name": "—",
+    "customer_phone": "—",
+}
+
+
+def _safe_ticket_response(t: dict) -> Optional[TicketResponse]:
+    """Build TicketResponse tolerating legacy docs with missing fields.
+
+    Returns None when even after defaults the doc cannot be coerced (e.g. no id).
+    Logs the malformed ticket id so it can be fixed in the DB.
+    """
+    if not t.get("id"):
+        logger.warning("Skipping ticket without id during response build")
+        return None
+    patched = {**t}
+    # updated_at falls back to created_at, then to now()
+    if not patched.get("updated_at"):
+        patched["updated_at"] = patched.get("created_at") or datetime.now(timezone.utc).isoformat()
+    if not patched.get("created_at"):
+        patched["created_at"] = datetime.now(timezone.utc).isoformat()
+    for key, default in _TICKET_RESPONSE_DEFAULTS.items():
+        if patched.get(key) in (None, ""):
+            patched[key] = default
+    try:
+        return TicketResponse(**patched)
+    except ValidationError as e:
+        logger.warning(
+            "Skipping malformed ticket id=%s: %s",
+            patched.get("id"), e.errors(),
+        )
+        return None
 
 
 # ============== TICKET CRUD ==============
@@ -208,7 +255,9 @@ async def list_tickets(
             elif not overdue and t["is_overdue"]:
                 continue
         
-        result.append(TicketResponse(**t))
+        resp = _safe_ticket_response(t)
+        if resp is not None:
+            result.append(resp)
     
     return result
 
@@ -249,7 +298,9 @@ async def list_archived_tickets(
     for t in tickets:
         t["assigned_to_name"] = users_map.get(t.get("assigned_to_user_id"))
         t["is_overdue"] = check_ticket_overdue(t)
-        result.append(TicketResponse(**t))
+        resp = _safe_ticket_response(t)
+        if resp is not None:
+            result.append(resp)
     
     return result
 
@@ -290,7 +341,13 @@ async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_us
     
     ticket["creator_can_edit"] = creator_can_view and is_creator
     ticket["is_overdue"] = check_ticket_overdue(ticket)
-    return TicketResponse(**ticket)
+    resp = _safe_ticket_response(ticket)
+    if resp is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Ticket com dados em falta — contacte o administrador",
+        )
+    return resp
 
 
 @router.put("/{ticket_id}", response_model=TicketResponse)

@@ -31,6 +31,18 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "pdpv_whatsapp_verify_2024")
 
 
+def _whatsapp_enabled() -> bool:
+    """Hard kill-switch for the WhatsApp module.
+
+    When ``WHATSAPP_ENABLED`` is unset or anything other than 'true'/'1'/'yes',
+    the webhook ingestion and outbound send endpoints refuse to process — even
+    if Meta credentials happen to be present. This protects accidental activation
+    in environments where the integration shouldn't run.
+    """
+    raw = os.environ.get("WHATSAPP_ENABLED", "").strip().lower()
+    return raw in ("true", "1", "yes", "on")
+
+
 def _is_production() -> bool:
     """Return True when running in a production environment.
 
@@ -75,7 +87,11 @@ async def verify_webhook(
     Meta sends GET request with hub.mode, hub.verify_token, and hub.challenge.
     """
     logger.info("WhatsApp webhook verification request received")
-    
+
+    if not _whatsapp_enabled():
+        logger.warning("WhatsApp webhook GET refused: WHATSAPP_ENABLED is not true")
+        raise HTTPException(status_code=503, detail="WhatsApp disabled")
+
     # Validate parameters
     if not all([hub_mode, hub_verify_token, hub_challenge]):
         logger.warning("Missing verification parameters")
@@ -106,6 +122,10 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 
     Returns 200 immediately and processes the payload in a background task.
     """
+    if not _whatsapp_enabled():
+        logger.warning("WhatsApp webhook POST refused: WHATSAPP_ENABLED is not true")
+        raise HTTPException(status_code=503, detail="WhatsApp disabled")
+
     raw_body = await request.body()
     signature = request.headers.get("x-hub-signature-256") or request.headers.get(
         "X-Hub-Signature-256"
@@ -382,6 +402,14 @@ async def send_reply_message(
     if not message_text or not message_text.strip():
         raise HTTPException(status_code=400, detail="Body required")
 
+    # Hard kill-switch — refuse even if creds are present
+    if not _whatsapp_enabled():
+        logger.warning(
+            "WhatsApp send refused: WHATSAPP_ENABLED is not true (ticket=%s)",
+            ticket_id,
+        )
+        raise HTTPException(status_code=503, detail="WhatsApp disabled")
+
     # Fail fast if WhatsApp not configured (avoid generic 500)
     if not service.is_whatsapp_configured():
         logger.error(
@@ -453,6 +481,8 @@ async def send_quote_link_whatsapp(
     current_user: dict = Depends(get_current_user),
 ):
     """Send quote link via WhatsApp. Uses internal template 'quote_link' if no message given."""
+    if not _whatsapp_enabled():
+        raise HTTPException(status_code=503, detail="WhatsApp disabled")
     if not service.is_whatsapp_configured():
         raise HTTPException(status_code=503, detail="WhatsApp not configured")
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
