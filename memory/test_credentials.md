@@ -17,11 +17,26 @@
 ## WhatsApp Phase 1.5 (preview/staging)
 - Backend env vars expected (slots em `/app/backend/.env`):
   - `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_BUSINESS_ACCOUNT_ID`,
-    `WHATSAPP_VERIFY_TOKEN` (default `pdpv_whatsapp_verify_2024`), `WHATSAPP_APP_SECRET`,
-    `WHATSAPP_ENABLED` (true/false hard kill-switch).
-- Preview currently: `WHATSAPP_ENABLED="true"` with empty Meta creds → webhook works,
-  outbound send returns 503 `WhatsApp not configured` (expected).
-- Smoke-test post go-live: `python /app/backend/scripts/whatsapp_smoke_test.py --base-url <URL> --admin-email admin@pdpv.pt --admin-password HCNMEnKMLq --phone <test_phone>`
+    `WHATSAPP_VERIFY_TOKEN` (strong random — NEVER reuse the legacy default),
+    `WHATSAPP_APP_SECRET`, `WHATSAPP_ENABLED` (true/false hard kill-switch).
+- ⚠️ Security guardrails active in code:
+  - The webhook GET handler refuses to verify in production (`ENVIRONMENT=production`)
+    if `WHATSAPP_VERIFY_TOKEN` is empty or matches a known weak value
+    (legacy `pdpv_whatsapp_verify_2024`, "verify", "test", "changeme", ...).
+  - Slot in `.env` is now empty by default; must be filled per environment.
+- To generate a strong verify token:
+  `python /app/backend/scripts/gen_whatsapp_verify_token.py`
+- Smoke-test post go-live (credentials read from env vars, never from CLI args
+  to keep them out of shell history):
+  ```bash
+  export TEST_ADMIN_EMAIL=admin@pdpv.pt
+  export TEST_ADMIN_PASSWORD=...
+  export WHATSAPP_VERIFY_TOKEN=<the strong token configured on Meta>
+  python /app/backend/scripts/whatsapp_smoke_test.py \
+      --base-url "$REACT_APP_BACKEND_URL" --phone 351XXXXXXXXX
+  ```
+- ⚠️ The admin password listed at the top of this file is the seed/test password.
+  It MUST be rotated before opening the system to real customers.
 
 ## PDPV Bot Interno (Telegram)
 - Webhook: `POST /api/telegram/internal/webhook` requires header

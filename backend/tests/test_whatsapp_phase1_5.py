@@ -103,7 +103,12 @@ class TestKillSwitch:
 
     def test_webhook_verify_passes_kill_switch(self):
         """GET /webhook should work (200 with challenge echo) when enabled."""
-        verify_token = os.environ.get("WHATSAPP_VERIFY_TOKEN", "pdpv_whatsapp_verify_2024")
+        verify_token = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+        if not verify_token:
+            pytest.skip(
+                "WHATSAPP_VERIFY_TOKEN not set in this shell — set it to the value "
+                "configured in backend/.env so this test can echo the challenge."
+            )
         challenge = f"test-{uuid.uuid4().hex[:6]}"
         r = requests.get(
             f"{BASE_URL}/api/whatsapp/webhook",

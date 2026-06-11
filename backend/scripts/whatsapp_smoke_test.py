@@ -4,18 +4,17 @@
 Run AFTER configuring Meta credentials and `WHATSAPP_ENABLED=true` to verify
 that the webhook is reachable, signature-validated, and creates pré-tickets.
 
-Usage (preview/staging):
-    python whatsapp_smoke_test.py \\
-        --base-url "$REACT_APP_BACKEND_URL" \\
-        --admin-email admin@pdpv.pt \\
-        --admin-password HCNMEnKMLq \\
-        --phone 351912345678
+Credentials are read either from CLI flags OR from environment variables so
+that you never need to paste real passwords in shell history:
+
+    export TEST_ADMIN_EMAIL=admin@pdpv.pt
+    export TEST_ADMIN_PASSWORD=...    # never commit this
+    export WHATSAPP_VERIFY_TOKEN=...   # the strong token configured on Meta
+    python whatsapp_smoke_test.py --base-url "$REACT_APP_BACKEND_URL" --phone 351XXXXXXXXX
 
 Usage (production after go-live):
     python whatsapp_smoke_test.py \\
         --base-url https://tickets.pneusdpedrov.com \\
-        --admin-email ... \\
-        --admin-password ... \\
         --phone 3519XXXXXXXX \\
         --check-signature  # only if WHATSAPP_APP_SECRET is exposed locally
 
@@ -141,17 +140,31 @@ def list_intakes(base_url: str, token: str, phone: str) -> list:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--admin-email", required=True)
-    parser.add_argument("--admin-password", required=True)
+    parser.add_argument("--admin-email",
+                        default=os.environ.get("TEST_ADMIN_EMAIL"),
+                        help="Admin email — or set TEST_ADMIN_EMAIL env var")
+    parser.add_argument("--admin-password",
+                        default=os.environ.get("TEST_ADMIN_PASSWORD"),
+                        help="Admin password — or set TEST_ADMIN_PASSWORD env var")
     parser.add_argument("--phone", required=True,
                         help="Test customer phone (E.164 no '+', e.g. 351912345678)")
     parser.add_argument("--verify-token",
-                        default=os.environ.get("WHATSAPP_VERIFY_TOKEN", "pdpv_whatsapp_verify_2024"))
+                        default=os.environ.get("WHATSAPP_VERIFY_TOKEN", ""))
     parser.add_argument("--app-secret",
                         default=os.environ.get("WHATSAPP_APP_SECRET"))
     parser.add_argument("--check-signature", action="store_true",
                         help="Send X-Hub-Signature-256 — requires --app-secret")
     args = parser.parse_args()
+
+    if not args.admin_email or not args.admin_password:
+        print("ERROR: missing admin credentials. Pass --admin-email/--admin-password "
+              "or set TEST_ADMIN_EMAIL / TEST_ADMIN_PASSWORD env vars.", file=sys.stderr)
+        sys.exit(2)
+    if not args.verify_token:
+        print("ERROR: missing --verify-token (and WHATSAPP_VERIFY_TOKEN env var). "
+              "Generate one with: python -c \"import secrets;print(secrets.token_urlsafe(32))\"",
+              file=sys.stderr)
+        sys.exit(2)
 
     base_url = args.base_url.rstrip("/")
     print(f"== WhatsApp smoke test against {base_url} ==\n")

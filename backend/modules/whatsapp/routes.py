@@ -27,8 +27,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
-# Configuration
-WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "pdpv_whatsapp_verify_2024")
+
+# Known weak/legacy default that must NEVER be used in production.
+# Listed here so we can fail loudly if someone deploys without rotating.
+_WEAK_VERIFY_TOKENS = {
+    "",
+    "pdpv_whatsapp_verify_2024",
+    "verify",
+    "verify_token",
+    "test",
+    "changeme",
+}
+
+
+def _verify_token() -> str:
+    """Return the configured WhatsApp verify token (read at request time)."""
+    return os.environ.get("WHATSAPP_VERIFY_TOKEN", "").strip()
 
 
 def _whatsapp_enabled() -> bool:
@@ -92,6 +106,19 @@ async def verify_webhook(
         logger.warning("WhatsApp webhook GET refused: WHATSAPP_ENABLED is not true")
         raise HTTPException(status_code=503, detail="WhatsApp disabled")
 
+    configured_token = _verify_token()
+    if _is_production() and configured_token.lower() in _WEAK_VERIFY_TOKENS:
+        logger.error(
+            "WhatsApp verify refused: WHATSAPP_VERIFY_TOKEN is empty or matches a "
+            "known weak default in production. Rotate it via env."
+        )
+        raise HTTPException(status_code=503, detail="WhatsApp verify token not configured")
+    if not configured_token:
+        logger.warning(
+            "WhatsApp verify in dev: WHATSAPP_VERIFY_TOKEN is empty; this MUST be "
+            "set to a strong random string before production."
+        )
+
     # Validate parameters
     if not all([hub_mode, hub_verify_token, hub_challenge]):
         logger.warning("Missing verification parameters")
@@ -101,7 +128,7 @@ async def verify_webhook(
         logger.warning(f"Invalid hub.mode: {hub_mode}")
         raise HTTPException(status_code=400, detail="Invalid hub.mode")
     
-    if hub_verify_token != WHATSAPP_VERIFY_TOKEN:
+    if hub_verify_token != configured_token:
         logger.warning("Invalid verification token")
         raise HTTPException(status_code=403, detail="Invalid verification token")
     
