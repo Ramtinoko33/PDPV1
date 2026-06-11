@@ -23,6 +23,7 @@ import {
   Clock,
   Send,
   MessageSquare,
+  MessageCircle,
   FileText,
   AlertTriangle,
   Upload,
@@ -50,6 +51,7 @@ import {
   Eye,
   Camera
 } from 'lucide-react';
+import WhatsAppPanel from '../components/WhatsAppPanel';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -1638,6 +1640,12 @@ Qualquer dúvida estamos disponíveis.`;
             <MessageSquare className="h-4 w-4 mr-2" />
             Conversa
           </TabsTrigger>
+          {ticket?.customer_phone && (
+            <TabsTrigger value="whatsapp" className="data-[state=active]:bg-white" data-testid="tab-whatsapp">
+              <MessageCircle className="h-4 w-4 mr-2" />
+              WhatsApp
+            </TabsTrigger>
+          )}
           <TabsTrigger value="documentos" className="data-[state=active]:bg-white" data-testid="tab-documentos">
             <FileText className="h-4 w-4 mr-2" />
             Documentos
@@ -2362,6 +2370,13 @@ Qualquer dúvida estamos disponíveis.`;
             )}
           </div>
         </TabsContent>
+
+        {/* WhatsApp Tab */}
+        {ticket?.customer_phone && (
+          <TabsContent value="whatsapp" className="space-y-4">
+            <WhatsAppPanel ticketId={id} ticket={ticket} />
+          </TabsContent>
+        )}
 
         {/* Documentos Tab */}
         <TabsContent value="documentos" className="space-y-4">

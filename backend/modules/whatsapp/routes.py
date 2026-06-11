@@ -156,120 +156,88 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 async def process_webhook_payload(data: dict):
     """Process the webhook payload in background"""
     try:
-        # Validate object type
         if data.get("object") != "whatsapp_business_account":
             logger.debug(f"Ignoring non-WhatsApp object: {data.get('object')}")
             return
-        
-        # Process each entry
+
+        # Persist raw payload (audited, TTL 90d via index)
+        try:
+            await service.ensure_indexes()
+            raw_payload_id = await service.save_raw_payload(data)
+        except Exception as e:
+            logger.warning(f"[WA] save_raw_payload failed: {e}")
+            raw_payload_id = None
+
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
-                
-                # Get phone number ID from metadata
                 metadata = value.get("metadata", {})
                 phone_number_id = metadata.get("phone_number_id")
-                
-                # Process messages
                 messages = value.get("messages", [])
                 contacts = value.get("contacts", [])
-                
                 for message in messages:
-                    await process_incoming_message(message, contacts, phone_number_id)
-                
-                # Process status updates (optional)
+                    await process_incoming_message(message, contacts, phone_number_id, raw_payload_id)
                 statuses = value.get("statuses", [])
                 for status in statuses:
                     await process_status_update(status)
-    
     except Exception as e:
         logger.error(f"Error processing webhook payload: {e}")
 
 
-async def process_incoming_message(message: dict, contacts: list, phone_number_id: str):
-    """Process a single incoming WhatsApp message"""
+async def process_incoming_message(message: dict, contacts: list, phone_number_id: str, raw_payload_id: Optional[str] = None):
+    """Process a single incoming WhatsApp message — routes to ticket OR pre-ticket."""
     try:
         from_phone = message.get("from")
         message_id = message.get("id")
         message_type = message.get("type", "unknown")
-        
-        # Get contact name if available
+
         sender_name = None
         for contact in contacts:
             if contact.get("wa_id") == from_phone:
                 profile = contact.get("profile", {})
                 sender_name = profile.get("name")
                 break
-        
         if not sender_name:
             sender_name = f"WhatsApp {from_phone[-4:]}"
-        
-        logger.info(f"Processing {message_type} message from {from_phone}")
-        
-        # Extract message content based on type
+
         body = ""
         media_url = None
         media_type = None
-        
         if message_type == "text":
-            text_content = message.get("text", {})
-            body = text_content.get("body", "")
-        
+            body = message.get("text", {}).get("body", "")
         elif message_type in ["image", "document", "audio", "video"]:
             media_content = message.get(message_type, {})
             media_id = media_content.get("id")
             media_type = media_content.get("mime_type")
             caption = media_content.get("caption", "")
             filename = media_content.get("filename", "")
-            
             body = caption or f"[{message_type.upper()}] {filename or media_id}"
-            
-            # Download media if configured
             if media_id and os.environ.get("WHATSAPP_ACCESS_TOKEN"):
                 content, content_type = await service.download_whatsapp_media(media_id)
                 if content:
-                    # Save to object storage or local
-                    # For now, just note the media_id
                     media_url = f"whatsapp://media/{media_id}"
                     media_type = content_type
-        
         elif message_type == "location":
             location = message.get("location", {})
             lat = location.get("latitude")
             lon = location.get("longitude")
             name = location.get("name", "")
             body = f"[LOCALIZAÇÃO] {name} ({lat}, {lon})" if name else f"[LOCALIZAÇÃO] ({lat}, {lon})"
-        
         elif message_type == "contacts":
             body = "[CONTACTOS]"
-        
         elif message_type == "sticker":
             body = "[STICKER]"
-        
         else:
             body = f"[{message_type.upper()}]"
-        
-        # Get or create ticket
-        ticket, is_new = await service.get_or_create_ticket_for_whatsapp(
-            phone=from_phone,
-            name=sender_name,
-            message_text=body,
-            message_type=message_type
-        )
-        if is_new:
-            logger.info(
-                "WhatsApp ticket created: %s (phone=%s, type=%s)",
-                ticket.get("ticket_number"), from_phone, message_type,
-            )
-        else:
-            logger.info(
-                "WhatsApp ticket reused: %s (phone=%s)",
-                ticket.get("ticket_number"), from_phone,
-            )
 
-        # Save message (service already de-duplicates by external_message_id)
-        saved = await service.save_ticket_message(
-            ticket_id=ticket["id"],
+        # New routing: ticket open in 24h → pre-ticket open → create pre-ticket
+        parent_kind, parent_doc, is_new = await service.route_inbound_message(
+            phone=from_phone, name=sender_name, message_text=body, message_type=message_type,
+        )
+
+        parent_id = parent_doc["id"]
+        await service.save_ticket_message(
+            ticket_id=parent_id,
             body=body,
             direction=TicketMessageDirection.INBOUND,
             message_type=message_type,
@@ -277,42 +245,54 @@ async def process_incoming_message(message: dict, contacts: list, phone_number_i
             media_url=media_url,
             media_type=media_type,
             sender_phone=from_phone,
-            sender_name=sender_name
+            sender_name=sender_name,
+            channel="whatsapp",
+            status="delivered",
+            raw_payload_id=raw_payload_id,
+            parent_kind=parent_kind,
         )
-        if saved and saved.get("external_message_id") == message_id and saved.get("body") == body:
-            # save_ticket_message returns existing doc when duplicate
-            pass
-        
-        # Mark as read
+
         await service.mark_message_as_read(message_id, phone_number_id)
-        
-        # Create notification for new tickets
-        if is_new:
-            await create_whatsapp_notification(ticket, sender_name, from_phone)
-        
-        logger.info(f"Message processed for ticket {ticket['ticket_number']}")
-    
+
+        # Notification only for new pre-tickets (avoid noise on already-active tickets)
+        if is_new and parent_kind == "intake":
+            try:
+                from services.notification_service import notify_supervisors
+                await notify_supervisors(
+                    title="Nova mensagem WhatsApp",
+                    body=f"{sender_name} ({from_phone}): {body[:80]}",
+                    notification_type="info",
+                )
+            except Exception as e:
+                logger.warning(f"[WA] notify failed: {e}")
+
+        logger.info(
+            "WA message processed parent=%s/%s new=%s",
+            parent_kind, parent_id, is_new,
+        )
     except Exception as e:
         logger.error(f"Error processing message: {e}")
 
 
 async def process_status_update(status: dict):
-    """Process message delivery status update"""
+    """Persist Meta delivery status (sent/delivered/read/failed) on the message."""
     message_id = status.get("id")
-    status_value = status.get("status")  # sent, delivered, read, failed
+    status_value = status.get("status")
     timestamp = status.get("timestamp")
-    
-    logger.debug(f"Status update: {message_id} is {status_value}")
-    
-    # Optionally update message status in database
-    if message_id and status_value:
-        await db.ticket_messages.update_one(
-            {"external_message_id": message_id},
-            {"$set": {
-                "delivery_status": status_value,
-                "delivery_status_at": timestamp
-            }}
-        )
+    errors = status.get("errors")
+    if not message_id or not status_value:
+        return
+    update = {
+        "status": status_value,
+        "status_updated_at": datetime.fromtimestamp(int(timestamp), tz=timezone.utc).isoformat()
+        if timestamp else datetime.now(timezone.utc).isoformat(),
+    }
+    if errors:
+        update["error"] = errors[0] if isinstance(errors, list) and errors else errors
+        update["status"] = "failed"
+    await db.ticket_messages.update_one(
+        {"external_message_id": message_id}, {"$set": update}
+    )
 
 
 async def create_whatsapp_notification(ticket: dict, sender_name: str, phone: str):
@@ -339,8 +319,39 @@ async def get_conversation_messages(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all messages for a ticket conversation"""
-    messages = await service.get_ticket_messages(ticket_id, limit)
+    messages = await service.get_ticket_messages(ticket_id, limit, parent_kind="ticket")
     return messages
+
+
+@router.get("/intake/{intake_id}/messages", response_model=list[TicketMessageResponse])
+async def get_intake_messages(
+    intake_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    current_user: dict = Depends(get_current_user),
+):
+    return await service.get_ticket_messages(intake_id, limit, parent_kind="intake")
+
+
+@router.get("/tickets/{ticket_id}/window")
+async def get_window(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    return await service.get_whatsapp_window(ticket)
+
+
+@router.get("/intake/{intake_id}/window")
+async def get_intake_window(intake_id: str, current_user: dict = Depends(get_current_user)):
+    intake = await db.intake_requests.find_one({"id": intake_id}, {"_id": 0})
+    if not intake:
+        raise HTTPException(status_code=404, detail="Pré-ticket não encontrado")
+    return await service.get_whatsapp_window(intake)
+
+
+@router.get("/templates")
+async def list_templates(current_user: dict = Depends(get_current_user)):
+    """Return internal quick-reply templates (NOT Meta-approved templates)."""
+    return list(service.INTERNAL_TEMPLATES.values())
 
 
 class WhatsAppReplyBody(BaseModel):
@@ -388,6 +399,14 @@ async def send_reply_message(
     if not phone:
         raise HTTPException(status_code=400, detail="Ticket sem número de telefone")
 
+    # Enforce 24h window — free-text messages only allowed inside the window
+    window = await service.get_whatsapp_window(ticket)
+    if not window.get("active"):
+        raise HTTPException(
+            status_code=409,
+            detail="Janela WhatsApp fechada. É necessário template aprovado da Meta.",
+        )
+
     # Send via WhatsApp
     try:
         result = await service.send_whatsapp_message(phone, message_text)
@@ -407,8 +426,10 @@ async def send_reply_message(
         message_type="text",
         external_message_id=message_id,
         sender_phone=None,
+        phone_to=phone,
         sender_name=current_user.get("name"),
-        created_by_user_id=current_user.get("id")
+        created_by_user_id=current_user.get("id"),
+        status="pending",
     )
 
     # Mark first response done
@@ -419,3 +440,70 @@ async def send_reply_message(
         )
 
     return {"success": True, "message_id": message_id}
+
+
+class SendQuoteLinkBody(BaseModel):
+    message: Optional[str] = Field(None, description="Custom message; defaults to internal template")
+
+
+@router.post("/tickets/{ticket_id}/send-quote-link")
+async def send_quote_link_whatsapp(
+    ticket_id: str,
+    body: Optional[SendQuoteLinkBody] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Send quote link via WhatsApp. Uses internal template 'quote_link' if no message given."""
+    if not service.is_whatsapp_configured():
+        raise HTTPException(status_code=503, detail="WhatsApp not configured")
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket não encontrado")
+    phone = ticket.get("customer_phone")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Ticket sem número de telefone")
+
+    window = await service.get_whatsapp_window(ticket)
+    if not window.get("active"):
+        raise HTTPException(
+            status_code=409,
+            detail="Janela WhatsApp fechada. É necessário template aprovado da Meta.",
+        )
+
+    # Build URL — same way the email flow does
+    reply_token = ticket.get("reply_token") or ticket.get("quote_reply_token")
+    if not reply_token:
+        raise HTTPException(status_code=400, detail="Ticket sem token público para link de orçamento")
+    base = os.environ.get("PUBLIC_FRONTEND_URL", "").rstrip("/")
+    link = f"{base}/quote/{reply_token}" if base else f"/quote/{reply_token}"
+
+    if body and body.message:
+        message_text = body.message
+    else:
+        tpl = service.INTERNAL_TEMPLATES["quote_link"]["text"]
+        message_text = (
+            tpl.replace("{{nome}}", ticket.get("customer_name", "Cliente"))
+               .replace("{{matricula}}", ticket.get("vehicle_plate") or "—")
+               .replace("{{link_resposta}}", link)
+        )
+
+    try:
+        result = await service.send_whatsapp_message(phone, message_text)
+    except service.WhatsAppNotConfiguredError:
+        raise HTTPException(status_code=503, detail="WhatsApp not configured")
+    if not result:
+        raise HTTPException(status_code=502, detail="WhatsApp upstream error")
+
+    message_id = result.get("messages", [{}])[0].get("id")
+    await service.save_ticket_message(
+        ticket_id=ticket_id,
+        body=message_text,
+        direction=TicketMessageDirection.OUTBOUND,
+        message_type="text",
+        external_message_id=message_id,
+        phone_to=phone,
+        sender_name=current_user.get("name"),
+        created_by_user_id=current_user.get("id"),
+        status="pending",
+        template_name="quote_link",
+    )
+    return {"success": True, "message_id": message_id, "link": link}

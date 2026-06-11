@@ -3,6 +3,7 @@ WhatsApp Business Cloud API - Service
 Handles message processing, ticket creation, and WhatsApp API calls
 """
 import os
+import re
 import uuid
 import logging
 import httpx
@@ -44,84 +45,191 @@ async def get_or_create_ticket_for_whatsapp(
     message_type: str = "text"
 ) -> Tuple[dict, bool]:
     """
-    Find existing open ticket for phone number or create new one.
-    Returns (ticket, is_new)
+    DEPRECATED in Phase 1 — kept for callers we haven't migrated yet.
+    New routing logic lives in `route_inbound_message`. This function now
+    only attaches to existing open tickets, NEVER creates a new ticket.
+    Returns (ticket-or-None, is_new=False).
     """
     now = datetime.now(timezone.utc)
-    threshold = now - timedelta(hours=48)  # 48h window for same conversation
-    
-    # Find existing open ticket for this phone
+    threshold = now - timedelta(hours=24)
     existing_ticket = await db.tickets.find_one({
         "customer_phone": phone,
-        "status": {"$nin": ["FECHADO", "REJEITADO_LINK", "AGENDADO"]},
+        "status": {"$nin": ["FECHADO", "REJEITADO_LINK"]},
         "archived_at": None,
         "created_at": {"$gte": threshold.isoformat()}
     }, {"_id": 0}, sort=[("created_at", -1)])
-    
     if existing_ticket:
-        # Update ticket timestamp
         await db.tickets.update_one(
             {"id": existing_ticket["id"]},
             {"$set": {
                 "last_public_message_at": now.isoformat(),
-                "updated_at": now.isoformat()
+                "last_inbound_whatsapp_at": now.isoformat(),
+                "updated_at": now.isoformat(),
             }}
         )
         return existing_ticket, False
-    
-    # Create new ticket
-    # Import here to avoid circular imports
-    from server import generate_ticket_number, compute_sla_due
-    
-    ticket_id = str(uuid.uuid4())
-    ticket_number = generate_ticket_number()
-    sla_due, sla_target_minutes, sla_policy_key = compute_sla_due(
-        ticket_type="INFORMACAO",
-        created_at=now
+    return None, False
+
+
+PORTUGUESE_PLATE_RE = re.compile(r"\b([0-9]{2}-[0-9]{2}-[A-Z]{2}|[0-9]{2}-[A-Z]{2}-[0-9]{2}|[A-Z]{2}-[0-9]{2}-[0-9]{2}|[A-Z]{2}-[0-9]{2}-[A-Z]{2})\b")
+
+
+def extract_plate_from_text(text: str) -> Optional[str]:
+    """Best-effort extraction of a Portuguese license plate from free text."""
+    if not text:
+        return None
+    m = PORTUGUESE_PLATE_RE.search(text.upper().replace(" ", "-"))
+    return m.group(1) if m else None
+
+
+async def route_inbound_message(
+    phone: str,
+    name: str,
+    message_text: str,
+    message_type: str,
+) -> Tuple[str, dict, bool]:
+    """Route an inbound WhatsApp message to the correct container.
+
+    Order:
+      1. Open ticket for this phone in last 24h → attach
+      2. Open intake_request (pre-ticket) for this phone → attach
+      3. (no match) → create new intake_request (NEVER a final ticket)
+
+    Returns: (parent_kind, parent_doc, is_new)
+      parent_kind ∈ {"ticket", "intake"}
+    """
+    now = datetime.now(timezone.utc)
+    threshold_24h = (now - timedelta(hours=24)).isoformat()
+
+    # 1) Existing open ticket within 24h
+    ticket = await db.tickets.find_one(
+        {
+            "customer_phone": phone,
+            "status": {"$nin": ["FECHADO", "REJEITADO_LINK"]},
+            "archived_at": None,
+            "created_at": {"$gte": threshold_24h},
+        },
+        {"_id": 0}, sort=[("last_public_message_at", -1), ("created_at", -1)],
     )
-    
-    ticket_doc = {
-        "id": ticket_id,
-        "ticket_number": ticket_number,
+    if ticket:
+        await db.tickets.update_one(
+            {"id": ticket["id"]},
+            {"$set": {
+                "last_public_message_at": now.isoformat(),
+                "last_inbound_whatsapp_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }},
+        )
+        return "ticket", ticket, False
+
+    # 2) Existing open intake (pre-ticket) for same phone
+    intake = await db.intake_requests.find_one(
+        {
+            "sender_phone": phone,
+            "status": {"$in": ["NEW", "REVIEW", "TRIAGED", "PENDING"]},
+        },
+        {"_id": 0}, sort=[("created_at", -1)],
+    )
+    if intake:
+        await db.intake_requests.update_one(
+            {"id": intake["id"]},
+            {"$set": {
+                "last_inbound_whatsapp_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }},
+        )
+        return "intake", intake, False
+
+    # 3) Create new intake_request (pre-ticket) — never a final ticket
+    suggested_plate = extract_plate_from_text(message_text)
+    suggested_ticket = None
+    if suggested_plate:
+        threshold_3d = (now - timedelta(days=3)).isoformat()
+        suggested_ticket = await db.tickets.find_one(
+            {
+                "vehicle_plate": suggested_plate,
+                "status": {"$nin": ["FECHADO", "REJEITADO_LINK"]},
+                "archived_at": None,
+                "created_at": {"$gte": threshold_3d},
+            },
+            {"_id": 0}, sort=[("created_at", -1)],
+        )
+    intake_doc = {
+        "id": str(uuid.uuid4()),
+        "channel": "WHATSAPP",
+        "source_bot": "whatsapp_meta",
+        "sender_name": name or f"WhatsApp {phone[-4:]}",
+        "sender_phone": phone,
+        "description": (message_text or "")[:1000],
+        "texts": [message_text] if message_text else [],
+        "image_hints": [],
+        "audio_transcripts": [],
+        "attachments": [],
+        "ai_extracted": None,
+        "status": "NEW",
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
-        "channel": "WHATSAPP",
-        "type": "INFORMACAO",
-        "status": "ABERTO",
-        "priority": "NORMAL",
-        "description": message_text[:500] if message_text else f"Mensagem {message_type} via WhatsApp",
-        "customer_name": name or f"WhatsApp {phone[-4:]}",
-        "customer_phone": phone,
-        "customer_email": None,
-        "vehicle_plate": None,
-        "assigned_to_user_id": None,
-        "assigned_to_name": None,
-        "last_public_message_at": now.isoformat(),
-        "first_response_done": False,
-        "sla_due": sla_due.isoformat(),
-        "sla_started_at": now.isoformat(),
-        "sla_paused_at": None,
-        "sla_paused_minutes": 0,
-        "sla_breached": False,
-        "sla_breached_at": None,
-        "sla_target_minutes": sla_target_minutes,
-        "sla_policy_key": sla_policy_key,
-        "quote_sent": False,
-        "quote_value": None,
-        "created_by_user_id": None,
-        "created_by_name": "WhatsApp Bot",
-        "customer_id": None,
-        "vehicle_id": None,
-        "archived_at": None,
-        "archived_by": None,
-        "whatsapp_conversation": True,  # Flag for WhatsApp tickets
-        "origin": "whatsapp"
+        "last_inbound_whatsapp_at": now.isoformat(),
+        "suggested_plate": suggested_plate,
+        "suggested_ticket_id": suggested_ticket.get("id") if suggested_ticket else None,
+        "suggested_ticket_number": suggested_ticket.get("ticket_number") if suggested_ticket else None,
     }
-    
-    await db.tickets.insert_one(ticket_doc)
-    logger.info(f"Created new WhatsApp ticket: {ticket_number} for phone {phone}")
-    
-    return ticket_doc, True
+    await db.intake_requests.insert_one(intake_doc)
+    logger.info(
+        "WhatsApp intake (pre-ticket) created: %s phone=%s plate=%s suggest=%s",
+        intake_doc["id"], phone, suggested_plate,
+        intake_doc.get("suggested_ticket_number"),
+    )
+    return "intake", intake_doc, True
+
+
+# ============== Window 24h ==============
+async def get_whatsapp_window(ticket: dict) -> dict:
+    """Return WhatsApp 24h window state for a ticket-like container."""
+    last_iso = ticket.get("last_inbound_whatsapp_at")
+    now = datetime.now(timezone.utc)
+    if not last_iso:
+        return {"active": False, "last_inbound_at": None, "expires_at": None,
+                "reason": "Sem mensagens inbound — janela fechada"}
+    try:
+        last = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+    except Exception:
+        return {"active": False, "last_inbound_at": last_iso, "expires_at": None,
+                "reason": "Data inválida"}
+    expires = last + timedelta(hours=24)
+    active = now < expires
+    return {
+        "active": active,
+        "last_inbound_at": last_iso,
+        "expires_at": expires.isoformat(),
+        "reason": None if active else "Mais de 24h desde a última mensagem do cliente",
+    }
+
+
+# ============== Templates (internal, not Meta-approved) ==============
+INTERNAL_TEMPLATES = {
+    "tire_size": {
+        "id": "tire_size",
+        "label": "Pedido de medida pneus",
+        "text": "Para conseguirmos dar orçamento, envie por favor a medida dos pneus. Exemplo: 225/45R17. Também pode enviar uma foto da lateral do pneu.",
+    },
+    "km_request": {
+        "id": "km_request",
+        "label": "Pedido de KM",
+        "text": "Para orçamento de mecânica, indique por favor os quilómetros atuais da viatura. Pode ser valor aproximado.",
+    },
+    "quote_link": {
+        "id": "quote_link",
+        "label": "Link de orçamento",
+        "text": "Olá {{nome}}, já temos o orçamento preparado para a viatura {{matricula}}. Pode consultar e responder aqui: {{link_resposta}}\n\nObrigado,\nPneus D. Pedro V",
+        "placeholders": ["nome", "matricula", "link_resposta"],
+    },
+    "received": {
+        "id": "received",
+        "label": "Pedido recebido",
+        "text": "Obrigado. O seu pedido foi recebido e será analisado pela nossa equipa. Responderemos assim que possível.",
+    },
+}
 
 
 async def save_ticket_message(
@@ -134,68 +242,105 @@ async def save_ticket_message(
     media_type: Optional[str] = None,
     sender_phone: Optional[str] = None,
     sender_name: Optional[str] = None,
-    created_by_user_id: Optional[str] = None
+    created_by_user_id: Optional[str] = None,
+    channel: str = "whatsapp",
+    phone_to: Optional[str] = None,
+    status: str = "delivered",
+    raw_payload_id: Optional[str] = None,
+    template_name: Optional[str] = None,
+    parent_kind: str = "ticket",
 ) -> dict:
     """
-    Save a message to the ticket_messages collection.
-    Avoids duplicates by checking external_message_id.
+    Save a message to ticket_messages.
+    - parent_kind="ticket" stores ticket_id field; parent_kind="intake" also stores intake_id.
+    - Dedupes by external_message_id.
+    - channel/phone_to/status/raw_payload_id/template_name are Phase-1 additions.
     """
-    # Check for duplicate by external_message_id
     if external_message_id:
         existing = await db.ticket_messages.find_one(
-            {"external_message_id": external_message_id},
-            {"_id": 0}
+            {"external_message_id": external_message_id}, {"_id": 0}
         )
         if existing:
             logger.info(
-                "WhatsApp duplicate ignored (external_message_id=%s, ticket=%s)",
-                external_message_id, existing.get("ticket_id"),
+                "WhatsApp duplicate ignored (external_message_id=%s, parent=%s)",
+                external_message_id, existing.get("ticket_id") or existing.get("intake_id"),
             )
             return existing
-    
+
     now = datetime.now(timezone.utc)
-    
     message_doc = {
         "id": str(uuid.uuid4()),
-        "ticket_id": ticket_id,
+        "ticket_id": ticket_id if parent_kind == "ticket" else None,
+        "intake_id": ticket_id if parent_kind == "intake" else None,
         "body": body,
         "direction": direction.value,
+        "channel": channel,
         "message_type": message_type,
         "external_message_id": external_message_id,
         "media_url": media_url,
         "media_type": media_type,
         "sender_phone": sender_phone,
+        "phone_to": phone_to,
         "sender_name": sender_name,
+        "status": status,
+        "status_updated_at": now.isoformat(),
+        "raw_payload_id": raw_payload_id,
+        "template_name": template_name,
+        "error": None,
         "created_at": now.isoformat(),
-        "created_by_user_id": created_by_user_id
+        "created_by_user_id": created_by_user_id,
     }
-    
     await db.ticket_messages.insert_one(message_doc)
-    
-    # Also save to legacy messages collection for compatibility
-    legacy_msg = {
-        "id": message_doc["id"],
-        "ticket_id": ticket_id,
-        "created_at": now.isoformat(),
-        "direction": direction.value,
-        "channel": "WHATSAPP",
-        "body": body,
-        "from_text": sender_phone if direction == TicketMessageDirection.INBOUND else None,
-        "to_text": sender_phone if direction == TicketMessageDirection.OUTBOUND else None,
-        "created_by_user_id": created_by_user_id
-    }
-    await db.messages.insert_one(legacy_msg)
-    
+
+    # Legacy mirror only for ticket-attached messages (kept for backward compat with other modules)
+    if parent_kind == "ticket":
+        legacy_msg = {
+            "id": message_doc["id"],
+            "ticket_id": ticket_id,
+            "created_at": now.isoformat(),
+            "direction": direction.value,
+            "channel": "WHATSAPP",
+            "body": body,
+            "from_text": sender_phone if direction == TicketMessageDirection.INBOUND else None,
+            "to_text": phone_to or (sender_phone if direction == TicketMessageDirection.OUTBOUND else None),
+            "created_by_user_id": created_by_user_id,
+        }
+        await db.messages.insert_one(legacy_msg)
+
     return message_doc
 
 
-async def get_ticket_messages(ticket_id: str, limit: int = 100) -> list:
-    """Get all messages for a ticket"""
+async def save_raw_payload(payload: dict) -> str:
+    """Persist the raw webhook payload (auditing). TTL index drops old docs."""
+    rid = str(uuid.uuid4())
+    await db.whatsapp_raw_payloads.insert_one({
+        "id": rid,
+        "payload": payload,
+        "received_at": datetime.now(timezone.utc),
+    })
+    return rid
+
+
+async def ensure_indexes() -> None:
+    """Create TTL + helper indexes on first use. Safe to call multiple times."""
+    try:
+        await db.whatsapp_raw_payloads.create_index(
+            "received_at", expireAfterSeconds=90 * 24 * 3600,
+        )
+        await db.ticket_messages.create_index("external_message_id", sparse=True)
+        await db.ticket_messages.create_index("ticket_id", sparse=True)
+        await db.ticket_messages.create_index("intake_id", sparse=True)
+    except Exception as e:
+        logger.warning(f"[WA] ensure_indexes: {e}")
+
+
+async def get_ticket_messages(ticket_id: str, limit: int = 100, parent_kind: str = "ticket") -> list:
+    """Get all messages for a ticket OR pre-ticket (intake)."""
+    field = "ticket_id" if parent_kind == "ticket" else "intake_id"
     messages = await db.ticket_messages.find(
-        {"ticket_id": ticket_id},
+        {field: ticket_id},
         {"_id": 0}
     ).sort("created_at", 1).to_list(limit)
-    
     return messages
 
 
