@@ -9,6 +9,7 @@
 - Notifications: Telegram Bot + Web Push (VAPID) + Resend
 
 ## Completed Features
+- [x] **WhatsApp Phase 1 (Feb 2026):** Canal WhatsApp integrado no detalhe do ticket. Webhook reescrito para nunca criar tickets finais — apenas pré-tickets (`intake_requests`) ou associação a ticket/intake aberto. Endpoints novos: `GET /api/whatsapp/tickets/{id}/window` (janela 24h), `GET /api/whatsapp/intake/{id}/window`, `GET /api/whatsapp/templates` (4 templates internos), `POST /api/whatsapp/tickets/{id}/messages` (enforcement 503/409), `POST /api/whatsapp/tickets/{id}/send-quote-link`. Schema `ticket_messages` expandido (`channel, phone_to, status, raw_payload_id, template_name, error, intake_id`). Nova coleção `whatsapp_raw_payloads` com TTL 90 dias. Dedupe por `external_message_id`. Status updates (sent/delivered/read/failed) propagados. Frontend: `WhatsAppPanel.js` injetado como tab em `TicketDetail.js` com thread tipo bolha, badge da janela, templates rápidos, botão "Enviar link de orçamento". Validado por testing_agent_v3_fork (13/13 backend pytest + frontend OK — iteration_22.json).
 - [x] **Módulo Assistências - Fase 2 (Feb 2026):**
   - Notificações push aos office users (admin+supervisor) ao criar nova assistência via bot (`notify_supervisors`).
   - Endpoint `GET /api/assistencias/stats/advanced` — totais, por funcionário, por status, por mês (com € faturado).
