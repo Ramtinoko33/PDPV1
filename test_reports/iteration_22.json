@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 1 WhatsApp module validation (backend + frontend). 13/13 pytest tests passed covering templates auth/listing, 24h window state, 503 on send when WHATSAPP creds missing, webhook inbound creating intake_request (never tickets), dedupe by external_message_id, attachment to existing open intake, plate suggestion, attachment to existing open ticket within 24h, and status update propagation. Frontend WhatsApp tab+panel validated for both OPEN and CLOSED window states.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/tickets, /api/tickets/{id}", "issue": "Returns 500 when ticket document is missing required Pydantic fields (channel/type/priority/description/updated_at). Hand-crafted seed docs break the whole list endpoint. Consider exclude-missing or graceful skip in routes/tickets.py:211 list_tickets and :293 get_ticket."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WhatsAppPanel.js", "issue": "Build broke due to unknown ESLint rule 'react-hooks/set-state-in-effect' in disable comment (line 75). Removed comment to unblock UI tests. Verify other components don't reference the same rule.", "selector": "src/components/WhatsAppPanel.js:75", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_whatsapp_phase1.py",
+    "/app/test_reports/pytest/pytest_whatsapp_phase1.xml"
+  ],
+  "action_items": [
+    "Harden /api/tickets list/detail endpoints to tolerate documents missing optional fields (or migrate legacy docs) to avoid 500s that cascade into UI redirects.",
+    "Remove or replace the invalid ESLint disable comment in WhatsAppPanel.js (already removed by tester to unblock build) and audit other files for the same rule name 'react-hooks/set-state-in-effect'.",
+    "Note for prod: when WHATSAPP_ACCESS_TOKEN/PHONE_NUMBER_ID are set, retest the 409 'window closed' branch on POST /messages and /send-quote-link (preview always 503 because config check precedes window check). This is expected per spec."
+  ],
+  "critical_code_review_comments": [
+    "routes.py POST /messages legacy ?body= param is documented as deprecated — fine; ensure to remove once frontend migration is verified.",
+    "service.route_inbound_message: open-ticket-within-24h match uses created_at >= now-24h which excludes long-running open tickets (>24h). Spec says 'open ticket'; consider whether the 24h bound on creation is intentional vs activity-based (last_inbound_whatsapp_at).",
+    "save_ticket_message mirrors to legacy db.messages only for parent_kind='ticket'. Acceptable for Phase 1, but document this dual-write to avoid drift.",
+    "process_status_update updates by external_message_id without scoping to direction — generally fine since wamid is globally unique, but ensure no inbound delivered status accidentally overwrites outbound metadata."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/WhatsAppPanel.js (removed invalid eslint-disable comment that broke compilation)",
+    "/app/backend/tests/test_whatsapp_phase1.py (new pytest suite, 13 tests)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% on validated flows (open window panel, closed window panel, templates, composer/send-button states)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created and cleaned: TEST-WA-UI-cc46fb ticket (used for UI test, deleted after). Test fixture tickets and webhook payloads created and torn down inside pytest. Intake docs with sender_phone 351777* and ticket_messages with wamid.TEST* cleaned post-run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "WhatsApp Phase 1 backend & frontend fully validated in preview. Note that /api/tickets endpoints will 500 if any ticket lacks Pydantic-required fields (channel/type/priority/description/updated_at). Use POST /api/tickets to create test tickets rather than direct Mongo insert. Webhook is exposed at /api/whatsapp/webhook and does NOT require signature in development. Outbound send endpoints always return 503 in preview because WHATSAPP_ACCESS_TOKEN/PHONE_NUMBER_ID are empty — this is correct per requirements.",
+  "rca of the issue": "Frontend compile-time failure was caused by an unknown ESLint rule name 'react-hooks/set-state-in-effect' in a disable comment introduced when adding WhatsAppPanel.js. CRA's ESLint plugin treats unknown rule names as errors, so the dev server displayed 'Compiled with problems' and the app could not render. Removed the disable comment (the underlying useEffect is fine). Frontend rebuilt and all UI flows verified."
+}

@@ -72,7 +72,6 @@ const WhatsAppPanel = ({ ticketId, ticket }) => {
   useEffect(() => { load(); }, [load]);
 
   // Auto-scroll to bottom when new messages arrive
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -84,7 +83,7 @@ const WhatsAppPanel = ({ ticketId, ticket }) => {
     setSending(true);
     try {
       await axios.post(
-        `${API_URL}/api/whatsapp/tickets/${ticketId}/reply`,
+        `${API_URL}/api/whatsapp/tickets/${ticketId}/messages`,
         { body: composer.trim() },
         { headers: getAuthHeaders() }
       );
@@ -170,7 +169,7 @@ const WhatsAppPanel = ({ ticketId, ticket }) => {
             <div className="text-center text-zinc-500 text-sm py-6">Sem mensagens ainda.</div>
           ) : (
             messages.map(m => {
-              const isOut = m.direction === 'OUTBOUND';
+              const isOut = m.direction === 'outbound' || m.direction === 'OUTBOUND';
               return (
                 <div key={m.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] px-3 py-2 rounded-2xl ${
