@@ -331,6 +331,12 @@ const Layout = ({ children }) => {
                           {item.children.map(child => {
                             const ChildIcon = child.icon;
                             const childActive = location.pathname === child.path;
+                            const childBadge =
+                              child.badge === 'intake' ? pendingIntakeCount :
+                              child.badge === 'alerts' ? pendingAlertsCount :
+                              child.badge === 'renting' ? pendingRentingCount :
+                              child.badge === 'assistencias' ? pendingAssistenciasCount :
+                              0;
                             return (
                               <Link
                                 key={child.path}
@@ -348,6 +354,14 @@ const Layout = ({ children }) => {
                               >
                                 <ChildIcon className="h-4 w-4" />
                                 <span>{child.label}</span>
+                                {childBadge > 0 && (
+                                  <span
+                                    className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center"
+                                    data-testid={`nav-badge-${child.path.replace(/\//g, '-').slice(1)}`}
+                                  >
+                                    {childBadge > 99 ? '99+' : childBadge}
+                                  </span>
+                                )}
                               </Link>
                             );
                           })}
