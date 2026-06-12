@@ -90,6 +90,148 @@ def _verify_meta_signature(raw_body: bytes, signature_header: Optional[str]) -> 
     return hmac.compare_digest(expected, received)
 
 
+def _fingerprint(value: str, head: int = 4, tail: int = 2) -> str:
+    """Short non-reversible fingerprint of a configuration value.
+
+    Used ONLY for safely identifiable values like `phone_number_id` and
+    `business_account_id` (public per Meta docs). Never call this on a secret.
+    """
+    if not value:
+        return ""
+    s = str(value)
+    if len(s) <= head + tail + 1:
+        # Too short — mask entirely
+        return "*" * len(s)
+    return f"{s[:head]}…{s[-tail:]} (len={len(s)})"
+
+
+def _verify_token_strength(token: str) -> str:
+    """Classify the verify token: empty | weak | strong.
+
+    Never leaks the token itself — only a category.
+    """
+    if not token:
+        return "empty"
+    if token.lower() in _WEAK_VERIFY_TOKENS or len(token) < 24:
+        return "weak"
+    return "strong"
+
+
+@router.get("/health")
+async def whatsapp_health(current_user: dict = Depends(get_current_user)):
+    """Admin-only health check for the WhatsApp integration.
+
+    Returns boolean/flag status and short fingerprints. NEVER returns the actual
+    values of WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, or WHATSAPP_VERIFY_TOKEN.
+
+    Auth: requires Bearer token with role=ADMIN. Other roles get 403.
+    """
+    if current_user.get("role") != "ADMIN":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    access_token = os.environ.get("WHATSAPP_ACCESS_TOKEN", "").strip()
+    phone_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    waba_id = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "").strip()
+    app_secret = os.environ.get("WHATSAPP_APP_SECRET", "").strip()
+    verify_token = _verify_token()
+
+    secrets_present = {
+        "access_token_present": bool(access_token),
+        "app_secret_present": bool(app_secret),
+        "verify_token_present": bool(verify_token),
+    }
+    ids_present = {
+        "phone_number_id_present": bool(phone_id),
+        "business_account_id_present": bool(waba_id),
+    }
+
+    missing = []
+    for k, v in {
+        "WHATSAPP_ACCESS_TOKEN": access_token,
+        "WHATSAPP_PHONE_NUMBER_ID": phone_id,
+        "WHATSAPP_BUSINESS_ACCOUNT_ID": waba_id,
+        "WHATSAPP_APP_SECRET": app_secret,
+        "WHATSAPP_VERIFY_TOKEN": verify_token,
+    }.items():
+        if not v:
+            missing.append(k)
+
+    configured = len(missing) == 0
+    enabled = _whatsapp_enabled()
+
+    # Index readiness (cheap probe — index list is small)
+    indexes_ready = False
+    try:
+        idx_info = await db.ticket_messages.index_information()
+        indexes_ready = any(
+            "external_message_id" in (entry.get("key", [(None,)])[0][0] or "")
+            for entry in idx_info.values()
+        )
+    except Exception as e:
+        logger.warning(f"[WA health] index probe failed: {e}")
+
+    # Last inbound / outbound timestamps (read-only, from ticket_messages)
+    last_inbound_at = None
+    last_outbound_at = None
+    try:
+        doc_in = await db.ticket_messages.find_one(
+            {"channel": "whatsapp", "direction": "inbound"},
+            sort=[("created_at", -1)], projection={"_id": 0, "created_at": 1},
+        )
+        if doc_in:
+            last_inbound_at = doc_in.get("created_at")
+        doc_out = await db.ticket_messages.find_one(
+            {"channel": "whatsapp", "direction": "outbound"},
+            sort=[("created_at", -1)], projection={"_id": 0, "created_at": 1},
+        )
+        if doc_out:
+            last_outbound_at = doc_out.get("created_at")
+    except Exception as e:
+        logger.warning(f"[WA health] timestamp probe failed: {e}")
+
+    # Public webhook URL — read from frontend/.env REACT_APP_BACKEND_URL (the
+    # canonical public URL surfaced to users). Falls back to env vars.
+    public_base = ""
+    try:
+        with open("/app/frontend/.env") as f:
+            for line in f:
+                if line.startswith("REACT_APP_BACKEND_URL"):
+                    public_base = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+    except FileNotFoundError:
+        pass
+    if not public_base:
+        public_base = (
+            os.environ.get("PUBLIC_BACKEND_URL")
+            or os.environ.get("APP_URL")
+            or ""
+        ).rstrip("/")
+    public_base = public_base.rstrip("/")
+    webhook_url = f"{public_base}/api/whatsapp/webhook" if public_base else None
+
+    return {
+        "enabled": enabled,
+        "configured": configured,
+        "missing": missing,
+        # secrets — ONLY booleans, never the value
+        **secrets_present,
+        # ids — boolean + short fingerprint (public values per Meta docs)
+        **ids_present,
+        "phone_number_id_fingerprint": _fingerprint(phone_id) if phone_id else None,
+        "business_account_id_fingerprint": _fingerprint(waba_id) if waba_id else None,
+        # verify token — only strength classification
+        "verify_token_strength": _verify_token_strength(verify_token),
+        # ops state
+        "webhook_url": webhook_url,
+        "last_inbound_at": last_inbound_at,
+        "last_outbound_at": last_outbound_at,
+        "indexes_ready": indexes_ready,
+        "environment": "production" if _is_production() else "development",
+    }
+
+
+
+
 @router.get("/webhook")
 async def verify_webhook(
     hub_mode: str = Query(None, alias="hub.mode"),
