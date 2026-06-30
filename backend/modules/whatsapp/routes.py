@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Request, HTTPException, Query, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException, Query, Depends
 from fastapi.responses import PlainTextResponse
 
 from db import db
@@ -58,22 +58,24 @@ async def verify_webhook(
 
 
 @router.post("/webhook")
-async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
+async def handle_webhook(request: Request):
     """
     Receive incoming WhatsApp messages and status updates.
-    Returns 200 immediately and processes in background.
+    Processes synchronously for reliability.
     """
     try:
         data = await request.json()
-        logger.info(f"WhatsApp webhook received")
+        logger.info(f"WhatsApp webhook received: {data.get('object', 'unknown')}")
         
-        # Process in background to return quickly
-        background_tasks.add_task(process_webhook_payload, data)
+        # Process immediately (WhatsApp allows up to 20s response time)
+        await process_webhook_payload(data)
         
         return {"status": "ok"}
     
     except Exception as e:
         logger.error(f"Error in webhook handler: {e}")
+        import traceback
+        traceback.print_exc()
         return {"status": "ok"}  # Always return 200 to avoid retries
 
 

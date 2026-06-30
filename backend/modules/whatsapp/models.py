@@ -1,7 +1,7 @@
 """
 WhatsApp Business Cloud API - Models
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from enum import Enum
 
@@ -69,7 +69,7 @@ class WhatsAppMediaContent(BaseModel):
 
 class WhatsAppMessage(BaseModel):
     """Incoming WhatsApp message from webhook"""
-    from_: str  # Phone number
+    from_: str = Field(..., alias='from')  # Phone number
     id: str     # Message ID
     timestamp: str
     type: str
@@ -79,9 +79,7 @@ class WhatsAppMessage(BaseModel):
     audio: Optional[WhatsAppMediaContent] = None
     video: Optional[WhatsAppMediaContent] = None
     
-    class Config:
-        populate_by_name = True
-        fields = {'from_': 'from'}
+    model_config = {"populate_by_name": True}
 
 
 class WhatsAppContact(BaseModel):

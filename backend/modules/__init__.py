@@ -60,9 +60,9 @@ def load_module_router(module_name: str) -> Optional[APIRouter]:
             logger.info(f"[MODULES] Loaded module: {module_name}")
             return router
         elif module_name == "whatsapp":
-            # Future: from modules.whatsapp import router
-            logger.info(f"[MODULES] Module '{module_name}' not yet implemented")
-            return None
+            from modules.whatsapp.routes import router
+            logger.info(f"[MODULES] Loaded module: {module_name}")
+            return router
         else:
             logger.warning(f"[MODULES] Unknown module: {module_name}")
             return None
