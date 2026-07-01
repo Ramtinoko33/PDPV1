@@ -171,7 +171,7 @@ class FinanceClientResponse(FinanceClientBase):
     risk_percentage: Optional[float] = None
     annual_revenue: Optional[float] = None
     payment_terms: Optional[str] = None
-    portfolio: Optional[str] = None
+    portfolio: Optional[float] = None  # Carteira
     pending_delivery: Optional[float] = None  # Albaranado
     
     # Estado operacional

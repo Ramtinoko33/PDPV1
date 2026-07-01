@@ -41,6 +41,10 @@ from .permissions import (
     can_manage_blocks,
     check_permission,
 )
+from .services.import_service import (
+    process_overdue_balances_import,
+    process_client_info_import,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -948,15 +952,44 @@ async def upload_import(
     
     logger.info(f"Import {import_type.value} received: {file.filename} by user {current_user['id']}")
     
-    # TODO: Processar ficheiro com parser específico
-    # Por agora, retornar estado "received" para implementar parsers na próxima fase
+    # Processar ficheiro com parser específico
+    import_id = import_doc["id"]
     
-    return {
-        "success": True,
-        "import_id": import_doc["id"],
-        "status": ImportStatus.RECEIVED.value,
-        "message": "Ficheiro recebido. Processamento será implementado na próxima fase."
-    }
+    try:
+        if import_type == ImportType.OVERDUE_BALANCES:
+            result = await process_overdue_balances_import(
+                import_id=import_id,
+                file_content=content,
+                uploaded_by=current_user["id"],
+                as_of_date=as_of_date
+            )
+        elif import_type == ImportType.CLIENT_INFO:
+            result = await process_client_info_import(
+                import_id=import_id,
+                file_content=content,
+                uploaded_by=current_user["id"]
+            )
+        else:
+            # OPEN_DOCUMENTS e CREDIT_EVOLUTION - ainda não implementado
+            result = {
+                "success": True,
+                "import_id": import_id,
+                "status": ImportStatus.RECEIVED.value,
+                "message": f"Ficheiro {import_type.value} recebido. Parser será implementado em fase futura."
+            }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing import: {e}")
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {
+                "status": ImportStatus.FAILED.value,
+                "errors": [str(e)]
+            }}
+        )
+        raise HTTPException(status_code=500, detail=f"Erro ao processar ficheiro: {str(e)}")
 
 
 @router.post("/imports/{import_id}/approve")
