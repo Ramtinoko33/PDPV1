@@ -1,5 +1,6 @@
 {
   "intake": true,
   "telegram": true,
-  "whatsapp": true
+  "whatsapp": true,
+  "finance": true
 }

@@ -13,6 +13,13 @@ class UserRole(str, Enum):
     INTERNAL_CREATOR = "INTERNAL_CREATOR"
 
 
+class FinanceRole(str, Enum):
+    """Roles específicos do módulo CRM Finance"""
+    OWNER = "OWNER"
+    FINANCE_REVIEWER = "FINANCE_REVIEWER"
+    COLLECTIONS_AGENT = "COLLECTIONS_AGENT"
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -31,6 +38,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: UserRole
+    finance_role: Optional[FinanceRole] = None  # CRM Finance module role
     created_at: str
     dashboard_default_types: List[str] = []
     dashboard_default_states: List[str] = []
@@ -40,6 +48,7 @@ class UserResponse(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[UserRole] = None
+    finance_role: Optional[FinanceRole] = None  # CRM Finance module role
     password: Optional[str] = None
 
 

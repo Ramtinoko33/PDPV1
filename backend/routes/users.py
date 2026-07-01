@@ -76,6 +76,8 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
         update_doc["name"] = user_data.name
     if user_data.role:
         update_doc["role"] = user_data.role.value
+    if user_data.finance_role is not None:
+        update_doc["finance_role"] = user_data.finance_role.value if user_data.finance_role else None
     if user_data.password:
         update_doc["password_hash"] = hash_password(user_data.password)
     
