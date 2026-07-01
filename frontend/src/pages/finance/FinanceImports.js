@@ -177,7 +177,7 @@ const FinanceImports = () => {
       </div>
 
       {/* Data Health Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {dataHealth?.items?.map((item) => {
           const statusColors = {
             ok: 'border-green-200 bg-green-50',
@@ -233,19 +233,25 @@ const FinanceImports = () => {
                   <SelectItem value="overdue_balances">
                     <div className="flex items-center gap-2">
                       <FileSpreadsheet className="h-4 w-4" />
-                      Saldos Vencidos (Diário)
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="client_info">
-                    <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4" />
-                      Info Clientes (Semanal)
+                      Saldos Vencidos (Diário) — "saldosvencidos.xlsx"
                     </div>
                   </SelectItem>
                   <SelectItem value="open_documents">
                     <div className="flex items-center gap-2">
                       <FileSpreadsheet className="h-4 w-4" />
-                      Documentos Aberto (Diário)
+                      Documentos em Aberto (Diário) — "Exemplo de mapa.xlsx"
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="client_info">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Info Clientes (Semanal) — "infocliente.xlsx"
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="credit_evolution">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Evolução Crédito (Trimestral) — "evoluçaocredito3em3meses.xlsx"
                     </div>
                   </SelectItem>
                 </SelectContent>
@@ -287,11 +293,13 @@ const FinanceImports = () => {
             </p>
             <p className="text-sm text-slate-500 mt-1">
               {selectedType === 'overdue_balances' && 
-                'Ficheiro de saldos vencidos exportado do GENES. Deve ser importado diariamente antes de iniciar as cobranças.'}
+                'Ficheiro "saldosvencidos.xlsx" — mapa de saldos vencidos exportado do GENES (agrupado por cliente, com documentos). Importar diariamente antes de iniciar as cobranças.'}
               {selectedType === 'client_info' && 
-                'Ficheiro InfoClientes para enriquecimento de dados. Recomendado importar semanalmente.'}
-              {selectedType === 'open_documents' && 
-                'Mapa de documentos em aberto para análise comparativa.'}
+                'Ficheiro "infocliente.xlsx" — InfoClientes para enriquecimento de dados (risco, faturação anual, forma de pagamento). Importar semanalmente.'}
+              {selectedType === 'open_documents' &&
+                'Ficheiro "Exemplo de mapa.xlsx" — mapa plano de documentos em aberto (FT e NC) para comparação diária. Parser em desenvolvimento (Fase 2): o ficheiro fica guardado.'}
+              {selectedType === 'credit_evolution' &&
+                'Ficheiro "evoluçaocredito3em3meses.xlsx" — evolução trimestral do crédito por cliente (colunas MM-YYYY). Importar a cada trimestre para análise de tendência.'}
             </p>
           </div>
         </CardContent>

@@ -602,3 +602,126 @@ async def process_client_info_import(
         )
     
     return result
+
+
+async def process_credit_evolution_import(
+    import_id: str,
+    file_content: bytes,
+    uploaded_by: str
+) -> Dict[str, Any]:
+    """
+    Processa importação de Evolução de Crédito Trimestral.
+    Guarda a série trimestral por cliente em finance_credit_evolution
+    e enriquece finance_clients com a tendência.
+    """
+    result = {
+        'success': False,
+        'import_id': import_id,
+        'status': ImportStatus.VALIDATING.value,
+        'totals': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    try:
+        parsed = parse_credit_evolution(file_content)
+        
+        if parsed['errors']:
+            result['errors'].extend(parsed['errors'])
+            result['status'] = ImportStatus.REJECTED.value
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {"status": result['status'], "errors": result['errors']}}
+            )
+            return result
+        
+        result['warnings'].extend(parsed['warnings'])
+        
+        now = datetime.now(timezone.utc).isoformat()
+        today = date.today().isoformat()
+        
+        clients_saved = 0
+        clients_enriched = 0
+        
+        for client_data in parsed['clients']:
+            genes_code = client_data['genes_code']
+            
+            await db.finance_credit_evolution.update_one(
+                {"genes_code": genes_code},
+                {"$set": {
+                    "genes_code": genes_code,
+                    "account": client_data.get('account'),
+                    "name": client_data.get('name'),
+                    "evolution": client_data.get('evolution', {}),
+                    "trend_percentage": client_data.get('trend_percentage'),
+                    "trend_absolute": client_data.get('trend_absolute'),
+                    "source_import_id": import_id,
+                    "updated_at": now
+                }},
+                upsert=True
+            )
+            clients_saved += 1
+            
+            update_res = await db.finance_clients.update_one(
+                {"genes_code": genes_code},
+                {"$set": {
+                    "credit_trend_percentage": client_data.get('trend_percentage'),
+                    "credit_trend_absolute": client_data.get('trend_absolute'),
+                    "updated_at": now
+                }}
+            )
+            if update_res.matched_count:
+                clients_enriched += 1
+        
+        not_found = clients_saved - clients_enriched
+        if not_found > 0:
+            result['warnings'].append(f"{not_found} clientes não encontrados (ainda não importados via saldos vencidos)")
+        
+        result['totals'] = {
+            "clients": parsed['totals']['client_count'],
+            "clients_updated": clients_enriched,
+            "periods": len(parsed.get('periods', [])),
+        }
+        
+        result['status'] = ImportStatus.IMPORTED.value
+        result['success'] = True
+        result['periods'] = parsed.get('periods', [])
+        
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {
+                "status": result['status'],
+                "totals": result['totals'],
+                "warnings": result['warnings'],
+                "as_of_date": today,
+                "processed_at": now
+            }}
+        )
+        
+        await db.finance_data_health.update_one(
+            {"source_type": ImportType.CREDIT_EVOLUTION.value},
+            {"$set": {
+                "source_type": ImportType.CREDIT_EVOLUTION.value,
+                "required_frequency": "quarterly",
+                "last_import_id": import_id,
+                "last_import_at": now,
+                "last_as_of_date": today,
+                "status": "ok",
+                "is_blocking_operations": False
+            }},
+            upsert=True
+        )
+        
+        logger.info(f"Processed credit evolution import {import_id}: {clients_saved} saved, {clients_enriched} enriched")
+        
+    except Exception as e:
+        logger.error(f"Error processing credit evolution import: {e}")
+        result['errors'].append(f"Erro ao processar importação: {str(e)}")
+        result['status'] = ImportStatus.FAILED.value
+        
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {"status": result['status'], "errors": result['errors']}}
+        )
+    
+    return result

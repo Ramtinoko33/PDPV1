@@ -45,6 +45,7 @@ from .permissions import (
 from .services.import_service import (
     process_overdue_balances_import,
     process_client_info_import,
+    process_credit_evolution_import,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ async def get_data_health(current_user: dict = Depends(require_finance_access)):
         (ImportType.OVERDUE_BALANCES, "daily", True),
         (ImportType.OPEN_DOCUMENTS, "daily", False),
         (ImportType.CLIENT_INFO, "weekly", False),
+        (ImportType.CREDIT_EVOLUTION, "quarterly", False),
     ]
     
     for import_type, frequency, is_critical in source_configs:
@@ -102,6 +104,9 @@ async def get_data_health(current_user: dict = Depends(require_finance_access)):
                         is_blocking = is_critical
                         message = f"Dados com {days_old} dia(s) de atraso"
                     elif frequency == "weekly" and days_old >= 7:
+                        status = DataHealthStatus.WARNING
+                        message = f"Dados com {days_old} dia(s) de atraso"
+                    elif frequency == "quarterly" and days_old >= 92:
                         status = DataHealthStatus.WARNING
                         message = f"Dados com {days_old} dia(s) de atraso"
                 except:
@@ -997,8 +1002,14 @@ async def upload_import(
                 file_content=content,
                 uploaded_by=current_user["id"]
             )
+        elif import_type == ImportType.CREDIT_EVOLUTION:
+            result = await process_credit_evolution_import(
+                import_id=import_id,
+                file_content=content,
+                uploaded_by=current_user["id"]
+            )
         else:
-            # OPEN_DOCUMENTS e CREDIT_EVOLUTION - ainda não implementado
+            # OPEN_DOCUMENTS - ainda não implementado (Fase 2)
             result = {
                 "success": True,
                 "import_id": import_id,
