@@ -2440,10 +2440,23 @@ except Exception as e:
 
 app.include_router(api_router)
 
+# CORS Configuration - Note: allow_credentials=True requires specific origins (not wildcard)
+cors_origins_env = os.environ.get('CORS_ORIGINS', '')
+if cors_origins_env and cors_origins_env != '*':
+    # Use specific origins from env
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+else:
+    # Default allowed origins for production and preview
+    cors_origins = [
+        "https://tickets.pneusdpedrov.com",
+        "https://pdpv-whatsapp.preview.emergentagent.com",
+        "http://localhost:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

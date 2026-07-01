@@ -8,14 +8,15 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 ### Refactoring Summary
 | Metric | Before | After | Change |
 |--------|--------|-------|--------|
-| server.py | 4957 lines | 2574 lines | **-48%** |
+| server.py | 4957 lines | 2616 lines | **-47%** |
 | Modular routes | 0 | 2 files | +1500 lines |
 | Services | 1 | 6 files | +1150 lines |
+| Finance Module | 0 | 1 module | +NEW |
 
 ### Backend Structure
 ```
 /app/backend/
-├── server.py              # Main FastAPI app (~2574 lines - orchestration)
+├── server.py              # Main FastAPI app (~2616 lines - orchestration)
 ├── services/
 │   ├── __init__.py        
 │   ├── sla_service.py     (~430 lines) - SLA + Holidays logic
@@ -34,13 +35,29 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 ├── modules/
 │   ├── intake/            - Pre-ticket intake
 │   ├── telegram/          - Telegram bot
-│   └── whatsapp/          - WhatsApp (pending)
+│   ├── whatsapp/          - WhatsApp Business Cloud API (MVP ativo)
+│   └── finance/           - CRM Finance (MVP COMPLETO) <<NEW>>
+│       ├── models.py      - Pydantic models + Enums
+│       ├── permissions.py - RBAC decorators
+│       ├── routes.py      - API endpoints
+│       ├── services/      - Import service
+│       └── parsers/       - Excel parsers (overdue, documents, client_info, evolution)
 ├── schemas/
 │   ├── ticket.py
-│   ├── user.py
+│   ├── user.py (+ finance_role)
 │   └── customer.py
 └── tests/
     └── test_sla_logic.py  (17 tests passing)
+```
+
+### Frontend Structure (Finance)
+```
+/app/frontend/src/pages/finance/
+├── FinanceDashboard.js    - Dashboard com aging, top devedores
+├── CollectionsToday.js    - Lista de cobranças do dia
+├── FinanceClients.js      - Lista de clientes com filtros
+├── FinanceClientDetail.js - Ficha de cliente + ações
+└── FinanceImports.js      - Importação de ficheiros Excel
 ```
 
 ## Implemented Features
@@ -90,7 +107,40 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 
 ### Integrations
 - [x] Telegram Bot
-- [ ] WhatsApp Business Cloud API (pending - tokens not configured)
+- [x] WhatsApp Business Cloud API (MVP backend ativo - token expirado, precisa renovar)
+
+## CRM Finance Module (MVP COMPLETO - 01/07/2026)
+
+### Funcionalidades Implementadas
+- [x] Importação de Excel (Saldos Vencidos, Documentos em Aberto, InfoClientes)
+- [x] Dashboard financeiro com aging, top devedores, totais
+- [x] Lista de clientes com filtros (estado, semáforo, vencido)
+- [x] Ficha de cliente com documentos, histórico de ações
+- [x] Registar contactos (telefonema, WhatsApp, email, nota)
+- [x] Criar promessas de pagamento
+- [x] Sugerir bloqueio de cliente
+- [x] Cálculo automático de saldos residuais vs cobráveis
+- [x] RBAC financeiro (OWNER, FINANCE_REVIEWER, COLLECTIONS_AGENT)
+- [x] Semáforo financeiro (GREEN, YELLOW, ORANGE, RED, CRITICAL)
+
+### API Endpoints Finance
+- POST /api/finance/imports/{type} - Upload Excel
+- GET /api/finance/dashboard - Métricas financeiras
+- GET /api/finance/clients - Lista de clientes
+- GET /api/finance/clients/{id} - Detalhe do cliente
+- POST /api/finance/clients/{id}/actions - Registar ação
+- POST /api/finance/clients/{id}/promises - Criar promessa
+- POST /api/finance/clients/{id}/block-request - Sugerir bloqueio
+- GET /api/finance/collections/today - Cobranças do dia
+
+### Database Collections Finance
+- finance_clients - Clientes com dados financeiros
+- finance_documents - Documentos em aberto
+- finance_actions - Histórico de ações/contactos
+- finance_promises - Promessas de pagamento
+- finance_block_requests - Pedidos de bloqueio
+- finance_imports - Histórico de importações
+- finance_data_health - Estado de atualização dos dados
 
 ## API Endpoints
 
@@ -185,3 +235,22 @@ Sistema completo de gestão de tickets para uma oficina de veículos (Pneus D. P
 
 ## Known Issues
 - Files uploaded before Object Storage integration cannot be downloaded
+- CORS fixed (01/07/2026): allow_credentials=True now uses specific origins instead of wildcard
+
+## Pending Tasks (Priority Order)
+### P0 - Critical
+- [x] ~~CORS bug in QuoteResponse~~ (FIXED 01/07/2026)
+
+### P1 - High
+- [ ] WhatsApp: Obter novo token do Meta (expirado)
+- [ ] WhatsApp: Criar UI no frontend (badge tickets WhatsApp, chat)
+- [ ] WhatsApp Fase 2.1: Menu Inicial e Pré-Tickets
+
+### P2 - Medium
+- [ ] WhatsApp Fase 2.2: Templates Meta (Utility)
+- [ ] Extrair módulo Quotes do server.py para routes/quotes.py
+
+### P3 - Future
+- [ ] CRM Finance Fase 2: Comparação diária automática, DSO, relatórios
+- [ ] Importação de Excel para Tickets (não financeiro)
+- [ ] Portal do Cliente dedicado

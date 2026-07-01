@@ -87,9 +87,9 @@ const FinanceClients = () => {
   const [pageSize] = useState(25);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
-    status: '',
-    traffic_light: '',
-    has_overdue: '',
+    status: 'all',
+    traffic_light: 'all',
+    has_overdue: 'all',
     is_blocked: ''
   });
   const [showFilters, setShowFilters] = useState(false);
@@ -103,9 +103,9 @@ const FinanceClients = () => {
       });
       
       if (searchTerm) params.append('search', searchTerm);
-      if (filters.status) params.append('status', filters.status);
-      if (filters.traffic_light) params.append('traffic_light', filters.traffic_light);
-      if (filters.has_overdue) params.append('has_overdue', filters.has_overdue);
+      if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+      if (filters.traffic_light && filters.traffic_light !== 'all') params.append('traffic_light', filters.traffic_light);
+      if (filters.has_overdue && filters.has_overdue !== 'all') params.append('has_overdue', filters.has_overdue);
       if (filters.is_blocked) params.append('is_blocked', filters.is_blocked);
 
       const response = await axios.get(`${API_URL}/api/finance/clients?${params}`, {
@@ -131,16 +131,16 @@ const FinanceClients = () => {
 
   const clearFilters = () => {
     setFilters({
-      status: '',
-      traffic_light: '',
-      has_overdue: '',
+      status: 'all',
+      traffic_light: 'all',
+      has_overdue: 'all',
       is_blocked: ''
     });
     setSearchTerm('');
     setPage(1);
   };
 
-  const hasActiveFilters = Object.values(filters).some(v => v) || searchTerm;
+  const hasActiveFilters = Object.values(filters).some(v => v && v !== 'all') || searchTerm;
 
   return (
     <div className="space-y-6">
@@ -188,7 +188,7 @@ const FinanceClients = () => {
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="EM_COBRANCA">Em Cobrança</SelectItem>
                     <SelectItem value="PROMESSA_ATIVA">Promessa Ativa</SelectItem>
                     <SelectItem value="PROMESSA_FALHADA">Promessa Falhada</SelectItem>
@@ -209,7 +209,7 @@ const FinanceClients = () => {
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="CRITICAL">Crítico</SelectItem>
                     <SelectItem value="RED">Vermelho</SelectItem>
                     <SelectItem value="ORANGE">Laranja</SelectItem>
@@ -229,7 +229,7 @@ const FinanceClients = () => {
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="true">Com vencido</SelectItem>
                     <SelectItem value="false">Sem vencido</SelectItem>
                   </SelectContent>

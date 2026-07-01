@@ -159,7 +159,7 @@ const FinanceClientDetail = () => {
       await axios.post(`${API_URL}/api/finance/clients/${clientId}/actions`, {
         action_type: actionType,
         notes: actionNotes,
-        delay_reason: delayReason || null,
+        delay_reason: delayReason && delayReason !== 'none' ? delayReason : null,
         next_action_date: nextActionDate || null
       }, { headers: getAuthHeaders() });
       
@@ -556,7 +556,7 @@ const FinanceClientDetail = () => {
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   <SelectItem value="esquecimento">Esquecimento</SelectItem>
                   <SelectItem value="processo_administrativo">Processo Administrativo</SelectItem>
                   <SelectItem value="falta_documento">Falta de Documento</SelectItem>
