@@ -1,0 +1,35 @@
+{
+  "summary": "Finance P0 MVP validation (iteration 23). Backend: 7/7 pytest passed — pending_approval gating on >30% overdue diff verified (clients TST01/TST02 NOT created before approve, appear only after POST /imports/{id}/approve reprocess); GET /imports enriches uploaded_by_name (Administrador); GET /promises enriches client_name + genes_code; PUT /users/{id} persists finance_role; 403 correctly returned for COLLECTIONS_AGENT on /finance/block-requests and for no-finance user on /finance/dashboard. Frontend: /finance/promises, /regularizations, /blocks pages all render with expected data-testids and content (Total Residual card, empty state 'Sem saldos residuais registados', Pedidos Pendentes / Clientes Bloqueados / Histórico sections). /finance/imports shows Utilizador (Administrador) and Origem (Manual) columns. Admin sidebar shows all 7 Finance items. COLLECTIONS_AGENT sidebar hides Bloqueios (and Promessas — see note); /finance/blocks shows 'Acesso restrito' with data-testid=block-requests-access-denied when API returns 403. rececao.teste (no finance_role) does NOT see Finance group. finance_role selector data-testid=user-finance-role-select exists in UserManagement.js (persistence confirmed via backend PUT). All test data (TST01/TST02, TESTP0-*.xlsx imports, uploaded files) cleaned up; finance_data_health for overdue_balances restored to saldosvencidos.xlsx (cab3094e-fe97-4f42-94af-0b1c468cc9f3) with status=ok and is_blocking_operations=false.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FinancePromises.js / Regularizations.js / FinanceImports.js", "issue": "React hydration warnings: <span data-ve-dynamic> wrappers rendered directly as child of <tbody> (and around <tr>), producing invalid HTML. Origin appears to be the visual-edit runtime wrapping mapped rows. Not breaking rendering but pollutes console with 'In HTML, <span> cannot be a child of <tbody>' / '<tr> span' warnings.", "selector": "tbody > span[data-ve-dynamic]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_finance_p0_iteration23.py",
+    "/app/test_reports/pytest/finance_p0_iteration23.xml"
+  ],
+  "action_items": [
+    "(Optional/low) Fix hydration warnings caused by <span data-ve-dynamic='true'> being rendered as a direct child of <tbody> and around <tr>. Consider rendering the wrapper as React.Fragment or applying it outside of table rows.",
+    "(Cosmetic) Consider hiding sidebar 'Promessas' for COLLECTIONS_AGENT only if intentional — currently it's hidden. If Collections agents should register promises, expose the item."
+  ],
+  "critical_code_review_comments": [
+    "routes.py upload_import: on parser exception the import doc is marked FAILED but the previously saved original file is left on disk (small storage leak). Consider unlinking on FAILED/REJECTED terminal states.",
+    "import_service.process_overdue_balances_import compares against last IMPORTED total_overdue only; if there is no prior imported record, no gating happens — that's OK for bootstrap but should be logged.",
+    "routes.py list_promises always sorts by promise_date asc; consider adding sort direction / date range filters for UX at scale.",
+    "routes.py list_imports has limit up to 200 but no offset/pagination — will grow unbounded once daily imports accumulate."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_finance_p0_iteration23.py (new pytest suite, 7 tests, teardown cleans TST clients + TESTP0 imports + files)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% on validated flows (all pages render with expected testids, permissions gate correctly)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq ; cobranca.teste@pdpv.pt / TesteFin2026! ; rececao.teste@pdpv.pt / TesteFin2026! (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "Created two ephemeral xlsx uploads (filename TESTP0-<hash>.xlsx) with clients TST01/TST02 to trigger >30% diff. Approved second run per test. Teardown deletes finance_clients (genes_code TST*), finance_promises/actions/documents/block_requests referencing those client ids, finance_imports with filename ^TESTP0-, and their /app/backend/uploads/finance_imports/*.xlsx files. Verified saldosvencidos.xlsx (23136€) remains as data-health source.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth: POST /api/auth/login returns 'token' (not access_token). User update endpoint is PUT /api/users/{id} (not PATCH). GET /api/finance/data-health baseline: overdue_balances → import cab3094e-fe97-4f42-94af-0b1c468cc9f3 (saldosvencidos.xlsx, 23136.06€). To trigger pending_approval, upload xlsx with total_overdue very different (e.g. 50€). Openpyxl pads rows to max_column, so single-cell marker rows become 9-col rows and are treated as extra client-data rows by parse_overdue_balances — this is a parser quirk to keep in mind when building test fixtures. Preserved user data: cliente a..c (genes_code 1..5), the 322€ 'cliente b' promise, imports saldosvencidos.xlsx / infocliente.xlsx / Exemplo de mapa.xlsx.",
+  "rca of the issue": "N/A — no functional bug found. Only cosmetic React hydration warnings from visual-edit runtime injecting <span data-ve-dynamic> inside <tbody>/<tr>. Backend logic and permissions all behave as spec'd."
+}

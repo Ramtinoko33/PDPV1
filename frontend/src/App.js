@@ -30,7 +30,10 @@ import {
   CollectionsToday,
   FinanceClients,
   FinanceClientDetail,
-  FinanceImports
+  FinanceImports,
+  FinancePromises,
+  Regularizations,
+  BlockRequests
 } from "./pages/finance";
 import Layout from "./components/Layout";
 
@@ -228,6 +231,21 @@ function AppRoutes() {
       <Route path="/finance/imports" element={
         <ProtectedRoute requireFinanceAccess>
           <FinanceImports />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/promises" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinancePromises />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/regularizations" element={
+        <ProtectedRoute requireFinanceAccess>
+          <Regularizations />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/blocks" element={
+        <ProtectedRoute requireFinanceAccess>
+          <BlockRequests />
         </ProtectedRoute>
       } />
       

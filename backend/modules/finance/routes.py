@@ -7,6 +7,7 @@ import uuid
 import logging
 import hashlib
 from datetime import datetime, timezone, date
+from pathlib import Path
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
@@ -49,6 +50,8 @@ from .services.import_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "finance_imports"
 
 
 # ============== DATA HEALTH ==============
@@ -500,6 +503,18 @@ async def list_promises(
     promises_cursor = db.finance_promises.find(query, {"_id": 0}).sort("promise_date", 1).limit(limit)
     promises = await promises_cursor.to_list(limit)
     
+    # Enriquecer com nome do cliente
+    client_ids = list({p["client_id"] for p in promises})
+    clients_map = {}
+    if client_ids:
+        async for c in db.finance_clients.find({"id": {"$in": client_ids}}, {"_id": 0, "id": 1, "name": 1, "genes_code": 1}):
+            clients_map[c["id"]] = c
+    
+    for p in promises:
+        client = clients_map.get(p["client_id"], {})
+        p["client_name"] = client.get("name")
+        p["genes_code"] = client.get("genes_code")
+    
     return {"promises": [FinancePromiseResponse(**p) for p in promises]}
 
 
@@ -888,6 +903,16 @@ async def list_imports(
     
     total = await db.finance_imports.count_documents(query)
     
+    # Enriquecer com nome do utilizador
+    user_ids = list({i["uploaded_by"] for i in imports if i.get("uploaded_by")})
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}):
+            users_map[u["id"]] = u.get("name")
+    
+    for i in imports:
+        i["uploaded_by_name"] = users_map.get(i.get("uploaded_by"))
+    
     return FinanceImportListResponse(
         imports=[FinanceImportResponse(**i) for i in imports],
         total=total
@@ -921,10 +946,16 @@ async def upload_import(
         raise HTTPException(status_code=400, detail="Este ficheiro já foi importado anteriormente")
     
     now = datetime.now(timezone.utc).isoformat()
+    import_id = str(uuid.uuid4())
+    
+    # Guardar ficheiro original (necessário para reprocessar após aprovação)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    original_file_path = UPLOAD_DIR / f"{import_id}.xlsx"
+    original_file_path.write_bytes(content)
     
     # Criar registo de importação
     import_doc = {
-        "id": str(uuid.uuid4()),
+        "id": import_id,
         "type": import_type.value,
         "source_method": ImportSourceMethod.MANUAL_UPLOAD.value,
         "filename": file.filename,
@@ -933,6 +964,7 @@ async def upload_import(
         "uploaded_by": current_user["id"],
         "uploaded_at": now,
         "status": ImportStatus.RECEIVED.value,
+        "original_file_path": str(original_file_path),
         "totals": {
             "clients": 0,
             "documents": 0,
@@ -950,9 +982,6 @@ async def upload_import(
     await db.finance_imports.insert_one(import_doc)
     
     logger.info(f"Import {import_type.value} received: {file.filename} by user {current_user['id']}")
-    
-    # Processar ficheiro com parser específico
-    import_id = import_doc["id"]
     
     try:
         if import_type == ImportType.OVERDUE_BALANCES:
@@ -997,7 +1026,7 @@ async def approve_import(
     current_user: dict = Depends(require_finance_reviewer)
 ):
     """
-    Aprovar importação pendente.
+    Aprovar importação pendente — reprocessa o ficheiro original e aplica os dados.
     """
     import_doc = await db.finance_imports.find_one({"id": import_id}, {"_id": 0})
     if not import_doc:
@@ -1008,10 +1037,30 @@ async def approve_import(
     
     now = datetime.now(timezone.utc).isoformat()
     
+    # Reprocessar o ficheiro original (dados só são aplicados agora)
+    file_path = import_doc.get("original_file_path")
+    if import_doc["type"] == ImportType.OVERDUE_BALANCES.value:
+        if not file_path or not Path(file_path).exists():
+            raise HTTPException(status_code=400, detail="Ficheiro original não disponível para reprocessamento")
+        content = Path(file_path).read_bytes()
+        result = await process_overdue_balances_import(
+            import_id=import_id,
+            file_content=content,
+            uploaded_by=import_doc["uploaded_by"],
+            as_of_date=import_doc.get("as_of_date"),
+            force_approved=True
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=f"Erro ao aplicar importação: {result.get('errors')}")
+    else:
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {"status": ImportStatus.IMPORTED.value}}
+        )
+    
     await db.finance_imports.update_one(
         {"id": import_id},
         {"$set": {
-            "status": ImportStatus.IMPORTED.value,
             "approved_by": current_user["id"],
             "approved_at": now
         }}
@@ -1019,4 +1068,4 @@ async def approve_import(
     
     logger.info(f"Import {import_id} approved by user {current_user['id']}")
     
-    return {"success": True, "message": "Importação aprovada"}
+    return {"success": True, "message": "Importação aprovada e dados aplicados"}

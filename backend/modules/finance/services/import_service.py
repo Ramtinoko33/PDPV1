@@ -150,7 +150,8 @@ async def process_overdue_balances_import(
     import_id: str,
     file_content: bytes,
     uploaded_by: str,
-    as_of_date: Optional[str] = None
+    as_of_date: Optional[str] = None,
+    force_approved: bool = False
 ) -> Dict[str, Any]:
     """
     Processa importação de saldos vencidos.
@@ -190,7 +191,7 @@ async def process_overdue_balances_import(
         )
         
         needs_approval = False
-        if last_import and last_import.get('totals', {}).get('total_overdue', 0) > 0:
+        if not force_approved and last_import and last_import.get('totals', {}).get('total_overdue', 0) > 0:
             last_total = last_import['totals']['total_overdue']
             current_total = parsed['totals']['total_overdue']
             diff_pct = abs(current_total - last_total) / last_total if last_total > 0 else 0
@@ -200,6 +201,27 @@ async def process_overdue_balances_import(
                 result['warnings'].append(f"Diferença de {diff_pct*100:.1f}% face à última importação. Requer aprovação.")
             elif diff_pct > DIFF_THRESHOLDS['auto_accept']:
                 result['warnings'].append(f"Diferença de {diff_pct*100:.1f}% face à última importação.")
+        
+        # Diferença anormal: NÃO aplicar dados — aguardar aprovação de FINANCE_REVIEWER/OWNER
+        if needs_approval:
+            result['status'] = ImportStatus.PENDING_APPROVAL.value
+            result['totals'] = {
+                "clients": parsed['totals']['client_count'],
+                "documents": parsed['totals']['document_count'],
+                "total_balance": parsed['totals']['total_balance'],
+                "total_overdue": parsed['totals']['total_overdue'],
+            }
+            result['message'] = "Importação requer aprovação antes de os dados serem aplicados."
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "totals": result['totals'],
+                    "warnings": result['warnings'],
+                }}
+            )
+            logger.info(f"Import {import_id} pending approval ({result['warnings']})")
+            return result
         
         # Processar clientes e documentos
         clients_created = 0
@@ -403,9 +425,7 @@ async def process_overdue_balances_import(
         result['totals'] = totals
         
         # Determinar estado final
-        if needs_approval:
-            result['status'] = ImportStatus.PENDING_APPROVAL.value
-        elif result['warnings']:
+        if result['warnings']:
             result['status'] = ImportStatus.ACCEPTED_WITH_WARNINGS.value
         else:
             result['status'] = ImportStatus.IMPORTED.value

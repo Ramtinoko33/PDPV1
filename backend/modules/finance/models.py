@@ -237,6 +237,7 @@ class FinanceImportResponse(BaseModel):
     file_hash: str
     as_of_date: Optional[str] = None
     uploaded_by: str
+    uploaded_by_name: Optional[str] = None
     uploaded_at: str
     status: ImportStatus
     totals: ImportTotals
@@ -293,6 +294,8 @@ class FinancePromiseResponse(BaseModel):
     """Resposta de promessa"""
     id: str
     client_id: str
+    client_name: Optional[str] = None
+    genes_code: Optional[str] = None
     amount: float
     promise_date: str
     status: PromiseStatus

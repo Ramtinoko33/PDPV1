@@ -28,7 +28,10 @@ import {
   Car,
   Landmark,
   TrendingDown,
-  FileSpreadsheet
+  FileSpreadsheet,
+  CalendarClock,
+  Coins,
+  Ban
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -209,7 +212,10 @@ const Layout = ({ children }) => {
         { path: '/finance', label: 'Painel Finance', icon: Landmark, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/collections-today', label: 'Cobranças Hoje', icon: TrendingDown, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/clients', label: 'Clientes Finance', icon: Users, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
-        { path: '/finance/imports', label: 'Importações', icon: FileSpreadsheet, roles: ['ADMIN', 'SUPERVISOR'] },
+        { path: '/finance/promises', label: 'Promessas', icon: CalendarClock, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/regularizations', label: 'Regularizações', icon: Coins, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/blocks', label: 'Bloqueios', icon: Ban, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'], financeRoles: ['OWNER', 'FINANCE_REVIEWER'] },
+        { path: '/finance/imports', label: 'Importações', icon: FileSpreadsheet, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
       ]
     },
     {
@@ -237,9 +243,15 @@ const Layout = ({ children }) => {
     if (item.requireFinanceAccess && user?.role !== 'ADMIN' && !user?.finance_role) return false;
     return true;
   }).map(item => {
-    // Filter children by role too
+    // Filter children by role too (and by finance_role when specified; ADMIN always sees)
     if (item.children) {
-      return { ...item, children: item.children.filter(c => c.roles.includes(user?.role)) };
+      return {
+        ...item,
+        children: item.children.filter(c =>
+          c.roles.includes(user?.role) &&
+          (!c.financeRoles || user?.role === 'ADMIN' || c.financeRoles.includes(user?.finance_role))
+        )
+      };
     }
     return item;
   });

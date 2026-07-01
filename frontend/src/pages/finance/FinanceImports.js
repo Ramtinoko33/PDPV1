@@ -310,6 +310,8 @@ const FinanceImports = () => {
                   <th className="text-left p-3 text-sm font-medium text-slate-600">Data</th>
                   <th className="text-left p-3 text-sm font-medium text-slate-600">Tipo</th>
                   <th className="text-left p-3 text-sm font-medium text-slate-600">Ficheiro</th>
+                  <th className="text-left p-3 text-sm font-medium text-slate-600">Utilizador</th>
+                  <th className="text-center p-3 text-sm font-medium text-slate-600">Origem</th>
                   <th className="text-center p-3 text-sm font-medium text-slate-600">Clientes</th>
                   <th className="text-center p-3 text-sm font-medium text-slate-600">Documentos</th>
                   <th className="text-center p-3 text-sm font-medium text-slate-600">Estado</th>
@@ -325,6 +327,12 @@ const FinanceImports = () => {
                     </td>
                     <td className="p-3 text-sm text-slate-600 max-w-[200px] truncate">
                       {imp.filename}
+                    </td>
+                    <td className="p-3 text-sm text-slate-600">{imp.uploaded_by_name || '-'}</td>
+                    <td className="p-3 text-center">
+                      <Badge variant="outline" className="text-xs">
+                        {imp.source_method === 'rpa_folder' ? 'RPA' : 'Manual'}
+                      </Badge>
                     </td>
                     <td className="p-3 text-center text-sm">
                       {imp.totals?.clients || '-'}
@@ -354,7 +362,7 @@ const FinanceImports = () => {
                 ))}
                 {imports.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-500">
+                    <td colSpan={9} className="p-8 text-center text-slate-500">
                       Nenhuma importação encontrada
                     </td>
                   </tr>
