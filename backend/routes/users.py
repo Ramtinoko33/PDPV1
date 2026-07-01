@@ -88,6 +88,8 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
         update_doc["has_renting_access"] = user_data.has_renting_access
     if user_data.has_assistencias_access is not None:
         update_doc["has_assistencias_access"] = user_data.has_assistencias_access
+    if "finance_role" in user_data.model_fields_set:
+        update_doc["finance_role"] = user_data.finance_role.value if user_data.finance_role else None
     
     if update_doc:
         await db.users.update_one({"id": user_id}, {"$set": update_doc})

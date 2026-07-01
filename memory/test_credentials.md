@@ -4,6 +4,11 @@
 - Email: admin@pdpv.pt
 - Password: HCNMEnKMLq
 - Role: ADMIN
+- finance_role: OWNER (acesso total ao CRM Finance)
+
+## CRM Finance test users (created Jun 2026, preview only)
+- cobranca.teste@pdpv.pt / TesteFin2026! — role AGENT, finance_role COLLECTIONS_AGENT
+- rececao.teste@pdpv.pt / TesteFin2026! — role AGENT, finance_role null (NO_FINANCE_ACCESS, deve receber 403 em /api/finance/*)
 
 ## Test environment variables (optional, for CI / shell-based tests)
 - `TEST_ADMIN_PASSWORD` — defaults to "changeme" inside test files when unset

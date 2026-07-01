@@ -37,6 +37,7 @@ const UserManagement = () => {
     can_create_tickets: false,
     has_renting_access: false,
     has_assistencias_access: false,
+    finance_role: 'NONE',
   });
 
   const fetchUsers = async () => {
@@ -98,6 +99,7 @@ const UserManagement = () => {
         can_create_tickets: user.can_create_tickets || false,
         has_renting_access: user.has_renting_access || false,
         has_assistencias_access: user.has_assistencias_access || false,
+        finance_role: user.finance_role || 'NONE',
       });
     } else {
       setEditingUser(null);
@@ -110,6 +112,7 @@ const UserManagement = () => {
         can_create_tickets: false,
         has_renting_access: false,
         has_assistencias_access: false,
+        finance_role: 'NONE',
       });
     }
     setShowDialog(true);
@@ -121,7 +124,7 @@ const UserManagement = () => {
     try {
       if (editingUser) {
         // Update
-        const updateData = { name: formData.name, role: formData.role, has_alerts_access: formData.has_alerts_access, can_create_tickets: formData.can_create_tickets, has_renting_access: formData.has_renting_access, has_assistencias_access: formData.has_assistencias_access };
+        const updateData = { name: formData.name, role: formData.role, has_alerts_access: formData.has_alerts_access, can_create_tickets: formData.can_create_tickets, has_renting_access: formData.has_renting_access, has_assistencias_access: formData.has_assistencias_access, finance_role: formData.finance_role === 'NONE' ? null : formData.finance_role };
         if (formData.password) {
           updateData.password = formData.password;
         }
@@ -439,6 +442,25 @@ const UserManagement = () => {
                   {roleOptions.map(opt => (
                     <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+              <Label className="font-semibold">Perfil CRM Finance</Label>
+              <p className="text-xs text-zinc-500">Sem acesso = não vê o menu Finance nem dados financeiros</p>
+              <Select
+                value={formData.finance_role}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, finance_role: value }))}
+              >
+                <SelectTrigger className="h-11 border-2 bg-white" data-testid="user-finance-role-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Sem acesso financeiro</SelectItem>
+                  <SelectItem value="COLLECTIONS_AGENT">Collections Agent (faz cobranças)</SelectItem>
+                  <SelectItem value="FINANCE_REVIEWER">Finance Reviewer (aprova bloqueios)</SelectItem>
+                  <SelectItem value="OWNER">Owner (acesso total)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

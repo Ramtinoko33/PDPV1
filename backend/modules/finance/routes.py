@@ -128,9 +128,8 @@ async def get_dashboard(current_user: dict = Depends(require_finance_access)):
     """
     Dashboard financeiro com métricas principais.
     """
-    # Agregar totais dos clientes
+    # Agregar totais dos clientes (inclui residuais — contam na dívida contabilística)
     pipeline = [
-        {"$match": {"is_residual_only": {"$ne": True}}},
         {"$group": {
             "_id": None,
             "total_balance": {"$sum": "$total_balance"},
