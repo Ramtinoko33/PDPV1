@@ -25,6 +25,13 @@ import AssistenciasDetail from "./pages/AssistenciasDetail";
 import AdminAssistenciasUsers from "./pages/AdminAssistenciasUsers";
 import NormalizationSettings from "./pages/NormalizationSettings";
 import AdminTelegramUsers from "./pages/AdminTelegramUsers";
+import {
+  FinanceDashboard,
+  CollectionsToday,
+  FinanceClients,
+  FinanceClientDetail,
+  FinanceImports
+} from "./pages/finance";
 import Layout from "./components/Layout";
 
 // Module-level constants prevent new array creation on each render (avoids prop reference churn)
@@ -33,7 +40,7 @@ const ROLES_ALL_WITH_CREATOR = ['ADMIN', 'SUPERVISOR', 'AGENT', 'INTERNAL_CREATO
 const ROLES_MANAGERS = ['ADMIN', 'SUPERVISOR'];
 const ROLES_ADMIN_ONLY = ['ADMIN'];
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
+const ProtectedRoute = ({ children, allowedRoles, requireFinanceAccess }) => {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -52,6 +59,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
   
   if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  // Check finance access (module-specific role independent of core role)
+  if (requireFinanceAccess && !user.finance_role && user.role !== 'ADMIN') {
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -189,6 +201,33 @@ function AppRoutes() {
       <Route path="/admin/telegram-users" element={
         <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
           <AdminTelegramUsers />
+        </ProtectedRoute>
+      } />
+
+      {/* CRM Finance module — gated by requireFinanceAccess */}
+      <Route path="/finance" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/collections-today" element={
+        <ProtectedRoute requireFinanceAccess>
+          <CollectionsToday />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/clients" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceClients />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/clients/:clientId" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceClientDetail />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/imports" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceImports />
         </ProtectedRoute>
       } />
       

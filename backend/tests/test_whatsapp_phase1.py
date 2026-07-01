@@ -132,19 +132,29 @@ class TestWindow:
         assert r.status_code == 404
 
 
-# ===================== Send endpoints: 503 (creds missing) =====================
+# ===================== Send endpoints: expected states =====================
 class TestSendBlocked:
-    def test_send_message_503(self, headers, test_ticket):
-        r = requests.post(f"{BASE_URL}/api/whatsapp/tickets/{test_ticket['id']}/messages",
-                          json={"body": "Olá teste"}, headers=headers, timeout=10)
-        # In preview, no WHATSAPP_ACCESS_TOKEN => must be 503 (not 500, not 200)
-        assert r.status_code == 503, f"Expected 503 got {r.status_code} body={r.text}"
-        assert "not configured" in r.text.lower()
+    """Send endpoints have a chain of checks:
+    1. kill-switch (WHATSAPP_ENABLED) → 503 "disabled"
+    2. config check → 503 "not configured"
+    3. 24h-window check → 409
+    4. Meta Graph API call → 200 on success, 502 "upstream error" on failure
+       (e.g. fake test recipient not authorized in Development Mode)
+    Any of 409/502/503 is acceptable — a 500 or 200 with fake data would be a bug."""
 
-    def test_send_quote_link_503(self, headers, test_ticket):
+    def test_send_message_no_500(self, headers, test_ticket):
+        r = requests.post(f"{BASE_URL}/api/whatsapp/tickets/{test_ticket['id']}/messages",
+                          json={"body": "Olá teste"}, headers=headers, timeout=15)
+        assert r.status_code in (409, 502, 503), (
+            f"Expected 409/502/503 got {r.status_code} body={r.text}"
+        )
+
+    def test_send_quote_link_no_500(self, headers, test_ticket):
         r = requests.post(f"{BASE_URL}/api/whatsapp/tickets/{test_ticket['id']}/send-quote-link",
-                          json={}, headers=headers, timeout=10)
-        assert r.status_code == 503, f"Expected 503 got {r.status_code} body={r.text}"
+                          json={}, headers=headers, timeout=15)
+        assert r.status_code in (409, 502, 503), (
+            f"Expected 409/502/503 got {r.status_code} body={r.text}"
+        )
 
 
 # ===================== Webhook flows =====================

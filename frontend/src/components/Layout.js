@@ -25,7 +25,10 @@ import {
   ClipboardList,
   Send,
   Zap,
-  Car
+  Car,
+  Landmark,
+  TrendingDown,
+  FileSpreadsheet
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -198,6 +201,18 @@ const Layout = ({ children }) => {
       roles: ['ADMIN', 'SUPERVISOR']
     },
     {
+      label: 'Finance',
+      icon: Landmark,
+      roles: ['ADMIN', 'SUPERVISOR', 'AGENT'],
+      requireFinanceAccess: true,
+      children: [
+        { path: '/finance', label: 'Painel Finance', icon: Landmark, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/collections-today', label: 'Cobranças Hoje', icon: TrendingDown, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/clients', label: 'Clientes Finance', icon: Users, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/imports', label: 'Importações', icon: FileSpreadsheet, roles: ['ADMIN', 'SUPERVISOR'] },
+      ]
+    },
+    {
       label: 'Administração',
       icon: Settings,
       roles: ['ADMIN', 'SUPERVISOR'],
@@ -218,6 +233,8 @@ const Layout = ({ children }) => {
     // For renting: ADMIN/SUPERVISOR always see it, AGENT only if has_renting_access
     if (item.requireRentingAccess && user?.role === 'AGENT' && !user?.has_renting_access) return false;
     if (item.requireAssistenciasAccess && user?.role === 'AGENT' && !user?.has_assistencias_access) return false;
+    // Finance: any role can see it if they have finance_role set; ADMIN always sees it
+    if (item.requireFinanceAccess && user?.role !== 'ADMIN' && !user?.finance_role) return false;
     return true;
   }).map(item => {
     // Filter children by role too
