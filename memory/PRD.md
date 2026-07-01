@@ -9,9 +9,9 @@
 - Notifications: Telegram Bot + Web Push (VAPID) + Resend
 
 ## Chat Migration Notice (Feb 2026)
-- **This chat (`pdpv-whatsapp`) hosted WhatsApp Fase 1 + 1.5 development.**
-- **Migration outcome:** work pushed to GitHub branch `feature/whatsapp-fase-1.5` and merged into the parallel chat `intake-ai-gateway` (which had Finance module).
-- **Deploy source going forward:** the other chat. Do NOT deploy from this chat after migration or you will overwrite Finance work.
+- **This chat is the primary/authoritative codebase.** Contains WhatsApp Fase 1 + 1.5, Renting, Assistências, Intake, Telegram bots — everything except Finance.
+- **Finance module** (CRM Finance + Cobranças Hoje pages) exists only in the parallel chat and will be imported here via GitHub before final deploy.
+- **Deploy source going forward:** this chat, after Finance is merged in.
 
 ## Completed Features
 - [x] **WhatsApp Phase 1.5 — go-live hardening (Feb 2026):** (a) `WHATSAPP_ENABLED` env hard kill-switch (503 "disabled" se !=true) aplicado em webhook GET/POST e em ambos endpoints de envio. (b) Slot novo `WHATSAPP_BUSINESS_ACCOUNT_ID` em `.env`/`.env.example`. (c) Índice MongoDB único+sparse em `ticket_messages.external_message_id` (dedupe enforced at DB) + handler de `DuplicateKeyError` no `save_ticket_message`. (d) Bug crítico corrigido: webhook estava a gravar intakes com `status="NEW"` (não-enum) e sem `source`, partindo `/api/intake` com 500. Agora grava `status="PENDING"`, `source="whatsapp"`, `source_type="bot_whatsapp"`, `origin_channel="WHATSAPP"`. (e) `/api/tickets` e `/api/intake` (list+detail) agora têm helpers resilientes (`_safe_ticket_response`/`_safe_intake_response`) que skipam docs malformados em listas (log + skip) e devolvem 422 claro em detalhe. Status legados mapeados (NEW→PENDING, REVIEW/TRIAGED→PROCESSING). (f) Smoke-test script `/app/backend/scripts/whatsapp_smoke_test.py` valida 6 cenários pós-deploy (verify, inbound→intake, dedup, 2nd msg attach, signature opcional). (g) Testes pytest: 17/17 (13 originais + 4 novos `test_whatsapp_phase1_5.py`). Tester resilience garantido vs docs malformados.
