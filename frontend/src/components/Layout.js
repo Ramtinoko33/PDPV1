@@ -21,7 +21,11 @@ import {
   BarChart3,
   Bell,
   ClipboardList,
-  Send
+  Send,
+  Landmark,
+  TrendingDown,
+  FileSpreadsheet,
+  UserCheck
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -132,9 +136,42 @@ const Layout = ({ children }) => {
     },
   ];
 
+  // Finance menu items - shown only if user has finance_role
+  const financeNavItems = [
+    {
+      path: '/finance',
+      label: 'CRM Finance',
+      icon: Landmark,
+      financeRoles: ['OWNER', 'FINANCE_REVIEWER', 'COLLECTIONS_AGENT']
+    },
+    {
+      path: '/finance/collections',
+      label: 'Cobranças Hoje',
+      icon: TrendingDown,
+      financeRoles: ['OWNER', 'FINANCE_REVIEWER', 'COLLECTIONS_AGENT']
+    },
+    {
+      path: '/finance/clients',
+      label: 'Clientes Fin.',
+      icon: UserCheck,
+      financeRoles: ['OWNER', 'FINANCE_REVIEWER', 'COLLECTIONS_AGENT']
+    },
+    {
+      path: '/finance/imports',
+      label: 'Importações',
+      icon: FileSpreadsheet,
+      financeRoles: ['OWNER', 'FINANCE_REVIEWER', 'COLLECTIONS_AGENT']
+    },
+  ];
+
   const filteredNavItems = navItems.filter(item => 
     item.roles.includes(user?.role)
   );
+
+  // Filter finance items by finance_role
+  const filteredFinanceItems = user?.finance_role 
+    ? financeNavItems.filter(item => item.financeRoles.includes(user.finance_role))
+    : [];
 
   const roleLabels = {
     ADMIN: 'Administrador',
@@ -211,6 +248,41 @@ const Layout = ({ children }) => {
                   </Link>
                 );
               })}
+              
+              {/* Finance Section */}
+              {filteredFinanceItems.length > 0 && (
+                <>
+                  <div className="my-4 mx-4 border-t border-slate-700" />
+                  <p className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    CRM Finance
+                  </p>
+                  {filteredFinanceItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = location.pathname === item.path || 
+                      (item.path === '/finance' && location.pathname === '/finance');
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        data-testid={`nav-${item.path.replace(/\//g, '-').slice(1)}`}
+                        className={`
+                          flex items-center gap-3 px-4 py-3 rounded-lg
+                          font-medium transition-all relative
+                          ${isActive 
+                            ? 'bg-emerald-600 text-white shadow-lg' 
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          }
+                        `}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span>{item.label}</span>
+                        {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
             </nav>
           </ScrollArea>
 

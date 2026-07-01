@@ -19,7 +19,16 @@ import IntakePage from "./pages/IntakePage";
 import TelegramPage from "./pages/TelegramPage";
 import Layout from "./components/Layout";
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
+// Finance module pages
+import {
+  FinanceDashboard,
+  CollectionsToday,
+  FinanceClients,
+  FinanceClientDetail,
+  FinanceImports
+} from "./pages/finance";
+
+const ProtectedRoute = ({ children, allowedRoles, requireFinanceAccess }) => {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -38,6 +47,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
   
   if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  // Check finance access
+  if (requireFinanceAccess && !user.finance_role) {
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -127,6 +141,37 @@ function AppRoutes() {
       <Route path="/telegram" element={
         <ProtectedRoute allowedRoles={['ADMIN']}>
           <TelegramPage />
+        </ProtectedRoute>
+      } />
+      
+      {/* CRM Finance Routes - requires finance_role */}
+      <Route path="/finance" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceDashboard />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/finance/collections" element={
+        <ProtectedRoute requireFinanceAccess>
+          <CollectionsToday />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/finance/clients" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceClients />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/finance/clients/:clientId" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceClientDetail />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/finance/imports" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceImports />
         </ProtectedRoute>
       } />
       
