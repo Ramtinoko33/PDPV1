@@ -68,20 +68,47 @@ const getFreshnessLevel = (isoDate) => {
   return { color: 'bg-red-100 text-red-800 border-red-300', label: 'crítico – atualizar', dot: 'bg-red-500 animate-pulse' };
 };
 
+// Fontes críticas para operação diária de cobranças. Se qualquer uma
+// destas estiver desatualizada, o operador pode cobrar sobre saldos antigos.
+const CRITICAL_SOURCES = ['overdue_balances', 'open_documents'];
+
+const SOURCE_LABELS = {
+  overdue_balances: 'Saldos Vencidos',
+  open_documents: 'Documentos Aberto',
+  client_info: 'Info Clientes',
+  credit_evolution: 'Evolução de Crédito',
+};
+
 const FreshnessBadge = ({ items }) => {
-  // Considera a data mais recente entre as fontes de dados operacionais
-  const dates = (items || [])
-    .map((i) => i.last_import_at)
-    .filter(Boolean)
-    .map((d) => new Date(d).getTime());
-  const latest = dates.length ? new Date(Math.max(...dates)).toISOString() : null;
-  const level = getFreshnessLevel(latest);
-  const relative = latest ? formatRelativeTime(latest) : 'nunca importado';
-  const fullDate = latest ? new Date(latest).toLocaleString('pt-PT') : null;
+  // Considera a fonte crítica MAIS ANTIGA (worst-case) — evita falsa sensação
+  // de frescura quando uma fonte secundária foi importada há pouco mas
+  // a que interessa realmente para cobranças está desatualizada.
+  const critical = (items || []).filter(
+    (i) => CRITICAL_SOURCES.includes(i.source_type) && i.last_import_at
+  );
+  const oldest = critical.length
+    ? critical.reduce((min, i) =>
+        new Date(i.last_import_at) < new Date(min.last_import_at) ? i : min
+      )
+    : null;
+  const oldestDate = oldest?.last_import_at || null;
+  const level = getFreshnessLevel(oldestDate);
+  const relative = oldestDate ? formatRelativeTime(oldestDate) : 'nunca importado';
+
+  // Tooltip: mostra cada fonte crítica com a sua data individual.
+  const tooltipLines = CRITICAL_SOURCES.map((src) => {
+    const it = (items || []).find((i) => i.source_type === src);
+    const label = SOURCE_LABELS[src] || src;
+    if (!it?.last_import_at) return `${label}: nunca importado`;
+    const dt = new Date(it.last_import_at).toLocaleString('pt-PT');
+    return `${label}: ${dt}`;
+  });
+  const tooltip = `Estado das fontes críticas (${level.label}):\n${tooltipLines.join('\n')}`;
+
   return (
     <div
       className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${level.color}`}
-      title={fullDate ? `Último upload: ${fullDate} (${level.label})` : 'Nenhum ficheiro importado ainda'}
+      title={tooltip}
       data-testid="finance-freshness-badge"
     >
       <span className={`inline-block w-2 h-2 rounded-full ${level.dot}`} />
