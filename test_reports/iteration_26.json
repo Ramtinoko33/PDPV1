@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only smoke test after SEO index.html changes. All 8 acceptance criteria pass: robots.txt/sitemap.xml/llms.txt are served with correct Content-Type from the frontend static path; html lang='pt'; meta robots='noindex, nofollow'; OG/canonical/description present; the display:none SEO fallback div inside #root is properly hidden (not visible to user and no flash); React mounts cleanly and replaces the SEO div; login with admin@pdpv.pt/HCNMEnKMLq succeeds (200 POST /api/auth/login → /dashboard); /finance renders with finance-freshness-badge ('Atualizado há 10h'); /tickets loads (100 tickets listed); no React/JS console errors. Only pre-existing WebSocket warnings observed (unrelated to SEO changes).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_26.json"],
+  "action_items": [
+    "OPTIONAL / INFRA (not a code bug): The preview URL serves /robots.txt with a Cloudflare-managed prefix block containing 'User-agent: *  Content-Signal: search=yes,ai-train=no,use=reference  Allow: /' BEFORE our 'User-agent: *  Disallow: /' entry. Our directives ARE included at the end of the response (verified), and the Sitemap: directive is present. Behaviour on the production domain (tickets.pneusdpedrov.com) may differ if Cloudflare's Managed Robots feature is disabled there. Worth verifying in production; not blocking for this iteration.",
+    "OPTIONAL: /clientes route redirected to /dashboard (React Router fallback). Unrelated to SEO changes but worth confirming if this route was expected to be a top-level page."
+  ],
+  "critical_code_review_comments": [
+    "index.html changes look clean and side-effect free. The <div style=\"display:none\" aria-hidden=\"true\"> inside #root gets fully replaced by React on mount (childrenCount goes from 1 to 2 with React content), so no orphan SEO nodes remain in the DOM after hydration.",
+    "The 4 <noscript> paragraphs (~1237 chars) are correctly placed and only rendered when JS is disabled — verified not visible in a JS-enabled browser (Chrome computed-style walker).",
+    "meta robots='noindex, nofollow' + canonical + OG tags all rendered as static <head> nodes, so they are visible to crawlers without JS execution. Good.",
+    "robots.txt served at correct Content-Type text/plain; sitemap.xml served as application/xml; llms.txt served as text/plain (1249 bytes = file content). SPA index.html is NOT served for these paths — confirmed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (from /app/memory/test_credentials.md) — worked, 200 response, JWT issued, /dashboard accessible.",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iteration_26 validated frontend after SEO index.html enhancements (lang=pt, meta robots noindex/nofollow, OG/canonical, expanded noscript, hidden SEO fallback in #root). No regressions. Static files /robots.txt /sitemap.xml /llms.txt reachable via REACT_APP_BACKEND_URL. Backend not tested in this iteration (iteration_25 covered Finance smoke 19/19). If further SEO changes are made, re-check that #root inner content still gets swapped by React (no flash) and that meta tags remain in <head>.",
+  "rca of the issue": "No bug found — validation confirms E1's SEO changes have zero functional regression."
+}

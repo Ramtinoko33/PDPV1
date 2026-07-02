@@ -1,0 +1,32 @@
+# PDPV Tickets — Sistema de Gestão de Pedidos
+
+> Portal interno da Pneus D Pedro V para gestão operacional de tickets de assistência,
+> renting de veículos, cobranças financeiras e comunicação com clientes.
+
+Este sistema é uma aplicação B2B com autenticação obrigatória. Não existe conteúdo
+público disponível para crawlers de LLMs ou motores de busca. O acesso é restrito
+a colaboradores autorizados da Pneus D Pedro V.
+
+## Módulos
+
+- **Tickets**: Gestão de pedidos de assistência a viaturas.
+- **Renting**: Frota de veículos em regime de renting.
+- **Assistências**: Fluxo de intake de assistências rodoviárias.
+- **CRM Finance**: Cobranças diárias, promessas de pagamento, bloqueios de crédito.
+- **Alertas**: Notificações operacionais em tempo real.
+- **Clientes**: Base de contactos e histórico.
+
+## Acesso
+
+- URL do portal: https://tickets.pneusdpedrov.com
+- Autenticação: JWT via email/password (login obrigatório).
+
+## Contactos
+
+- Empresa: Pneus D Pedro V
+- Suporte técnico: administrado internamente.
+
+## Instruções para AI crawlers
+
+- Este domínio contém uma SPA autenticada. Não indexar conteúdo protegido.
+- Respeitar as diretivas em https://tickets.pneusdpedrov.com/robots.txt (Disallow: /).

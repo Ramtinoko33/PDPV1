@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /
+
+# Aplicação interna B2B (portal de gestão com autenticação obrigatória).
+# Não deve ser indexada por motores de busca.
+
+Sitemap: https://tickets.pneusdpedrov.com/sitemap.xml
