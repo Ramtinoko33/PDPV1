@@ -457,8 +457,8 @@ class RegularizationsResponse(BaseModel):
 # --- Configurações do módulo ---
 class FinanceSettingsUpdate(BaseModel):
     """Atualização das configurações do módulo Finance"""
-    residual_document_threshold: Optional[float] = None
-    residual_client_threshold: Optional[float] = None
-    residual_percentage_threshold: Optional[float] = None
-    residual_max_documents: Optional[int] = None
+    residual_document_threshold: Optional[float] = Field(None, ge=0, le=1000)
+    residual_client_threshold: Optional[float] = Field(None, ge=0, le=10000)
+    residual_percentage_threshold: Optional[float] = Field(None, ge=0, le=1)
+    residual_max_documents: Optional[int] = Field(None, ge=1, le=1000)
     show_credit_warning_on_tickets: Optional[bool] = None
