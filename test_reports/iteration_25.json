@@ -1,0 +1,29 @@
+{
+  "summary": "Pre-deploy health check post FreshnessBadge injection into FinanceDashboard header. Backend: 19/19 pytest passed in /app/backend/tests/test_finance_smoke_iteration25.py — login (admin/collections/no-finance) works, /api/finance/{dashboard,data-health,clients,promises,imports} return 200 for OWNER and COLLECTIONS_AGENT, all 5 finance endpoints return 403 for rececao.teste (no finance_role), and /api/whatsapp/* is disabled (webhook returns 503 'WhatsApp disabled' kill-switch as designed; other whatsapp GET paths return 404). Frontend: FreshnessBadge renders on /finance with data-testid='finance-freshness-badge', text 'Atualizado há 9h', semantic color classes bg-emerald-100/text-emerald-800/border-emerald-300 (fresh <12h), and tooltip 'Último upload: 02/07/2026, 00:03:35 (dados frescos)' in pt-PT locale. Full dashboard renders: Saldo em Dívida 23 670,06€, Recuperado Hoje/Semana/Mês 221,41€, Aging buckets, Top Devedores, Estado dos Dados card. Sidebar Finance group visible for admin. No functional regressions detected — module is production-ready.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_finance_smoke_iteration25.py",
+    "/app/test_reports/pytest/iteration25_smoke.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FreshnessBadge picks the MAX last_import_at across all sources. This is user-friendly for the summary chip, but a stale-but-critical source (e.g. open_documents 3 days old) will be masked when a fresher unrelated import (client_info) exists. Consider surfacing the MIN date (worst source) or an aggregated per-source hover for the tooltip to avoid a false sense of freshness in mixed-cadence scenarios.",
+  "Login response payload does not include finance_role in the user object (RBAC enforced correctly server-side, but frontend can't sidebar-gate purely from login data — currently gating works via 403 responses on protected calls or via /users/me if used). If UI relies on user.finance_role client-side, confirm it is fetched elsewhere (e.g. an /auth/me follow-up) or add it to the login response.",
+    "WhatsApp kill-switch returns 503 on /webhook and 404 on undefined GETs — mixed semantics. Consider unifying to 404 (behaves like the route doesn't exist) when WHATSAPP_ENABLED=false, so external probes cannot infer the module exists but is disabled. Not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_finance_smoke_iteration25.py (new — 19-test smoke suite; no schema mutations; no seed data created)"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% on validated flows"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (OWNER); cobranca.teste@pdpv.pt / TesteFin2026! (COLLECTIONS_AGENT); rececao.teste@pdpv.pt / TesteFin2026! (no finance_role)",
+  "seed_data_creation": "None — smoke tests are read-only (GETs only, no POST/PUT/DELETE against finance state).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login response (/api/auth/login) does NOT include finance_role in the user object today; permissions are enforced server-side via /api/finance/* route deps. If a test needs to assert finance_role from login, use a follow-up /users/me call or infer it via a 200/403 on /api/finance/dashboard. WhatsApp kill-switch: webhook returns 503 'WhatsApp disabled', other WhatsApp paths return 404 — both are equivalent to 'disabled' for external checks. FreshnessBadge uses MAX(last_import_at) across items; test data currently shows 'dados frescos' (emerald) at 9h old.",
+  "rca of the issue": "N/A — no bug. Deploy health check confirmed green."
+}
