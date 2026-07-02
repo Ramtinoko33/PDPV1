@@ -43,6 +43,53 @@ const formatCurrency = (value) => {
   }).format(value || 0);
 };
 
+// Freshness badge – mostra há quanto tempo foi o último upload dos ficheiros do ERP
+const formatRelativeTime = (isoDate) => {
+  if (!isoDate) return null;
+  const now = new Date();
+  const then = new Date(isoDate);
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'agora mesmo';
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return 'há 1 dia';
+  return `há ${diffD} dias`;
+};
+
+const getFreshnessLevel = (isoDate) => {
+  if (!isoDate) return { color: 'bg-red-100 text-red-800 border-red-300', label: 'sem dados', dot: 'bg-red-500' };
+  const hours = (new Date() - new Date(isoDate)) / 3600000;
+  if (hours < 12) return { color: 'bg-emerald-100 text-emerald-800 border-emerald-300', label: 'dados frescos', dot: 'bg-emerald-500' };
+  if (hours < 24) return { color: 'bg-yellow-100 text-yellow-800 border-yellow-300', label: 'atualizar hoje', dot: 'bg-yellow-500' };
+  if (hours < 48) return { color: 'bg-orange-100 text-orange-800 border-orange-300', label: 'desatualizado', dot: 'bg-orange-500' };
+  return { color: 'bg-red-100 text-red-800 border-red-300', label: 'crítico – atualizar', dot: 'bg-red-500 animate-pulse' };
+};
+
+const FreshnessBadge = ({ items }) => {
+  // Considera a data mais recente entre as fontes de dados operacionais
+  const dates = (items || [])
+    .map((i) => i.last_import_at)
+    .filter(Boolean)
+    .map((d) => new Date(d).getTime());
+  const latest = dates.length ? new Date(Math.max(...dates)).toISOString() : null;
+  const level = getFreshnessLevel(latest);
+  const relative = latest ? formatRelativeTime(latest) : 'nunca importado';
+  const fullDate = latest ? new Date(latest).toLocaleString('pt-PT') : null;
+  return (
+    <div
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${level.color}`}
+      title={fullDate ? `Último upload: ${fullDate} (${level.label})` : 'Nenhum ficheiro importado ainda'}
+      data-testid="finance-freshness-badge"
+    >
+      <span className={`inline-block w-2 h-2 rounded-full ${level.dot}`} />
+      <span>Atualizado {relative}</span>
+    </div>
+  );
+};
+
 const FinanceDashboard = () => {
   const { getAuthHeaders } = useAuth();
   const [dashboard, setDashboard] = useState(null);
@@ -94,7 +141,10 @@ const FinanceDashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">CRM Finance</h1>
-          <p className="text-slate-500 text-sm">Dashboard financeiro</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-slate-500 text-sm">Dashboard financeiro</p>
+            <FreshnessBadge items={dataHealth?.items} />
+          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={fetchData}>
