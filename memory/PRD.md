@@ -105,6 +105,12 @@
 ## Status
 **Sistema considerado pronto pelo utilizador (Feb 2026).** Backlog acima é opcional/futuro.
 
+**Deploy readiness (Feb 2026):** ✅ PASS — deployment_agent confirmou zero blockers. Correções aplicadas:
+- `TELEGRAM_RENTING_BOT_TOKEN` em `backend/.env` agora com aspas duplas (evita parse errors em containers K8s).
+- `.gitignore` limpo (removidas ~40 linhas duplicadas de `*.env` / cache paths que bloqueavam ficheiros necessários).
+- WhatsApp confirmado OFF em produção (`WHATSAPP_ENABLED=false`; rotas `/api/whatsapp/*` retornam 404).
+- Smoke test admin@pdpv.pt: login OK, `finance_role: OWNER` OK, `/api/finance/dashboard` OK (200 com dados reais).
+
 ## Environments
 - Preview: https://intake-ai-gateway.preview.emergentagent.com
 - Production: https://tickets.pneusdpedrov.com
