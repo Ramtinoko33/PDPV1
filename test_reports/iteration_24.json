@@ -1,0 +1,37 @@
+{
+  "summary": "Finance Phase 2 validation (iteration 24). Backend: 14/14 pytest passed covering (1) daily comparison of open_documents — first upload emits 'Primeira importação...' warning and 0 recovery events; second upload with 1 removed doc and 1 partial-payment correctly reports probable_payments=1, partial_payments=1, recovered_amount=130.0€, and GET /api/finance/dashboard reflects recovered_today>=130 (real dashboard shows 221,41€ from prior real recovery events + today’s test). (2) verify_promises_after_import: past-date promise → status=failed with verification_note, client updated to PROMESSA_FALHADA/CRITICAL, system finance_action 'promise_updated' created; future-date promise remains open, untouched. (3) /api/finance/settings: GET returns defaults (1.0/5.0/0.005/10/true), PUT as ADMIN persists (round-trip 2.5 confirmed), PUT as COLLECTIONS_AGENT returns 403; defaults restored at end. (4) /api/finance/credit-warning: accessible to no-finance user (rececao.teste) with 200; matches phone '912888777' and prefixed '+351912888777'; negative case '211111111' returns false; when show_credit_warning_on_tickets=false returns false. Frontend: Dashboard shows 3 new cards recovered-today / recovered-week / recovered-month with € values (221,41€ each). /finance/settings page renders 4 residual inputs + credit-warning switch + save button; save shows 'Configurações guardadas' toast and value persists after reload; admin sidebar shows /finance/settings link; COLLECTIONS_AGENT sidebar hides it (0 links). Client detail /finance/clients/{cliente A} shows credit-evolution-card on 'Informação' tab with recharts SVG line chart and ▲ 10.2% trend badge. Regression: /finance/collections-today, /finance/promises, /finance/regularizations, /finance/blocks, /finance/imports all render with expected headings and no error banners. Real user data preserved: 202 open_docs restored, 322€ 'cliente b' promise still status=open, data_health(open_documents) restored to import 2a173ba3, all TST9x seeds cleaned, no TSTPH2- imports left, finance_settings back to defaults.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "FinanceClientDetail — Informação tab", "issues": ["credit-evolution-card is only on 'Informação' tab; users may miss trimestral evolution on default 'Documentos' tab. Consider surfacing a compact sparkline above the tabs (or on Documentos header) for immediate visibility."]},
+      {"screen": "Finance list pages (promises/regularizations/imports/blocks/client-detail)", "issues": ["Hydration warnings persist: <span data-ve-dynamic> rendered directly inside <tbody>/<tr>. Coming from visual-edit runtime, cosmetic only, but pollutes console (already reported in iteration 23)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_finance_phase2.py",
+    "/app/test_reports/pytest/finance_phase2.xml"
+  ],
+  "action_items": [
+    "(Optional) Consider moving/duplicating credit-evolution-card outside the Informação tab so it is visible without a tab switch.",
+    "(Carry-over cosmetic) Fix hydration warnings from <span data-ve-dynamic> wrappers inside <tbody>/<tr>."
+  ],
+  "critical_code_review_comments": [
+    "process_open_documents_import wipes finance_open_documents globally on every run (delete_many({})). Safe by design but strong side-effect: if the parsed file is subtly wrong, all real docs disappear until next successful import. Consider staged replace: insert new -> swap -> drop old in a transaction/session, or at least keep a shadow snapshot for one cycle.",
+    "verify_promises_after_import only iterates promises with promise_date<as_of and status=='open'; that's correct, but there is no lock — a concurrent PUT /promises/{id} while auto-verification runs could race. Low probability in current usage.",
+    "Credit-warning route depends on 9-digit tail matching only. Ports/international numbers with <9 digits (older PT landlines beginning by 2 area codes with 8 digits) fail silently by returning show_warning=false. Consider matching on 8 as well and normalise leading zeros.",
+    "get_finance_settings merges only known DEFAULT_SETTINGS keys — good defensive posture; but there is no schema validation for numeric ranges on PUT (e.g. negative residual_max_documents accepted).",
+    "FinanceSettings PUT accepts payload without validating pct threshold range (0..1)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_finance_phase2.py (new — 14 tests, snapshot/restore of finance_open_documents, recovery_events, data_health)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% on validated flows"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (OWNER); cobranca.teste@pdpv.pt / TesteFin2026! (COLLECTIONS_AGENT); rececao.teste@pdpv.pt / TesteFin2026! (no finance_role)",
+  "seed_data_creation": "Ephemeral TST90/TST91 finance_clients, finance_promises (tstph2-prom-*), finance_actions (client_id starting tstph2-), 2 test open_documents xlsx uploads (filename ^TSTPH2-*). All cleaned up in teardown. finance_open_documents snapshot (202 real docs) captured pre-test and restored. finance_data_health(open_documents) restored to last_import_id 2a173ba3-d194-48c8-b8b0-e2132f5f53ea. finance_settings reset to defaults.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "process_open_documents_import performs finance_open_documents.delete_many({}) on every call — ALWAYS snapshot/restore this collection when writing tests that go through /api/finance/imports/open_documents. finance_credit_evolution keys off genes_code (not client_id). credit-evolution-card lives inside the 'Informação' tab of FinanceClientDetail — must click that tab in Playwright. Credit-warning endpoint tolerates any authenticated user (no finance_role); phone normalisation trims to last 9 digits. Real data preserved: 202 open_docs, 5 credit_evolution rows (genes_code 1..5), the 322€ 'cliente b' promise (2026-07-03, status=open), 2 finance_recovery_events (~221€ from 2026-07-01/02).",
+  "rca of the issue": "N/A — Phase 2 features implemented correctly. Only cosmetic action items and defensive-coding suggestions surfaced."
+}

@@ -33,7 +33,8 @@ import {
   FinanceImports,
   FinancePromises,
   Regularizations,
-  BlockRequests
+  BlockRequests,
+  FinanceSettings
 } from "./pages/finance";
 import Layout from "./components/Layout";
 
@@ -246,6 +247,11 @@ function AppRoutes() {
       <Route path="/finance/blocks" element={
         <ProtectedRoute requireFinanceAccess>
           <BlockRequests />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/settings" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceSettings />
         </ProtectedRoute>
       } />
       

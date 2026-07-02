@@ -187,6 +187,11 @@ class FinanceClientResponse(FinanceClientBase):
     next_action_date: Optional[str] = None
     created_at: str
     updated_at: str
+    
+    # Evolução crédito trimestral (join com finance_credit_evolution)
+    credit_evolution: Optional[Dict[str, float]] = None
+    credit_trend_percentage: Optional[float] = None
+    credit_trend_absolute: Optional[float] = None
 
 
 class FinanceClientListResponse(BaseModel):
@@ -306,6 +311,7 @@ class FinancePromiseResponse(BaseModel):
     created_at: str
     verified_at: Optional[str] = None
     verified_import_id: Optional[str] = None
+    verification_note: Optional[str] = None
 
 
 # --- Block Request ---
@@ -396,6 +402,11 @@ class DashboardResponse(BaseModel):
     # Última atualização
     last_import_at: Optional[str] = None
     data_is_current: bool
+    
+    # Valor recuperado (comparação diária de documentos em aberto)
+    recovered_today: float = 0.0
+    recovered_week: float = 0.0
+    recovered_month: float = 0.0
 
 
 # --- Collections Today ---
@@ -442,3 +453,12 @@ class RegularizationsResponse(BaseModel):
     items: List[RegularizationItem]
     total_residual: float
     total_clients: int
+
+# --- Configurações do módulo ---
+class FinanceSettingsUpdate(BaseModel):
+    """Atualização das configurações do módulo Finance"""
+    residual_document_threshold: Optional[float] = None
+    residual_client_threshold: Optional[float] = None
+    residual_percentage_threshold: Optional[float] = None
+    residual_max_documents: Optional[int] = None
+    show_credit_warning_on_tickets: Optional[bool] = None

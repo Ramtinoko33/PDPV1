@@ -3,10 +3,11 @@ CRM Finance Module - API Routes
 Endpoints para gestão operacional de cobranças
 """
 import os
+import re
 import uuid
 import logging
 import hashlib
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Optional, List
 
@@ -32,6 +33,7 @@ from .models import (
     DashboardResponse, AgingBucket, TopDebtor,
     CollectionsTodayResponse, CollectionItem,
     RegularizationsResponse, RegularizationItem,
+    FinanceSettingsUpdate,
 )
 from .permissions import (
     require_finance_access,
@@ -46,6 +48,8 @@ from .services.import_service import (
     process_overdue_balances_import,
     process_client_info_import,
     process_credit_evolution_import,
+    process_open_documents_import,
+    get_finance_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -218,6 +222,21 @@ async def get_dashboard(current_user: dict = Depends(require_finance_access)):
     # Verificar se dados estão atualizados
     data_health = await get_data_health(current_user)
     
+    # Valor recuperado (eventos da comparação diária)
+    today_str = date.today().isoformat()
+    week_start = (date.today() - timedelta(days=6)).isoformat()
+    month_start = date.today().replace(day=1).isoformat()
+    min_date = min(week_start, month_start)
+    recovered_today = recovered_week = recovered_month = 0.0
+    async for ev in db.finance_recovery_events.find({"date": {"$gte": min_date}}, {"_id": 0, "date": 1, "amount": 1}):
+        amt = ev.get("amount", 0) or 0
+        if ev["date"] >= month_start:
+            recovered_month += amt
+        if ev["date"] >= week_start:
+            recovered_week += amt
+        if ev["date"] == today_str:
+            recovered_today += amt
+    
     return DashboardResponse(
         total_balance=totals.get("total_balance", 0.0),
         total_overdue_accounting=totals.get("total_overdue_accounting", 0.0),
@@ -230,7 +249,10 @@ async def get_dashboard(current_user: dict = Depends(require_finance_access)):
         aging_buckets=aging_buckets,
         top_debtors=top_debtors,
         last_import_at=last_import.get("uploaded_at") if last_import else None,
-        data_is_current=not data_health.any_blocking
+        data_is_current=not data_health.any_blocking,
+        recovered_today=round(recovered_today, 2),
+        recovered_week=round(recovered_week, 2),
+        recovered_month=round(recovered_month, 2)
     )
 
 
@@ -396,6 +418,13 @@ async def get_client(client_id: str, current_user: dict = Depends(require_financ
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     
+    # Anexar evolução trimestral de crédito, se existir
+    evo = await db.finance_credit_evolution.find_one({"genes_code": client.get("genes_code")}, {"_id": 0})
+    if evo:
+        client["credit_evolution"] = evo.get("evolution")
+        client["credit_trend_percentage"] = evo.get("trend_percentage")
+        client["credit_trend_absolute"] = evo.get("trend_absolute")
+    
     return FinanceClientResponse(**client)
 
 
@@ -533,7 +562,9 @@ async def create_promise(
     Criar promessa de pagamento.
     """
     # Verificar cliente existe
-    client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0, "id": 1, "name": 1})
+    client = await db.finance_clients.find_one(
+        {"id": client_id}, {"_id": 0, "id": 1, "name": 1, "overdue_balance_accounting": 1}
+    )
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
     
@@ -542,6 +573,7 @@ async def create_promise(
     promise_doc = {
         "id": str(uuid.uuid4()),
         "client_id": client_id,
+        "baseline_overdue": client.get("overdue_balance_accounting", 0),
         "amount": promise.amount,
         "promise_date": promise.promise_date,
         "status": PromiseStatus.OPEN.value,
@@ -1009,13 +1041,12 @@ async def upload_import(
                 uploaded_by=current_user["id"]
             )
         else:
-            # OPEN_DOCUMENTS - ainda não implementado (Fase 2)
-            result = {
-                "success": True,
-                "import_id": import_id,
-                "status": ImportStatus.RECEIVED.value,
-                "message": f"Ficheiro {import_type.value} recebido. Parser será implementado em fase futura."
-            }
+            result = await process_open_documents_import(
+                import_id=import_id,
+                file_content=content,
+                uploaded_by=current_user["id"],
+                as_of_date=as_of_date
+            )
         
         return result
         
@@ -1080,3 +1111,64 @@ async def approve_import(
     logger.info(f"Import {import_id} approved by user {current_user['id']}")
     
     return {"success": True, "message": "Importação aprovada e dados aplicados"}
+
+
+# ============== CONFIGURAÇÕES ==============
+
+@router.get("/settings")
+async def get_settings(current_user: dict = Depends(require_finance_access)):
+    """Configurações do módulo Finance (thresholds residuais, avisos)."""
+    return await get_finance_settings()
+
+
+@router.put("/settings")
+async def update_settings(
+    payload: FinanceSettingsUpdate,
+    current_user: dict = Depends(require_finance_owner)
+):
+    """Atualizar configurações (apenas OWNER)."""
+    update = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update["updated_by"] = current_user["id"]
+    
+    await db.finance_settings.update_one(
+        {"id": "global"},
+        {"$set": {**update, "id": "global"}},
+        upsert=True
+    )
+    
+    logger.info(f"Finance settings updated by {current_user['id']}: {list(update.keys())}")
+    return await get_finance_settings()
+
+
+# ============== AVISO DE CRÉDITO (TICKETS) ==============
+
+@router.get("/credit-warning")
+async def credit_warning(
+    phone: str = Query(""),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Verifica se deve mostrar o aviso genérico de validação financeira num ticket.
+    Acessível a qualquer utilizador autenticado — NUNCA devolve valores financeiros.
+    """
+    settings = await get_finance_settings()
+    if not settings.get("show_credit_warning_on_tickets", True):
+        return {"show_warning": False}
+    
+    digits = re.sub(r"\D", "", phone or "")[-9:]
+    if len(digits) < 9:
+        return {"show_warning": False}
+    
+    async for c in db.finance_clients.find(
+        {"$or": [{"is_blocked": True}, {"traffic_light": "CRITICAL"}]},
+        {"_id": 0, "phone": 1, "mobile": 1}
+    ):
+        for p in [c.get("phone"), c.get("mobile")]:
+            if p and re.sub(r"\D", "", str(p))[-9:] == digits:
+                return {"show_warning": True}
+    
+    return {"show_warning": False}

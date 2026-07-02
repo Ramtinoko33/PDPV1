@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -499,6 +500,41 @@ const FinanceClientDetail = () => {
                 </div>
               </CardContent>
             </Card>
+            
+            {client.credit_evolution && Object.keys(client.credit_evolution).length > 0 && (
+              <Card className="md:col-span-2" data-testid="credit-evolution-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <span>Evolução Crédito (trimestral)</span>
+                    {client.credit_trend_percentage != null && (
+                      <span className={`text-sm font-semibold ${client.credit_trend_percentage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {client.credit_trend_percentage > 0 ? '▲' : '▼'} {Math.abs(client.credit_trend_percentage).toFixed(1)}%
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart
+                      data={Object.entries(client.credit_evolution)
+                        .sort((a, b) => {
+                          const [ma, ya] = a[0].split('-');
+                          const [mb, yb] = b[0].split('-');
+                          return (ya + ma).localeCompare(yb + mb);
+                        })
+                        .map(([period, value]) => ({ period, value }))}
+                      margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+                    >
+                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} width={70}
+                        tickFormatter={(v) => `${(v / 1000).toFixed(0)}k€`} />
+                      <Tooltip formatter={(v) => [formatCurrency(v), 'Saldo']} />
+                      <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
           </div>
           
           {/* Block/Unblock Actions */}

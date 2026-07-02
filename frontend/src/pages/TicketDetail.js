@@ -52,6 +52,7 @@ import {
   Camera
 } from 'lucide-react';
 import WhatsAppPanel from '../components/WhatsAppPanel';
+import { CreditWarningBanner } from '../components/CreditWarningBanner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -1540,6 +1541,9 @@ Qualquer dúvida estamos disponíveis.`;
           </div>
         </div>
       )}
+
+      {/* Aviso financeiro genérico (sem valores) */}
+      <CreditWarningBanner phone={ticket.customer_phone} />
 
       {/* Customer Info Card */}
       <Card>

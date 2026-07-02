@@ -31,7 +31,8 @@ import {
   FileSpreadsheet,
   CalendarClock,
   Coins,
-  Ban
+  Ban,
+  SlidersHorizontal
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -216,6 +217,7 @@ const Layout = ({ children }) => {
         { path: '/finance/regularizations', label: 'Regularizações', icon: Coins, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/blocks', label: 'Bloqueios', icon: Ban, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'], financeRoles: ['OWNER', 'FINANCE_REVIEWER'] },
         { path: '/finance/imports', label: 'Importações', icon: FileSpreadsheet, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/settings', label: 'Configurações', icon: SlidersHorizontal, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'], financeRoles: ['OWNER'] },
       ]
     },
     {

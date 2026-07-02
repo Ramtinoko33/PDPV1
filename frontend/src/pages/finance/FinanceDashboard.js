@@ -198,6 +198,31 @@ const FinanceDashboard = () => {
         </Card>
       </div>
 
+      {/* Valor Recuperado */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="recovered-cards">
+        {[
+          { label: 'Recuperado Hoje', value: dashboard?.recovered_today, testid: 'recovered-today' },
+          { label: 'Recuperado esta Semana', value: dashboard?.recovered_week, testid: 'recovered-week' },
+          { label: 'Recuperado este Mês', value: dashboard?.recovered_month, testid: 'recovered-month' },
+        ].map((item) => (
+          <Card key={item.testid}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500">{item.label}</p>
+                  <p className="text-2xl font-bold text-emerald-700" data-testid={item.testid}>
+                    {formatCurrency(item.value)}
+                  </p>
+                </div>
+                <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <TrendingUp className="h-6 w-6 text-emerald-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Aging Buckets */}

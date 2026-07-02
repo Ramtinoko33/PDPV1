@@ -22,13 +22,20 @@ from ..parsers import (
 
 logger = logging.getLogger(__name__)
 
-# Configurações de saldos residuais
-RESIDUAL_CONFIG = {
-    'document_threshold': 1.00,      # até 1€ por documento
-    'client_threshold': 5.00,        # até 5€ acumulado por cliente
-    'percentage_threshold': 0.005,   # até 0.5% do valor original
-    'max_documents': 10,             # máximo de documentos residuais por cliente
+# Configurações default do módulo (podem ser alteradas em finance_settings)
+DEFAULT_SETTINGS = {
+    'residual_document_threshold': 1.00,      # até 1€ por documento
+    'residual_client_threshold': 5.00,        # até 5€ acumulado por cliente
+    'residual_percentage_threshold': 0.005,   # até 0.5% do valor original
+    'residual_max_documents': 10,             # máximo de documentos residuais por cliente
+    'show_credit_warning_on_tickets': True,   # aviso genérico nos tickets
 }
+
+
+async def get_finance_settings() -> Dict[str, Any]:
+    """Carrega configurações do módulo (BD com fallback para defaults)."""
+    doc = await db.finance_settings.find_one({"id": "global"}, {"_id": 0}) or {}
+    return {**DEFAULT_SETTINGS, **{k: v for k, v in doc.items() if k in DEFAULT_SETTINGS and v is not None}}
 
 # Limites de diferença para aprovação automática
 DIFF_THRESHOLDS = {
@@ -118,11 +125,14 @@ def classify_document(
     amount_original: Optional[float],
     is_credit_note: bool,
     in_dispute: bool = False,
-    in_payment_plan: bool = False
+    in_payment_plan: bool = False,
+    config: Optional[Dict[str, Any]] = None
 ) -> DocumentClassification:
     """
     Classifica um documento (cobrável, residual, crédito, etc.)
     """
+    cfg = config or DEFAULT_SETTINGS
+    
     if is_credit_note or amount_open < 0:
         return DocumentClassification.CREDIT
     
@@ -133,11 +143,11 @@ def classify_document(
         return DocumentClassification.PAYMENT_PLAN
     
     # Verificar se é residual
-    if amount_open > 0 and amount_open <= RESIDUAL_CONFIG['document_threshold']:
+    if amount_open > 0 and amount_open <= cfg['residual_document_threshold']:
         # Verificar percentagem se temos valor original
         if amount_original and amount_original > 0:
             percentage = amount_open / amount_original
-            if percentage <= RESIDUAL_CONFIG['percentage_threshold']:
+            if percentage <= cfg['residual_percentage_threshold']:
                 return DocumentClassification.RESIDUAL
         else:
             # Sem valor original, usar apenas threshold absoluto
@@ -224,6 +234,7 @@ async def process_overdue_balances_import(
             return result
         
         # Processar clientes e documentos
+        cfg = await get_finance_settings()
         clients_created = 0
         clients_updated = 0
         documents_processed = 0
@@ -288,7 +299,7 @@ async def process_overdue_balances_import(
             
             # Verificar residual acumulado
             is_residual_only = (overdue_collectable <= 0 and total_residual > 0)
-            if total_residual > RESIDUAL_CONFIG['client_threshold'] or residual_doc_count > RESIDUAL_CONFIG['max_documents']:
+            if total_residual > cfg['residual_client_threshold'] or residual_doc_count > cfg['residual_max_documents']:
                 # Residual acumulado - precisa revisão
                 result['warnings'].append(f"Cliente {genes_code} com residual acumulado: {total_residual:.2f}€ em {residual_doc_count} docs")
             
@@ -409,6 +420,11 @@ async def process_overdue_balances_import(
         
         # Remover documentos que não vieram nesta importação (foram pagos)
         # Opcional: marcar como pagos em vez de apagar
+        
+        # Verificar promessas vencidas contra a nova importação
+        promises_verified = await verify_promises_after_import(import_id, as_of_date or today)
+        if promises_verified:
+            result['promises_verified'] = promises_verified
         
         # Atualizar totais da importação
         totals = {
@@ -716,6 +732,261 @@ async def process_credit_evolution_import(
         
     except Exception as e:
         logger.error(f"Error processing credit evolution import: {e}")
+        result['errors'].append(f"Erro ao processar importação: {str(e)}")
+        result['status'] = ImportStatus.FAILED.value
+        
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {"status": result['status'], "errors": result['errors']}}
+        )
+    
+    return result
+
+
+async def verify_promises_after_import(import_id: str, as_of: str) -> int:
+    """
+    Verifica promessas de pagamento vencidas contra a importação acabada de aplicar.
+    Redução >= valor prometido -> Cumprida; redução parcial -> Parcialmente Cumprida; sem redução -> Falhada.
+    """
+    verified = 0
+    now = datetime.now(timezone.utc).isoformat()
+    
+    promises = await db.finance_promises.find(
+        {"status": "open", "promise_date": {"$lt": as_of}}, {"_id": 0}
+    ).to_list(1000)
+    
+    for promise in promises:
+        client = await db.finance_clients.find_one({"id": promise["client_id"]}, {"_id": 0})
+        if not client:
+            continue
+        
+        current_overdue = client.get("overdue_balance_accounting", 0) or 0
+        amount = promise.get("amount", 0) or 0
+        baseline = promise.get("baseline_overdue")
+        
+        if baseline is None:
+            # Fallback: métrica diária mais próxima da data de criação da promessa
+            created_date = (promise.get("created_at") or "")[:10]
+            metric = await db.finance_client_daily_metrics.find_one(
+                {"client_id": promise["client_id"], "date": {"$lte": created_date}},
+                {"_id": 0}, sort=[("date", -1)]
+            )
+            baseline = metric.get("overdue_balance_accounting") if metric else None
+        
+        if baseline is None:
+            new_status = "fulfilled" if current_overdue <= 0.01 else "failed"
+            note = f"Sem baseline registado — verificado pelo saldo vencido atual ({current_overdue:.2f}€)"
+        else:
+            reduction = baseline - current_overdue
+            if current_overdue <= 0.01 or reduction >= amount - 0.01:
+                new_status = "fulfilled"
+            elif reduction > 0.01:
+                new_status = "partial"
+            else:
+                new_status = "failed"
+            note = f"Redução de {max(reduction, 0):.2f}€ face ao baseline de {baseline:.2f}€ (prometido: {amount:.2f}€)"
+        
+        await db.finance_promises.update_one(
+            {"id": promise["id"]},
+            {"$set": {
+                "status": new_status,
+                "verified_at": now,
+                "verified_import_id": import_id,
+                "verification_note": note
+            }}
+        )
+        
+        status_labels = {"fulfilled": "Cumprida", "partial": "Parcialmente Cumprida", "failed": "Falhada"}
+        await db.finance_actions.insert_one({
+            "id": str(uuid.uuid4()),
+            "client_id": promise["client_id"],
+            "action_type": "promise_updated",
+            "user_id": "system",
+            "user_name": "Sistema (verificação automática)",
+            "notes": f"Promessa de {amount:.2f}€ ({promise.get('promise_date')}) marcada como {status_labels[new_status]}. {note}",
+            "created_at": now
+        })
+        
+        # Atualizar estado do cliente se a promessa falhou
+        if new_status == "failed" and not client.get("is_blocked") and client.get("financial_status") not in [
+            FinancialStatus.BLOQUEIO_SUGERIDO.value, FinancialStatus.EM_DISPUTA.value
+        ]:
+            tl = calculate_traffic_light(
+                oldest_overdue_days=client.get("oldest_overdue_days", 0),
+                overdue_collectable=client.get("overdue_balance_collectable", 0),
+                total_balance=client.get("total_balance", 0),
+                has_failed_promise=True,
+                is_blocked=False,
+                financial_status=FinancialStatus.PROMESSA_FALHADA.value
+            )
+            await db.finance_clients.update_one(
+                {"id": client["id"]},
+                {"$set": {
+                    "financial_status": FinancialStatus.PROMESSA_FALHADA.value,
+                    "traffic_light": tl.value,
+                    "updated_at": now
+                }}
+            )
+        
+        verified += 1
+        logger.info(f"Promise {promise['id']} auto-verified: {new_status}")
+    
+    return verified
+
+
+async def process_open_documents_import(
+    import_id: str,
+    file_content: bytes,
+    uploaded_by: str,
+    as_of_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Processa importação do Mapa de Documentos em Aberto.
+    Compara com o estado anterior para detetar pagamentos prováveis e parciais.
+    """
+    result = {
+        'success': False,
+        'import_id': import_id,
+        'status': ImportStatus.VALIDATING.value,
+        'totals': {},
+        'warnings': [],
+        'errors': []
+    }
+    
+    try:
+        parsed = parse_open_documents(file_content)
+        
+        if parsed['errors']:
+            result['errors'].extend(parsed['errors'])
+            result['status'] = ImportStatus.REJECTED.value
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {"status": result['status'], "errors": result['errors']}}
+            )
+            return result
+        
+        result['warnings'].extend(parsed['warnings'])
+        
+        now = datetime.now(timezone.utc).isoformat()
+        today = date.today().isoformat()
+        as_of = as_of_date or today
+        
+        # Estado anterior (para comparação diária)
+        old_docs = {}
+        async for d in db.finance_open_documents.find({}, {"_id": 0}):
+            old_docs[d["doc_key"]] = d
+        
+        new_keys = set()
+        docs_to_insert = []
+        recovery_events = []
+        
+        for doc in parsed['documents']:
+            doc_key = f"{doc['genes_code']}_{doc['document_number']}"
+            new_keys.add(doc_key)
+            docs_to_insert.append({
+                **doc,
+                "doc_key": doc_key,
+                "import_id": import_id,
+                "as_of_date": as_of,
+                "updated_at": now
+            })
+            
+            # Pagamento parcial: documento presente mas com valor em aberto menor
+            old = old_docs.get(doc_key)
+            if old and not doc.get('is_credit_note'):
+                diff = (old.get('amount', 0) or 0) - (doc.get('amount', 0) or 0)
+                if diff > 0.009:
+                    recovery_events.append({
+                        "id": str(uuid.uuid4()),
+                        "date": as_of,
+                        "genes_code": doc['genes_code'],
+                        "client_name": doc.get('client_name'),
+                        "document_number": doc['document_number'],
+                        "document_type": doc.get('document_type'),
+                        "event_type": "partial_payment",
+                        "amount": round(diff, 2),
+                        "import_id": import_id,
+                        "created_at": now
+                    })
+        
+        # Pagamentos prováveis: documentos que desapareceram
+        if old_docs:
+            for doc_key, old in old_docs.items():
+                if doc_key not in new_keys and not old.get('is_credit_note') and (old.get('amount', 0) or 0) > 0:
+                    recovery_events.append({
+                        "id": str(uuid.uuid4()),
+                        "date": as_of,
+                        "genes_code": old['genes_code'],
+                        "client_name": old.get('client_name'),
+                        "document_number": old['document_number'],
+                        "document_type": old.get('document_type'),
+                        "event_type": "probable_payment",
+                        "amount": round(old.get('amount', 0), 2),
+                        "import_id": import_id,
+                        "created_at": now
+                    })
+        
+        # Substituir estado atual dos documentos em aberto
+        await db.finance_open_documents.delete_many({})
+        if docs_to_insert:
+            await db.finance_open_documents.insert_many([dict(d) for d in docs_to_insert])
+        
+        if recovery_events:
+            await db.finance_recovery_events.insert_many([dict(e) for e in recovery_events])
+        
+        recovered_total = round(sum(e['amount'] for e in recovery_events), 2)
+        paid_count = sum(1 for e in recovery_events if e['event_type'] == 'probable_payment')
+        partial_count = sum(1 for e in recovery_events if e['event_type'] == 'partial_payment')
+        
+        if not old_docs:
+            result['warnings'].append("Primeira importação de documentos em aberto — comparação diária ativa a partir da próxima.")
+        elif recovery_events:
+            result['message'] = f"Detetados {paid_count} pagamentos prováveis e {partial_count} pagamentos parciais ({recovered_total:.2f}€ recuperados)"
+        
+        result['totals'] = {
+            "clients": parsed['totals']['client_count'],
+            "documents": parsed['totals']['document_count'],
+            "total_balance": parsed['totals']['total_balance'],
+            "total_overdue": parsed['totals']['total_overdue'],
+            "credit_notes": parsed['totals']['credit_notes_count'],
+            "credit_notes_amount": round(parsed['totals']['credit_notes_amount'], 2),
+            "recovered_amount": recovered_total,
+            "probable_payments": paid_count,
+            "partial_payments": partial_count,
+        }
+        
+        result['status'] = ImportStatus.ACCEPTED_WITH_WARNINGS.value if result['warnings'] else ImportStatus.IMPORTED.value
+        result['success'] = True
+        
+        await db.finance_imports.update_one(
+            {"id": import_id},
+            {"$set": {
+                "status": result['status'],
+                "totals": result['totals'],
+                "warnings": result['warnings'],
+                "as_of_date": as_of,
+                "processed_at": now
+            }}
+        )
+        
+        await db.finance_data_health.update_one(
+            {"source_type": ImportType.OPEN_DOCUMENTS.value},
+            {"$set": {
+                "source_type": ImportType.OPEN_DOCUMENTS.value,
+                "required_frequency": "daily",
+                "last_import_id": import_id,
+                "last_import_at": now,
+                "last_as_of_date": as_of,
+                "status": "ok",
+                "is_blocking_operations": False
+            }},
+            upsert=True
+        )
+        
+        logger.info(f"Processed open documents import {import_id}: {len(docs_to_insert)} docs, {len(recovery_events)} recovery events")
+        
+    except Exception as e:
+        logger.error(f"Error processing open documents import: {e}")
         result['errors'].append(f"Erro ao processar importação: {str(e)}")
         result['status'] = ImportStatus.FAILED.value
         
