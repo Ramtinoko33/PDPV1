@@ -1,0 +1,29 @@
+{
+  "summary": "Backend-only validation of Fase 1 'Assistências' flow addition to the internal Telegram bot. 22/22 pytest tests PASSED against the preview backend (REACT_APP_BACKEND_URL). Every acceptance criterion in the review request is met: (a) modules/telegram_internal/flows/assistencias.py exists with FLOW='assistencias' and start/handle_message/handle_callback callables; (b) REGISTRY has exactly the 4 keys pre_ticket/renting/mech_alert/assistencias and 'assistencias' maps to the new module; (c) auth.ALL_FLOWS equals ['pre_ticket','renting','assistencias','mech_alert'] in that order; (d) menu.main_menu_markup renders buttons in the requested order (Pré-ticket → Renting → Assistência → Alerta Mecânica → Cancelar) and hides 'menu:assistencias' for users whose allowed_flows exclude it; (e) POST /api/telegram/internal/authorized-users accepts allowed_flows=['assistencias'] and the default (omitted) allowed_flows now returns the 4-flow list including assistencias; (f) webhook POST with callback_query data='menu:assistencias' returns 200 for authorized-with-assistencias user, for seeded 999000111 (without assistencias — permission denied path), and for a random unauthorized id (pending-user path); (g) regression: wrong secret still 403, admin/agent auth matrix on /pending-users and /authorized-users unchanged; (h) regression: Finance /data-health + /dashboard still 200 for admin.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_29_assistencias_flow.py",
+    "/app/test_reports/pytest/pytest_iteration_29.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "flows/assistencias.py — Follows the exact same redirect pattern as renting.py and mech_alert.py (FLOW constant, env-configurable deeplink, reset_state on start, no-op message/callback handlers). Consistent and minimal. Good.",
+    "flows/__init__.py — REGISTRY dict order is a Python 3.7+ ordered dict so iteration is stable; keys used elsewhere by main_menu_markup independently, so registry order does not affect UI order. Fine as-is.",
+    "menu.py:14-28 — The new ordering is done manually in Python instead of iterating ALL_FLOWS; that's a slight DRY smell but keeps per-flow labels/emojis colocated with the render logic. Acceptable trade-off. If a 5th flow is added, remember to touch BOTH menu.main_menu_markup AND the flow_key mapping in routes.py::_handle_callback (lines 420-425).",
+    "routes.py:86 — AuthorizedUserIn.allowed_flows default_factory now includes 'assistencias' in the correct order — matches auth.ALL_FLOWS. Good. Suggest DRY-ing by importing ALL_FLOWS from auth.py so the two lists cannot drift (currently duplicated).",
+    "routes.py:420-425 — flow_key mapping dict has 4 entries including 'assistencias'. Consider replacing the identity dict with `if choice in FLOW_REGISTRY: flow_key = choice` to eliminate the manual mapping that must stay in sync with the REGISTRY.",
+    "assistencias.py:15-17 — Env override TELEGRAM_ASSISTENCIAS_BOT_DEEPLINK is not documented in test_credentials.md nor .env; if PDPV rebrands the dedicated bot in the future, ops must set that var explicitly. Non-blocking.",
+    "Consistency: pre_ticket, renting and mech_alert reset the flow state on start(); assistencias.py does the same (reset_state) which is correct given there is no inline state machine yet."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_29_assistencias_flow.py (new, 22 tests)"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (ADMIN, works). cobranca.teste@pdpv.pt / TesteFin2026! (AGENT, works and correctly gets 403). TELEGRAM_INTERNAL_WEBHOOK_SECRET=pdpv_internal_webhook_2026. Seeded operator telegram_user_id=999000111 has allowed_flows=[pre_ticket, renting, mech_alert] — intentionally does NOT include 'assistencias' so the permission-denied path is exercised.",
+  "seed_data_creation": "During the run the suite upserts+deactivates three throw-away authorized users in the 700_100_000-700_399_999 range (TEST_assistencias_only, TEST_default_flows, TEST_assist_webhook). Also posts a webhook with a synthetic unauthorized user_id in the 800_500_000+ range which lands in telegram_internal_logs as message_type='unauthorized' — visible in /pending-users until logs are trimmed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fase 1 (redirect-only assistencias flow) is fully validated end-to-end. Fase 2 (inlining the full state machine — GPS location, plate OCR, folha de obra photo, extra photos, text/audio notes with Whisper transcription) is NOT in scope of this iteration; when Fase 2 lands, tests will need to be extended to cover handle_message/handle_callback beyond the current no-op stubs, plus persistence into intake_requests with source_bot=PDPV_INTERNAL_BOT similar to pre_ticket. The identity flow_key mapping in routes.py:420-425 is the fragile spot to watch. Webhook is currently reachable and answering 200 even when Telegram itself replies 400 on sendMessage/answerCallbackQuery (synthetic chat_ids); that is by design.",
+  "rca of the issue": "N/A – no bugs found. Implementation of Fase 1 is complete and consistent with the existing renting/mech_alert redirect pattern."
+}

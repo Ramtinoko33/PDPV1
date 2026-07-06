@@ -15,7 +15,7 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
-ALL_FLOWS = ["pre_ticket", "renting", "mech_alert"]
+ALL_FLOWS = ["pre_ticket", "renting", "assistencias", "mech_alert"]
 
 
 def _env_allowed_ids() -> set:

@@ -15,12 +15,15 @@ def main_menu_markup(user_auth: dict) -> dict:
     """Render the main menu keyboard, respecting allowed_flows of the user."""
     allowed = set(user_auth.get("allowed_flows") or [])
     rows = []
-    if "mech_alert" in allowed or not allowed:
-        rows.append([{"text": "🔧 Criar Alerta Mecânica", "callback_data": "menu:mech_alert"}])
-    if "renting" in allowed or not allowed:
-        rows.append([{"text": "🚗 Criar Pedido Renting", "callback_data": "menu:renting"}])
+    # Ordem pedida pelo utilizador: pré-ticket, renting, assistências, alertas mecânica
     if "pre_ticket" in allowed or not allowed:
         rows.append([{"text": "📋 Criar Pré-ticket", "callback_data": "menu:pre_ticket"}])
+    if "renting" in allowed or not allowed:
+        rows.append([{"text": "🚗 Criar Pedido Renting", "callback_data": "menu:renting"}])
+    if "assistencias" in allowed or not allowed:
+        rows.append([{"text": "🚨 Registar Assistência", "callback_data": "menu:assistencias"}])
+    if "mech_alert" in allowed or not allowed:
+        rows.append([{"text": "🔧 Criar Alerta Mecânica", "callback_data": "menu:mech_alert"}])
     rows.append([{"text": "❌ Cancelar fluxo atual", "callback_data": "menu:cancel"}])
     return inline_keyboard(rows)
 

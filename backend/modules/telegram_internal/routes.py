@@ -83,7 +83,7 @@ class AuthorizedUserIn(BaseModel):
     telegram_user_id: int = Field(..., description="Numeric Telegram user id")
     name: str = Field(..., min_length=1)
     role: str = Field("AGENT")
-    allowed_flows: List[str] = Field(default_factory=lambda: ["pre_ticket", "renting", "mech_alert"])
+    allowed_flows: List[str] = Field(default_factory=lambda: ["pre_ticket", "renting", "assistencias", "mech_alert"])
     active: bool = True
 
 
@@ -421,6 +421,7 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
             "mech_alert": "mech_alert",
             "renting": "renting",
             "pre_ticket": "pre_ticket",
+            "assistencias": "assistencias",
         }.get(choice)
         if not flow_key:
             return
