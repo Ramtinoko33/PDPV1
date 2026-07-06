@@ -117,6 +117,37 @@ async def remove_authorized_user(telegram_user_id: int, current_user: dict = Dep
     return {"deactivated": ok}
 
 
+@router.get("/pending-users")
+async def list_pending_users(current_user: dict = Depends(get_current_user)):
+    """List Telegram users who recently tried to use the internal bot but were
+    NOT authorized. Useful to grant access without checking logs manually.
+    """
+    _require_admin(current_user)
+    from db import db as _db
+    pipeline = [
+        {"$match": {"message_type": "unauthorized"}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$telegram_user_id",
+            "first_name": {"$first": "$error"},
+            "last_attempt_at": {"$first": "$created_at"},
+            "attempts": {"$sum": 1},
+        }},
+        {"$sort": {"last_attempt_at": -1}},
+        {"$limit": 50},
+    ]
+    rows = await _db.telegram_internal_logs.aggregate(pipeline).to_list(50)
+    return [
+        {
+            "telegram_user_id": r["_id"],
+            "first_name": r.get("first_name") or "",
+            "attempts": r["attempts"],
+            "last_attempt_at": r.get("last_attempt_at"),
+        }
+        for r in rows
+    ]
+
+
 # ============== BOT INFO (admin-only smoke test) ==============
 
 @router.get("/info")
@@ -285,8 +316,19 @@ async def _dispatch_update(update: dict) -> None:
 
     user_auth = await auth_mgr.get_authorized(user_id)
     if not user_auth:
-        await menu_mgr.send_unauthorized(chat_id)
-        await log_event(user_id, chat_id, "unauthorized", success=False)
+        # Extract first name so we can identify the user later
+        user_obj = (
+            (update.get("message") or {}).get("from")
+            or (update.get("callback_query") or {}).get("from")
+            or {}
+        )
+        first_name = user_obj.get("first_name") or user_obj.get("username") or ""
+        logger.warning(
+            "Internal bot: UNAUTHORIZED user tried to access — telegram_user_id=%s first_name=%r",
+            user_id, first_name,
+        )
+        await menu_mgr.send_unauthorized(chat_id, user_id=user_id, user_name=first_name)
+        await log_event(user_id, chat_id, "unauthorized", success=False, error=first_name)
         return
 
     if "message" in update:

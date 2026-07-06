@@ -70,8 +70,19 @@ def created_record_keyboard(record_type: str, dashboard_path: str) -> dict:
     )
 
 
-async def send_unauthorized(chat_id: int) -> None:
-    await send_message(
-        chat_id,
-        "⛔ <b>Utilizador não autorizado.</b>\nContacta o administrador.",
-    )
+async def send_unauthorized(chat_id: int, user_id: int = None, user_name: str = None) -> None:
+    """Reply to an unauthorized user with their own Telegram ID so the admin
+    can be given the exact number to add to the authorized list.
+    """
+    parts = [
+        "⛔ <b>Utilizador não autorizado.</b>",
+        "",
+        "Envia esta informação ao administrador da PDPV para pedires acesso:",
+    ]
+    if user_id is not None:
+        parts.append(f"• <b>ID Telegram:</b> <code>{user_id}</code>")
+    if user_name:
+        parts.append(f"• <b>Nome:</b> {user_name}")
+    parts.append("")
+    parts.append("Tira <i>screenshot</i> desta mensagem e envia-o ao administrador.")
+    await send_message(chat_id, "\n".join(parts))
