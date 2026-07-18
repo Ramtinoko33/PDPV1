@@ -1,0 +1,29 @@
+{
+  "summary": "Backend + UI validation of the Dashboard 'Tickets Atrasados' bug fix (GET /api/tickets?overdue=true now applied DB-side BEFORE .limit + frontend uses dedicated call that bypasses dashboard_default_states/types). ALL 10 backend pytest tests PASSED against the preview REACT_APP_BACKEND_URL. UI smoke test in two scenarios (no prefs, and dashboard_default_states=['ABERTO']) confirms that the 'Tickets Atrasados' panel correctly surfaces overdue tickets regardless of the operator's dashboard state/type filters. Original reported bug ('Sem tickets atrasados' shown while ATRASADOS SLA=141) is fixed: panel now renders 5 ATRASADO items including EM_TRATAMENTO tickets even when only ABERTO is in dashboard_default_states.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_30_dashboard_overdue.py",
+    "/app/test_reports/pytest/pytest_iteration_30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routes/tickets.py:240-260 — Overdue DB-side branch correctly replicates check_ticket_overdue: uses $or([sla_breached=True, {first_response_done!=true, sla_paused_at=None, sla_due<now}]) and status!=FECHADO. The $and merge when search $or is present is correct and coverage-tested.",
+    "backend/routes/tickets.py:250 — `query['status'] = query.get('status') or {'$ne': FECHADO}` correctly preserves an explicit status filter (verified with status=EM_TRATAMENTO — 100% of returned tickets stayed EM_TRATAMENTO). Good.",
+    "backend/routes/tickets.py:277-281 — The in-Python double-check (`if overdue and not t['is_overdue']: continue`) is redundant given the DB filter now runs before .limit, but harmless. Consider removing to simplify; keeping it does provide defense-in-depth against edge cases (e.g. tickets with malformed sla_due strings) so acceptable trade-off.",
+    "backend/routes/tickets.py:256-260 — `elif overdue is False` branch is a no-op comment; the Python post-filter at line 280 handles it. That's fine (rare path) but be aware that limit(100) may still hide older non-overdue tickets when overdue=false — same historical shape, acceptable regression-wise.",
+    "frontend/src/pages/Dashboard.js:74-82 — Dedicated overdueUrl fetch with limit=5 and role-aware assigned_to param is correct; .catch(() => ({data: []})) means UI silently degrades on 500 (good UX, but a console.error would help diagnostics).",
+    "frontend/src/pages/Dashboard.js:131-156 — useEffect correctly excludes overdueTickets from the client-side filter application; comment is clear. Good.",
+    "Definition drift note (already flagged in review request): /api/dashboard/stats atrasados_sla uses `first_response_done=False AND sla_due<now` (strict), while GET /api/tickets?overdue=true also includes `sla_breached=True` even when first_response_done is now True. In the preview DB both counts happen to match (141 vs 141) but in principle the endpoint can return more. Consider unifying both call sites into check_ticket_overdue-shaped Mongo query in a shared helper to prevent silent drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_30_dashboard_overdue.py (new, 10 tests)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (2/2 smoke scenarios)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (ADMIN, works). cobranca.teste@pdpv.pt / TesteFin2026! (AGENT, works — used to verify role-gated overdue listing). No new credentials required.",
+  "seed_data_creation": "No seed data created. During UI verification the admin's dashboard prefs were temporarily set to dashboard_default_states=['ABERTO'] via PUT /api/users/me/dashboard and RESET back to []/[]/False after the test. No lingering side effects.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 30 bug fix is fully validated: GET /api/tickets?overdue=true now applies filter DB-side before .limit and bypasses dashboard state filters on the frontend. Preview DB currently has stats.atrasados_sla=141 and endpoint returns exactly 141 — parity is perfect right now. If a future change touches either /api/dashboard/stats or /api/tickets overdue logic, use test_iteration_30_dashboard_overdue.py as regression. Watch the note above about definition drift between the two overdue queries.",
+  "rca of the issue": "Root cause was correctly identified by main agent: (1) backend applied `overdue=true` filter in Python after `.limit(100).to_list(limit)`, so any atrasado older than the 100 newest tickets was silently dropped; (2) frontend re-derived overdueTickets from the already-filtered `allFetchedTickets` (limited to 100 + client-side dashboard_default_states/types), so operators with state filters saw an empty panel even when there were dozens of real overdue tickets. Fix moves overdue predicate into the Mongo query (before .limit) and gives the panel its own /api/tickets?overdue=true&limit=5 call that ignores the client-side filters. Verified: bug scenario ('atrasados_sla > 0 while panel empty') no longer reproduces."
+}

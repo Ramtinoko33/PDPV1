@@ -66,14 +66,24 @@ const Dashboard = () => {
       const ticketsUrl = onlyMineForApi
         ? `${API_URL}/api/tickets?limit=100&assigned_to=${encodeURIComponent(user.id)}`
         : `${API_URL}/api/tickets?limit=100`;
-      const [statsRes, ticketsRes, remindersRes] = await Promise.all([
+      // Overdue tickets are fetched via a dedicated call that filters at DB
+      // level, so they surface even when older than the newest 100 and
+      // independently of the dashboard state/type filters. The panel is a
+      // cross-cutting operational view — the ATRASADOS SLA card also ignores
+      // those filters, so keeping them here would be inconsistent.
+      const overdueUrl = onlyMineForApi
+        ? `${API_URL}/api/tickets?overdue=true&limit=5&assigned_to=${encodeURIComponent(user.id)}`
+        : `${API_URL}/api/tickets?overdue=true&limit=5`;
+      const [statsRes, ticketsRes, overdueRes, remindersRes] = await Promise.all([
         axios.get(`${API_URL}/api/dashboard/stats`, { headers: getAuthHeaders() }),
         axios.get(ticketsUrl, { headers: getAuthHeaders() }),
+        axios.get(overdueUrl, { headers: getAuthHeaders() }).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/api/reminders/my-today`, { headers: getAuthHeaders() }).catch(() => ({ data: [] }))
       ]);
-      
+
       setStats(statsRes.data);
       setAllFetchedTickets(ticketsRes.data);
+      setOverdueTickets((overdueRes.data || []).slice(0, 5));
       setMyReminders(remindersRes.data || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -140,7 +150,9 @@ const Dashboard = () => {
     }
 
     setRecentTickets(tickets.slice(0, 5));
-    setOverdueTickets(tickets.filter(t => t.is_overdue).slice(0, 5));
+    // NOTE: overdueTickets is fetched separately via ?overdue=true (see fetchData)
+    // to bypass the dashboard type/state filters — the panel must always show
+    // real atrasados regardless of the operator's dashboard preferences.
   }, [allFetchedTickets, quickType, quickStatus, dashboardPrefs, user]);
 
   const handleSearch = (e) => {

@@ -233,7 +233,32 @@ async def list_tickets(
             {"ticket_number": {"$regex": search, "$options": "i"}},
             {"description": {"$regex": search, "$options": "i"}}
         ]
-    
+
+    # DB-side overdue filter (BEFORE .limit) — antes só era feito depois do
+    # limit(100) o que fazia com que atrasados antigos ficassem invisíveis
+    # no painel do Dashboard.
+    if overdue is True:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        overdue_conditions = [
+            {"sla_breached": True},
+            {
+                "first_response_done": {"$ne": True},
+                "sla_paused_at": None,
+                "sla_due": {"$lt": now_iso},
+            },
+        ]
+        query["status"] = query.get("status") or {"$ne": TicketStatus.FECHADO.value}
+        # Se já existe um $or (search), combina com um $and
+        if "$or" in query:
+            query["$and"] = [{"$or": query.pop("$or")}, {"$or": overdue_conditions}]
+        else:
+            query["$or"] = overdue_conditions
+    elif overdue is False:
+        # Non-overdue: filtrar todos os que NÃO caem nas condições acima.
+        # (mantém comportamento simples: exclui closed já ali; o resto sai
+        # da checagem em Python abaixo por segurança.)
+        pass
+
     tickets = await db.tickets.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     # Get assigned user names
