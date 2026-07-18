@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend-only validation of the SLA severity bar enhancement on /dashboard 'Tickets Atrasados' cards. Logged in as admin@pdpv.pt, inspected the 5 overdue cards rendered by the preview DB (141 total overdue). All acceptance criteria pass: data-testids present, correct pt-PT formatted tooltip, correct band CSS classes (critical band with bg-red-700 animate-pulse), width 100% for >24h breaches, no React console errors, regression flows (KPIs, Recent tickets, click → /tickets/<id>, /finance) all intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Dashboard.js is now ~790 lines — approaching the 700-line soft cap. Consider extracting OverdueTicketCard + OVERDUE_BANDS helpers into a separate module (e.g. components/dashboard/OverdueTicketCard.js) before the next enhancement lands.",
+    "The SLA bar bandwidth math (barPct = mins/1440 * 100) means every ticket <9min lands on 15% floor (band 'recente' orange). Might be fine but worth documenting so future changes don't reduce the floor and lose visual affordance.",
+    "The bar tooltip is empty string when ticket.sla_due is falsy — acceptable but browsers vary on rendering empty title. Consider omitting the title attr entirely in that branch."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped by request)", "frontend": "100%"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used preview seed data (141 overdue tickets, all with sla_due ~59 days ago).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Enhancement (iteration 31): SLA severity progress bar added to overdue cards on /dashboard. Selectors to reuse: [data-testid^='overdue-ticket-'], [data-testid^='overdue-duration-'], [data-testid^='overdue-sla-bar-']. Duration text prefix is '· SLA excedido há '. Band → CSS mapping: <60min=bg-orange-400/text-orange-700, 1-4h=bg-red-500/text-red-700, 4-24h=bg-red-600/text-red-800, >24h=bg-red-700 animate-pulse/text-red-900. Preview DB has ALL overdue in the critical band because sla_due is very old — to exercise other bands you'd need to seed a fresh overdue with sla_due within the last hour / few hours, or unit-test overdueBand() directly. Login: admin@pdpv.pt / HCNMEnKMLq.",
+  "detailed_findings": {
+    "cards_rendered": 5,
+    "each_card_has": {
+      "ticket_number_visible": true,
+      "atrasado_badge_visible": "yes (confirmed via screenshot; my JS selector reused .font-semibold which is why hasAtrasadoBadge was false in the JSON dump — visual + DOM inspection show ATRASADO badge present)",
+      "duration_testid_present": true,
+      "duration_text_prefix_ok": "text = '· SLA excedido há 59d 12h' — prefix matches spec (leading '· ' is decorative dot separator, not a bug)",
+      "customer_name_visible": true,
+      "customer_phone_visible": true,
+      "sla_bar_testid_present": true,
+      "bar_inner_class": "bg-red-700 animate-pulse (critical band, correct for 59d>24h)",
+      "bar_inner_width": "100% (capped at 100% for >24h as spec requires)",
+      "bar_tooltip": "Prazo SLA: 20/05/2026, 10:30:00 (pt-PT locale, correct)"
+    },
+    "regressions_checked": {
+      "empty_state_still_present_in_code": "yes (lines 646-652)",
+      "click_navigates_to_ticket_detail": "yes — href = '/tickets/<id>' verified",
+      "recent_tickets_panel_rendering": "yes — 5 cards",
+      "kpi_cards_rendering": "yes — Abertos 101, Atrasados SLA 141, Aguarda Cliente 1, Em Tratamento 8",
+      "finance_page_loads": "yes — CRM Finance dashboard rendered without error",
+      "react_console_errors": "0 (only a WS close warning unrelated to this feature)"
+    }
+  }
+}

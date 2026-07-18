@@ -30,6 +30,40 @@ import {
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
+// ─── SLA overdue helpers ────────────────────────────────────────────────
+// Compute how long ago the SLA was breached and pick a color band.
+// Bands: <1h fresh breach, 1-4h medium, 4-24h severe, >24h critical.
+const OVERDUE_BANDS = [
+  { maxMinutes: 60, label: 'recente', bar: 'bg-orange-400', text: 'text-orange-700' },
+  { maxMinutes: 240, label: 'moderado', bar: 'bg-red-500', text: 'text-red-700' },
+  { maxMinutes: 1440, label: 'severo', bar: 'bg-red-600', text: 'text-red-800' },
+  { maxMinutes: Infinity, label: 'crítico', bar: 'bg-red-700 animate-pulse', text: 'text-red-900' },
+];
+
+const overdueBand = (minutes) =>
+  OVERDUE_BANDS.find((b) => minutes < b.maxMinutes) || OVERDUE_BANDS[OVERDUE_BANDS.length - 1];
+
+const formatOverdueDuration = (minutes) => {
+  if (minutes < 1) return 'agora mesmo';
+  if (minutes < 60) return `${Math.floor(minutes)} min`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.floor(minutes % 60);
+  if (h < 24) return m ? `${h}h ${m}min` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh ? `${d}d ${rh}h` : `${d}d`;
+};
+
+const minutesSince = (isoDate) => {
+  if (!isoDate) return null;
+  try {
+    const then = new Date(isoDate);
+    return (Date.now() - then.getTime()) / 60000;
+  } catch {
+    return null;
+  }
+};
+
 const Dashboard = () => {
   const { user, getAuthHeaders, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -618,30 +652,55 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="divide-y">
-                {overdueTickets.map((ticket) => (
-                  <Link 
-                    key={ticket.id} 
-                    to={`/tickets/${ticket.id}`}
-                    className="flex items-center gap-4 p-4 hover:bg-red-50/50 transition-colors"
-                    data-testid={`overdue-ticket-${ticket.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-sm font-medium text-red-600">
-                          {ticket.ticket_number}
-                        </span>
-                        <Badge className="sla-overdue text-xs">ATRASADO</Badge>
+                {overdueTickets.map((ticket) => {
+                  const mins = minutesSince(ticket.sla_due);
+                  const band = mins != null ? overdueBand(mins) : OVERDUE_BANDS[1];
+                  // Bar width scales with severity (min 15%, cap 100% at 24h).
+                  const barPct = mins == null ? 60 : Math.min(100, Math.max(15, (mins / 1440) * 100));
+                  return (
+                    <Link
+                      key={ticket.id}
+                      to={`/tickets/${ticket.id}`}
+                      className="flex items-center gap-4 p-4 hover:bg-red-50/50 transition-colors"
+                      data-testid={`overdue-ticket-${ticket.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-sm font-medium text-red-600">
+                            {ticket.ticket_number}
+                          </span>
+                          <Badge className="sla-overdue text-xs">ATRASADO</Badge>
+                          {mins != null && (
+                            <span
+                              className={`text-xs font-semibold ${band.text}`}
+                              data-testid={`overdue-duration-${ticket.id}`}
+                            >
+                              · SLA excedido há {formatOverdueDuration(mins)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-slate-900 truncate">
+                          {ticket.customer_name}
+                        </p>
+                        <p className="text-sm text-zinc-500 mt-1">
+                          {ticket.customer_phone}
+                        </p>
+                        {/* SLA severity bar — grows with time since breach */}
+                        <div
+                          className="mt-2 h-1.5 w-full rounded-full bg-red-100 overflow-hidden"
+                          title={ticket.sla_due ? `Prazo SLA: ${new Date(ticket.sla_due).toLocaleString('pt-PT')}` : ''}
+                          data-testid={`overdue-sla-bar-${ticket.id}`}
+                        >
+                          <div
+                            className={`h-full ${band.bar} transition-all`}
+                            style={{ width: `${barPct}%` }}
+                          />
+                        </div>
                       </div>
-                      <p className="font-semibold text-slate-900 truncate">
-                        {ticket.customer_name}
-                      </p>
-                      <p className="text-sm text-zinc-500 mt-1">
-                        {ticket.customer_phone}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-5 w-5 text-red-400" />
-                  </Link>
-                ))}
+                      <ChevronRight className="h-5 w-5 text-red-400" />
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </CardContent>
