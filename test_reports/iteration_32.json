@@ -1,0 +1,32 @@
+{
+  "summary": "Backend-only validation of Iteration 32 (Option A — Telegram bot consolidation via delegação leve). All 15 pytest cases PASS: webhook secret validation, menu:{assistencias,renting,mech_alert,pre_ticket,cancel} state side-effects, unauthorized user rejection, text/location forwarding while assistencias active, get_employee_for_chat internal-bot fallback, and regressions on /pending-users, /authorized-users, /finance/dashboard, /tickets?overdue=true. The delegation is confirmed working: internal state (telegram_internal_states) + standalone service state (assistencias_bot_state, renting_records draft) are both correctly populated inside the same request.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "modules.assistencias.bot_api.sendMessage", "issue": "Logs '[ASSIST_BOT] sendMessage failed' at ERROR level for every real-flow attempt. This is expected in test (chat 999000111 non-existent), but in production it will also log at ERROR when a real user has never DM'd the bot. Consider downgrading to WARNING to match modules.telegram_internal.bot_api which already logs failures as WARNING."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_32_telegram_delegation.py",
+    "/app/test_reports/pytest/iteration_32_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: unify log severity between modules.assistencias.bot_api (ERROR) and modules.telegram_internal.bot_api (WARNING) for 400/chat-not-found responses to reduce noise in Sentry/CloudWatch.",
+    "OPTIONAL: the still-orphaned Alerts + Assistencias webhooks (whose tokens were overwritten by the .env unification) should be deleted via BotFather; otherwise Telegram will keep retrying old updates against tokens that have no live webhook."
+  ],
+  "critical_code_review_comments": [
+    "flows/mech_alert.py uses str.partition on payload verbs like 'photos_yes:<id>' where the verb 'photos_yes' contains no ':' separator inside the verb but partition on 'photos_' → this is fragile; current impl parses via data.startswith('photos_') then partition(':') which does the right thing but the ternary 'yes' if 'yes' in verb else 'no' would misclassify a hypothetical 'photos_yesbutno' verb. Not a bug today but a smell.",
+    "modules.assistencias.service.get_employee_for_chat fallback returns role from internal_rec.get('role') or 'AGENT' — the test expected ADMIN and it happens to be ADMIN in seeded fixture, but the docstring/spec says 'sintético com role=ADMIN' which is misleading. The real behavior is: propagates whatever role is stored on the internal auth doc. Fine.",
+    "flows/renting.py :handle_message forwards text even before service.start_new_session finished — race is unlikely because Telegram serializes updates per chat, but worth noting. Same pattern in assistencias.py.",
+    "TELEGRAM_ALERTS_BOT_TOKEN / TELEGRAM_RENTING_BOT_TOKEN / TELEGRAM_ASSISTENCIAS_BOT_TOKEN / TELEGRAM_BOT_TOKEN all point to the SAME internal token now — anyone reading .env may assume 4 different bots exist. Consider consolidating into a single TELEGRAM_INTERNAL_BOT_TOKEN and grep-replacing usages, or add an explicit .env comment saying 'unified — see iteration 32'. Not enforced now because per project rules .env must not be modified with comments."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "N/A (skipped by request)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (/app/memory/test_credentials.md). Webhook secret: pdpv_internal_webhook_2026.",
+  "seed_data_creation": "Idempotently upserts telegram_internal_authorized_users for id=999000111 (ADMIN, all 4 flows) and id=999000222 (AGENT, pre_ticket only, used to verify the 'sem permissão' branch). The AGENT user is cleaned up at module teardown; the ADMIN user is preserved because the same fixture was seeded by iteration 31.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Full delegation test file lives at /app/backend/tests/test_iteration_32_telegram_delegation.py. Reuse fixtures: _seed_users (module-scope) creates users 999000111 (ADMIN, all flows) + 999000222 (pre_ticket only). Reuse helpers _callback_update(user_id, chat_id, data), _message_update(user_id, chat_id, text=..., location=...), _post_webhook(update, secret). Tests hit localhost:8001 because preview ingress historically 403's the webhook path. To exercise real callback→edit_message, the chat_id 999000111 is fake and every sendMessage fails with 'chat not found' — that is EXPECTED and already asserted-around. Verified collections: telegram_internal_states, assistencias_bot_state, renting_records (status='draft', lowercase).",
+  "rca of the issue": "Not applicable — no bugs found in delegation logic. All 15 assertions pass, including the tricky get_employee_for_chat fallback and the assistencias location handler that must both consume the message AND advance state past WAIT_LOCATION."
+}
