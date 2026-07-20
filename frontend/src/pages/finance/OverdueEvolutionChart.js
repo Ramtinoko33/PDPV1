@@ -23,7 +23,6 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Badge } from '../../components/ui/badge';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -141,9 +140,9 @@ const OverdueEvolutionChart = ({ days = 30 }) => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tickFormatter={fmtDate} stroke="#64748b" fontSize={11} />
                   <YAxis yAxisId="left" stroke="#64748b" fontSize={11}
-                         tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                         tickFormatter={(v) => (v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`)} />
                   <YAxis yAxisId="right" orientation="right" stroke="#64748b" fontSize={11}
-                         tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                         tickFormatter={(v) => (v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`)} />
                   <Tooltip
                     formatter={(value, name) => [fmtEUR(value), name]}
                     labelFormatter={(l) => fmtDate(l)}
