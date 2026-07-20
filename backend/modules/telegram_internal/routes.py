@@ -7,6 +7,7 @@ CAREFUL: this module is fully isolated from the 3 existing Telegram bots.
 """
 import os
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Header
@@ -60,8 +61,32 @@ async def telegram_webhook(
     except Exception:
         return {"status": "ok"}  # never let Telegram retry on parse errors
 
+    # ── Atomic update_id deduplication (spec P0) ─────────────────────────
+    # Insert-first pattern with UNIQUE index → race-safe. If we see the same
+    # update_id twice (Telegram retries or dual delivery), the second insert
+    # raises DuplicateKeyError and we skip processing entirely.
+    from pymongo.errors import DuplicateKeyError
+    from db import db as _db
+    update_id = update.get("update_id")
+    if update_id is not None:
+        try:
+            await _db.telegram_processed_updates.insert_one({
+                "update_id": int(update_id),
+                "bot": "pdpv_interno_bot",
+                "status": "processing",
+                "received_at": datetime.now(timezone.utc),
+            })
+        except DuplicateKeyError:
+            logger.info("internal bot: duplicate update_id=%s ignored", update_id)
+            return {"status": "duplicate"}
+
     try:
         await _dispatch_update(update)
+        if update_id is not None:
+            await _db.telegram_processed_updates.update_one(
+                {"update_id": int(update_id)},
+                {"$set": {"status": "done", "processed_at": datetime.now(timezone.utc)}},
+            )
     except Exception as e:
         logger.error("internal bot update handler crashed: %s", e, exc_info=True)
         try:
@@ -357,6 +382,19 @@ async def _handle_message(message: dict, user_auth: dict) -> None:
             await menu_mgr.cancel_flow(chat_id, user_id, user_auth)
             await log_event(user_id, chat_id, "command", current_step=cmd, success=True)
             return
+        if cmd == "/help":
+            allowed = user_auth.get("allowed_flows") or list(FLOW_REGISTRY.keys())
+            flow_labels = {"pre_ticket": "📋 Pré-tickets", "renting": "🚗 Renting",
+                           "assistencias": "🚨 Assistências", "mech_alert": "🔧 Alertas Mecânica"}
+            lines = ["<b>ℹ️ Ajuda — Bot Interno PDPV</b>", "", "<b>Módulos autorizados:</b>"]
+            lines += [f"• {flow_labels.get(f, f)}" for f in allowed]
+            lines += ["", "<b>Comandos:</b>",
+                      "/start ou /menu — abrir menu principal",
+                      "/cancel — cancelar operação em curso",
+                      "/help — esta ajuda"]
+            await send_message(chat_id, "\n".join(lines))
+            await log_event(user_id, chat_id, "command", current_step=cmd, success=True)
+            return
 
     # Detect expired flow: a state existed but was just auto-cleared by get_state()
     raw_state = await state_mgr.db_state_raw(user_id) if hasattr(state_mgr, "db_state_raw") else None
@@ -387,12 +425,25 @@ async def _handle_message(message: dict, user_auth: dict) -> None:
                 consumed = False
         if consumed:
             return
-        await flow_mod.handle_message(chat_id, user_id, text, photo_file_id, state)
-        await log_event(user_id, chat_id, "message",
-                        active_flow=state.get("active_flow"),
-                        current_step=state.get("current_step"), success=True)
+        # Per-module isolation: an exception in one flow must not affect others
+        try:
+            await flow_mod.handle_message(chat_id, user_id, text, photo_file_id, state)
+            await log_event(user_id, chat_id, "message",
+                            active_flow=state.get("active_flow"),
+                            current_step=state.get("current_step"), success=True)
+        except Exception as exc:
+            import uuid as _uuid
+            error_id = _uuid.uuid4().hex[:12]
+            logger.error("[error_id=%s] flow=%s handler crashed: %s", error_id, flow_key, exc, exc_info=True)
+            await log_event(user_id, chat_id, "message_error",
+                            active_flow=flow_key,
+                            current_step=state.get("current_step"),
+                            success=False,
+                            error=f"{error_id}: {type(exc).__name__}")
+            await send_message(chat_id,
+                f"⚠️ Ocorreu um erro. Referência: <code>{error_id}</code>\n"
+                "Envia /menu para recomeçar ou avisa o administrador.")
         return
-
     # No active flow: just show menu
     await menu_mgr.send_main_menu(chat_id, user_auth)
 
@@ -406,6 +457,27 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
     # Always answer the callback so the spinner clears
     if callback_query_id:
         await answer_callback_query(callback_query_id)
+
+    # ── System-namespace navigation (spec §5) ──────────────────────────
+    if data.startswith("system:"):
+        action = data.split(":", 1)[1]
+        if action == "menu":
+            await state_mgr.reset_state(user_id)
+            await menu_mgr.send_main_menu(chat_id, user_auth)
+        elif action == "cancel":
+            await menu_mgr.cancel_flow(chat_id, user_id, user_auth)
+        elif action == "back":
+            # Safe fallback: go to menu (per spec, when no safe prior step exists)
+            await menu_mgr.send_main_menu(chat_id, user_auth)
+        elif action == "help":
+            allowed = user_auth.get("allowed_flows") or list(FLOW_REGISTRY.keys())
+            flow_labels = {"pre_ticket": "📋 Pré-tickets", "renting": "🚗 Renting",
+                           "assistencias": "🚨 Assistências", "mech_alert": "🔧 Alertas Mecânica"}
+            lines = ["<b>ℹ️ Ajuda</b>", "", "<b>Módulos:</b>"] + \
+                    [f"• {flow_labels.get(f, f)}" for f in allowed] + \
+                    ["", "<b>Comandos:</b> /menu · /cancel · /help"]
+            await send_message(chat_id, "\n".join(lines))
+        return
 
     # Main menu entries
     if data.startswith("menu:"):
@@ -467,9 +539,27 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
             await menu_mgr.send_main_menu(chat_id, user_auth)
         return
 
-    # Forward to active flow's callback handler
+    # Forward to active flow's callback handler (with per-module isolation)
     state = await state_mgr.get_state(user_id)
     if state and state.get("active_flow"):
-        flow_mod = FLOW_REGISTRY.get(state["active_flow"])
+        flow_key = state["active_flow"]
+        flow_mod = FLOW_REGISTRY.get(flow_key)
         if flow_mod:
-            await flow_mod.handle_callback(chat_id, user_id, data, user_auth, state)
+            try:
+                await flow_mod.handle_callback(chat_id, user_id, data, user_auth, state)
+                await log_event(user_id, chat_id, "callback",
+                                active_flow=flow_key,
+                                current_step=state.get("current_step"), success=True)
+            except Exception as exc:
+                import uuid as _uuid
+                error_id = _uuid.uuid4().hex[:12]
+                logger.error("[error_id=%s] flow=%s callback crashed data=%r: %s",
+                             error_id, flow_key, data, exc, exc_info=True)
+                await log_event(user_id, chat_id, "callback_error",
+                                active_flow=flow_key,
+                                current_step=state.get("current_step"),
+                                success=False,
+                                error=f"{error_id}: {type(exc).__name__}")
+                await send_message(chat_id,
+                    f"⚠️ Esta ação não foi processada. Referência: <code>{error_id}</code>\n"
+                    "Volta ao menu com /menu.")

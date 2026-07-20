@@ -1838,3 +1838,11 @@ async def _deferred_startup():
         logger.info(f"[STARTUP] Web Push status: {'enabled' if VAPID_KEYS_VALID else 'disabled'}")
     except Exception as e:
         logger.error(f"[STARTUP] VAPID validation failed: {e}")
+
+    # Telegram internal bot: indexes + alerts state cache
+    try:
+        from modules.telegram_internal.startup import ensure_indexes, prime_alerts_state_cache
+        await ensure_indexes()
+        await prime_alerts_state_cache()
+    except Exception as e:
+        logger.error(f"[STARTUP] Telegram internal startup failed: {e}")

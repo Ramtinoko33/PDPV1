@@ -78,7 +78,63 @@ STATE_COLLECTING_NOTE = STATE_COLLECTING_TEXT_COMMENT
 #   "last_activity": float,
 #   "initial_buffer": {"texts": [str], "photos": [dict]} | None,
 # }
-_conversation_states = {}
+class _MongoBackedStates(dict):
+    """Persistent dict for conversation states — mirrors every mutation into
+    MongoDB (`telegram_alerts_states`) so states survive backend restarts.
+    Reads still use the in-memory copy for latency (fine for single-worker).
+    Loaded lazily on first access via ensure_loaded().
+    """
+    _loaded = False
+
+    async def ensure_loaded(self):
+        if self._loaded:
+            return
+        from db import db as _db
+        async for doc in _db.telegram_alerts_states.find({}):
+            chat_id = doc.get("chat_id")
+            if chat_id is None:
+                continue
+            state = {k: v for k, v in doc.items() if k not in ("_id", "chat_id")}
+            dict.__setitem__(self, int(chat_id), state)
+        self._loaded = True
+
+    def __setitem__(self, chat_id, value):
+        dict.__setitem__(self, chat_id, value)
+        # Fire-and-forget persist (best effort; no await needed at call sites)
+        try:
+            import asyncio
+            asyncio.get_event_loop().create_task(self._persist(chat_id, value))
+        except RuntimeError:
+            pass  # no running loop → skip (test contexts)
+
+    def __delitem__(self, chat_id):
+        dict.__delitem__(self, chat_id)
+        try:
+            import asyncio
+            asyncio.get_event_loop().create_task(self._delete(chat_id))
+        except RuntimeError:
+            pass
+
+    async def _persist(self, chat_id, value):
+        try:
+            from db import db as _db
+            await _db.telegram_alerts_states.update_one(
+                {"chat_id": int(chat_id)},
+                {"$set": {**value, "chat_id": int(chat_id)}},
+                upsert=True,
+            )
+        except Exception:
+            pass  # never break the caller
+
+    async def _delete(self, chat_id):
+        try:
+            from db import db as _db
+            await _db.telegram_alerts_states.delete_one({"chat_id": int(chat_id)})
+        except Exception:
+            pass
+
+
+_conversation_states = _MongoBackedStates()
 
 # Rate limiting: {chat_id: [timestamps]}
 _rate_limits = {}

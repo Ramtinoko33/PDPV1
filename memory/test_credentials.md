@@ -74,8 +74,8 @@ without a plan to re-enable the standalone bots):
 
 | Bot | Username | Original token |
 |---|---|---|
-| Principal | `@PDPV_OFICINA_BOT` | `8644214900:AAE9S_oXJvW7tIB2neOZWZoXyhPrS_tjZiU` |
-| Alertas | `@pdpv_alertas_bot` | `8660518959:AAGRn3bp7EffAVoXwGX9gzgAsjS3vEXFzM4` |
-| Renting | `@pdpv_rentingpneus_bot` | `8545209671:AAGhPStXU9Wqzqlo6gTz7vcCs4plTEpsZY4` |
-| Assistências | `@pdpv_assistencias_bot` | `8232271022:AAEK_y3nimv0pcyRS1c1lWqFyEyaFA6r-oQ` |
+| Principal | `@PDPV_OFICINA_BOT` | `[REDACTED — see BotFather]` |
+| Alertas | `@pdpv_alertas_bot` | `[REDACTED — see BotFather]` |
+| Renting | `@pdpv_rentingpneus_bot` | `[REDACTED — see BotFather]` |
+| Assistências | `@pdpv_assistencias_bot` | `[REDACTED — see BotFather]` |
 | **Interno (ACTIVE)** | `@pdpv_interno_bot` | value in `TELEGRAM_INTERNAL_BOT_TOKEN` |
