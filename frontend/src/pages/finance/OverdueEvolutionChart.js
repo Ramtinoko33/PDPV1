@@ -35,27 +35,46 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 };
 
-const OverdueEvolutionChart = ({ days = 30 }) => {
+const OverdueEvolutionChart = ({ days: initialDays = 30 }) => {
   const { getAuthHeaders } = useAuth();
+  const [days, setDays] = useState(initialDays);
   const [data, setData] = useState({ series: [], summary: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Period selector options — YTD is computed dynamically from Jan 1 of current year
+  const ytdDays = (() => {
+    const now = new Date();
+    const jan1 = new Date(now.getFullYear(), 0, 1);
+    return Math.max(1, Math.floor((now - jan1) / 86400000) + 1);
+  })();
+  const PERIODS = [
+    { key: '7', label: '7d', days: 7 },
+    { key: '30', label: '30d', days: 30 },
+    { key: '90', label: '90d', days: 90 },
+    { key: 'ytd', label: 'YTD', days: ytdDays },
+  ];
+
   useEffect(() => {
+    const controller = new AbortController();
     (async () => {
       try {
         setLoading(true);
+        setError(null);
         const res = await axios.get(
           `${API_URL}/api/finance/overdue-evolution?days=${days}`,
-          { headers: getAuthHeaders() }
+          { headers: getAuthHeaders(), signal: controller.signal }
         );
         setData(res.data);
       } catch (e) {
-        setError('Erro ao carregar histórico');
+        if (!axios.isCancel(e)) {
+          setError(e.response?.data?.detail || 'Erro ao carregar histórico');
+        }
       } finally {
         setLoading(false);
       }
     })();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
@@ -88,12 +107,41 @@ const OverdueEvolutionChart = ({ days = 30 }) => {
           <div>
             <CardTitle className="text-lg text-slate-900">Evolução do Vencido Cobrável</CardTitle>
             <p className="text-xs text-slate-500 mt-1">
-              Recuperado vs Faturas Novas Vencidas — últimos {days} dias
+              Recuperado vs Faturas Novas Vencidas
             </p>
           </div>
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${trendClasses}`}>
-            {trendIcon}
-            <span data-testid="overdue-trend-label">{trendLabel}</span>
+          <div className="flex items-center gap-3">
+            {/* Period selector */}
+            <div
+              className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden"
+              data-testid="period-selector"
+              role="group"
+              aria-label="Selecionar período"
+            >
+              {PERIODS.map((p) => {
+                const active = days === p.days;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setDays(p.days)}
+                    data-testid={`period-${p.key}`}
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    } ${p.key !== '7' ? 'border-l border-slate-200' : ''}`}
+                    aria-pressed={active}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${trendClasses}`}>
+              {trendIcon}
+              <span data-testid="overdue-trend-label">{trendLabel}</span>
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -109,29 +157,35 @@ const OverdueEvolutionChart = ({ days = 30 }) => {
         {!loading && !error && series.length >= 2 && (
           <>
             {/* Summary strip */}
-            <div className="grid grid-cols-3 gap-3 mb-4 text-xs">
-              <div className="bg-slate-50 rounded p-2">
-                <div className="text-slate-500 uppercase tracking-wide">Recuperado ({days}d)</div>
-                <div className="text-emerald-700 font-semibold" data-testid="summary-total-recovered">
-                  {fmtEUR(summary.total_recovered)}
+            {(() => {
+              const activePeriod = PERIODS.find(p => p.days === days);
+              const periodLabel = activePeriod?.label || `${days}d`;
+              return (
+                <div className="grid grid-cols-3 gap-3 mb-4 text-xs">
+                  <div className="bg-slate-50 rounded p-2">
+                    <div className="text-slate-500 uppercase tracking-wide">Recuperado ({periodLabel})</div>
+                    <div className="text-emerald-700 font-semibold" data-testid="summary-total-recovered">
+                      {fmtEUR(summary.total_recovered)}
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded p-2">
+                    <div className="text-slate-500 uppercase tracking-wide">Novas Vencidas ({periodLabel})</div>
+                    <div className="text-red-700 font-semibold" data-testid="summary-newly-overdue">
+                      {fmtEUR(summary.total_newly_overdue)}
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded p-2">
+                    <div className="text-slate-500 uppercase tracking-wide">Δ Total Vencido</div>
+                    <div
+                      className={`font-semibold ${delta > 0 ? 'text-red-700' : delta < 0 ? 'text-emerald-700' : 'text-slate-700'}`}
+                      data-testid="summary-total-delta"
+                    >
+                      {delta > 0 ? '+' : ''}{fmtEUR(delta)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-slate-50 rounded p-2">
-                <div className="text-slate-500 uppercase tracking-wide">Novas Vencidas ({days}d)</div>
-                <div className="text-red-700 font-semibold" data-testid="summary-newly-overdue">
-                  {fmtEUR(summary.total_newly_overdue)}
-                </div>
-              </div>
-              <div className="bg-slate-50 rounded p-2">
-                <div className="text-slate-500 uppercase tracking-wide">Δ Total Vencido</div>
-                <div
-                  className={`font-semibold ${delta > 0 ? 'text-red-700' : delta < 0 ? 'text-emerald-700' : 'text-slate-700'}`}
-                  data-testid="summary-total-delta"
-                >
-                  {delta > 0 ? '+' : ''}{fmtEUR(delta)}
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Chart */}
             <div className="w-full" style={{ height: 300 }}>
