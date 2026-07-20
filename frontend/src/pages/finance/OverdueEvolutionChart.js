@@ -7,7 +7,7 @@
  * está a diminuir (efetivamente a recuperar). Este é o KPI que a cobradora
  * precisa para saber se está a "ganhar terreno".
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -27,6 +27,13 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
+// ─── Hoisted constants (avoid creating new objects per render) ──────────
+const CHART_MARGIN = { top: 10, right: 20, left: 0, bottom: 0 };
+const TOOLTIP_STYLE = { fontSize: 12, borderRadius: 6 };
+const LEGEND_STYLE = { fontSize: 11 };
+const DOT_STYLE = { r: 3 };
+const ACTIVE_DOT_STYLE = { r: 5 };
+
 const fmtEUR = (v) =>
   new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0);
 
@@ -34,6 +41,10 @@ const fmtDate = (iso) => {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 };
+
+const yAxisTick = (v) => (v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`);
+const tooltipFormatter = (value, name) => [fmtEUR(value), name];
+const tooltipLabelFormatter = (l) => fmtDate(l);
 
 const OverdueEvolutionChart = ({ days: initialDays = 30 }) => {
   const { getAuthHeaders } = useAuth();
@@ -43,40 +54,41 @@ const OverdueEvolutionChart = ({ days: initialDays = 30 }) => {
   const [error, setError] = useState(null);
 
   // Period selector options — YTD is computed dynamically from Jan 1 of current year
-  const ytdDays = (() => {
+  const PERIODS = useMemo(() => {
     const now = new Date();
     const jan1 = new Date(now.getFullYear(), 0, 1);
-    return Math.max(1, Math.floor((now - jan1) / 86400000) + 1);
-  })();
-  const PERIODS = [
-    { key: '7', label: '7d', days: 7 },
-    { key: '30', label: '30d', days: 30 },
-    { key: '90', label: '90d', days: 90 },
-    { key: 'ytd', label: 'YTD', days: ytdDays },
-  ];
+    const ytdDays = Math.max(1, Math.floor((now - jan1) / 86400000) + 1);
+    return [
+      { key: '7', label: '7d', days: 7 },
+      { key: '30', label: '30d', days: 30 },
+      { key: '90', label: '90d', days: 90 },
+      { key: 'ytd', label: 'YTD', days: ytdDays },
+    ];
+  }, []);
+
+  const fetchData = useCallback(async (signal) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await axios.get(
+        `${API_URL}/api/finance/overdue-evolution?days=${days}`,
+        { headers: getAuthHeaders(), signal }
+      );
+      setData(res.data);
+    } catch (e) {
+      if (!axios.isCancel(e)) {
+        setError(e.response?.data?.detail || 'Erro ao carregar histórico');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [days, getAuthHeaders]);
 
   useEffect(() => {
     const controller = new AbortController();
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await axios.get(
-          `${API_URL}/api/finance/overdue-evolution?days=${days}`,
-          { headers: getAuthHeaders(), signal: controller.signal }
-        );
-        setData(res.data);
-      } catch (e) {
-        if (!axios.isCancel(e)) {
-          setError(e.response?.data?.detail || 'Erro ao carregar histórico');
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+    fetchData(controller.signal);
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+  }, [fetchData]);
 
   const { series, summary } = data;
 
@@ -190,19 +202,19 @@ const OverdueEvolutionChart = ({ days: initialDays = 30 }) => {
             {/* Chart */}
             <div className="w-full" style={{ height: 300 }}>
               <ResponsiveContainer>
-                <ComposedChart data={series} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <ComposedChart data={series} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tickFormatter={fmtDate} stroke="#64748b" fontSize={11} />
                   <YAxis yAxisId="left" stroke="#64748b" fontSize={11}
-                         tickFormatter={(v) => (v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`)} />
+                         tickFormatter={yAxisTick} />
                   <YAxis yAxisId="right" orientation="right" stroke="#64748b" fontSize={11}
-                         tickFormatter={(v) => (v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`)} />
+                         tickFormatter={yAxisTick} />
                   <Tooltip
-                    formatter={(value, name) => [fmtEUR(value), name]}
-                    labelFormatter={(l) => fmtDate(l)}
-                    contentStyle={{ fontSize: 12, borderRadius: 6 }}
+                    formatter={tooltipFormatter}
+                    labelFormatter={tooltipLabelFormatter}
+                    contentStyle={TOOLTIP_STYLE}
                   />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Legend wrapperStyle={LEGEND_STYLE} />
                   <ReferenceLine yAxisId="right" y={0} stroke="#94a3b8" strokeDasharray="2 2" />
                   <Line
                     yAxisId="left"
@@ -211,8 +223,8 @@ const OverdueEvolutionChart = ({ days: initialDays = 30 }) => {
                     name="Total Vencido Cobrável"
                     stroke="#dc2626"
                     strokeWidth={2.5}
-                    dot={{ r: 3 }}
-                    activeDot={{ r: 5 }}
+                    dot={DOT_STYLE}
+                    activeDot={ACTIVE_DOT_STYLE}
                   />
                   <Bar
                     yAxisId="right"

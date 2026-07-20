@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/') or 'http://localhost:8001'
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 
 
 @pytest.fixture(scope="session")

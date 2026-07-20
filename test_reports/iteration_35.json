@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 35 REGRESSION testing after code cleanup (hoisted recharts constants in OverdueEvolutionChart.js + FinanceClientDetail.js, useCallback/useMemo, and os.environ.get with fallback in 9 test files). Backend regression: 13/13 new tests + 43/43 tests from iterations 30/32/33 all PASS. Frontend regression: /finance renders OverdueEvolutionChart with data-testid, all 4 period buttons (7d/30d/90d/YTD) work correctly, aria-pressed toggles correctly, the correct GET /api/finance/overdue-evolution?days=X is fired on each click (7, 90, 201=YTD), FinanceClientDetail opens without React error, and the credit-evolution-card histogram (with hoisted HIST_* constants) renders SVG cleanly on the Informação tab. All 9 modified backend test files load without syntax errors. No functional regressions from the refactor.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_35_regression.py",
+    "/app/test_reports/pytest/iteration_35_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Pre-existing (NOT caused by this iteration): FinanceClients.js and FinanceClientDetail.js emit React hydration warnings 'In HTML, <span> cannot be a child of <tbody>' / '<tr> cannot be a child of <span>' triggered by the visual-editor overlay injecting <span data-ve-dynamic style=display:contents> between <tbody> and <tr>. Cosmetic dev-only warnings, not a functional bug, but worth addressing when the visual-editor wrapper is next revisited.",
+    "Pre-existing (NOT caused by this iteration): Recharts warns 'width(-1) and height(-1) of chart should be greater than 0' on initial mount of ResponsiveContainer in OverdueEvolutionChart. This is a known recharts warning during 0-frame mount and disappears once layout resolves; not related to the constants hoist.",
+    "OverdueEvolutionChart.js: fetchData(signal) is invoked with AbortController correctly, but note that setLoading(true) still fires on aborted requests (finally block). Not a functional bug (state is set on unmounted-then-remounted component only in dev StrictMode), but could add an `if (!signal?.aborted)` guard before setLoading(false) for cleanliness."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_35_regression.py (new file)"
+  ],
+  "success_rate": {"backend": "100% (13/13 new + 43/43 prior iterations = 56/56)", "frontend": "100% (5/5 flows: /finance load, period selector state, API calls per period, client detail load, credit evolution histogram render)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (from /app/memory/test_credentials.md), TELEGRAM_INTERNAL_WEBHOOK_SECRET=pdpv_internal_webhook_2026",
+  "seed_data_creation": "None — used existing preview DB. Client 558edc41-6827-475b-aa1d-a65af7d03304 (cliente A) has credit_evolution data used to verify the FinanceClientDetail histogram.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file test_iteration_35_regression.py covers: admin login, /api/finance/overdue-evolution (days=7/30/90), dashboard, data-health, clients, promises, imports, client detail endpoint, /api/tickets?overdue=true, /api/telegram/internal/webhook (valid+invalid secret). To verify credit-evolution-card in the UI, navigate to /finance/clients/558edc41-6827-475b-aa1d-a65af7d03304 and click the 'Informação' tab. The 9 modified backend test files (test_finance_p0_iteration23, test_finance_phase2, test_finance_smoke_iteration25, test_iteration_30_dashboard_overdue, test_iteration_32_telegram_delegation, test_iteration_33_overdue_evolution, test_whatsapp_health, test_whatsapp_phase1, test_whatsapp_phase1_5) all import cleanly when REACT_APP_BACKEND_URL is exported.",
+  "rca of the issue": "No regressions found. All 5 code-cleanup changes (hoisted CHART_MARGIN/TOOLTIP_STYLE/LEGEND_STYLE/DOT_STYLE/ACTIVE_DOT_STYLE constants, fetchData in useCallback + useEffect dep [fetchData], PERIODS in useMemo, hoisted HIST_* constants in FinanceClientDetail, os.environ.get fallback in 9 test files) behave exactly as before functionally. Backend endpoints unchanged, frontend renders identically."
+}

@@ -12,9 +12,9 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://intake-ai-gateway.preview.emergentagent.com").rstrip("/")
 
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 NO_FIN_EMAIL = "rececao.teste@pdpv.pt"
-NO_FIN_PASSWORD = "TesteFin2026!"
+NO_FIN_PASSWORD = os.environ.get("TEST_NOFIN_PASSWORD", "TesteFin2026!")
 
 
 def _login(email: str, password: str) -> str:

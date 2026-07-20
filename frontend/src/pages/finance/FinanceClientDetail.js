@@ -7,6 +7,11 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Textarea } from '../../components/ui/textarea';
 import { Input } from '../../components/ui/input';
+
+// Hoisted constants — avoid inline objects that force re-renders every frame
+const HIST_CHART_MARGIN = { top: 8, right: 16, left: 8, bottom: 0 };
+const HIST_TICK_STYLE = { fontSize: 11 };
+const HIST_DOT_STYLE = { r: 3 };
 import {
   Dialog,
   DialogContent,
@@ -523,13 +528,13 @@ const FinanceClientDetail = () => {
                           return (ya + ma).localeCompare(yb + mb);
                         })
                         .map(([period, value]) => ({ period, value }))}
-                      margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
+                      margin={HIST_CHART_MARGIN}
                     >
-                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} width={70}
+                      <XAxis dataKey="period" tick={HIST_TICK_STYLE} />
+                      <YAxis tick={HIST_TICK_STYLE} width={70}
                         tickFormatter={(v) => `${(v / 1000).toFixed(0)}k€`} />
                       <Tooltip formatter={(v) => [formatCurrency(v), 'Saldo']} />
-                      <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={HIST_DOT_STYLE} />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>

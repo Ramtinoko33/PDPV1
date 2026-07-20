@@ -15,7 +15,7 @@ from passlib.context import CryptContext
 
 BASE_URL = (os.environ.get('REACT_APP_BACKEND_URL') or 'http://localhost:8001').rstrip('/')
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 
 
 def _login(email: str, password: str):

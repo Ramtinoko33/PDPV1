@@ -34,7 +34,7 @@ from pymongo import MongoClient  # noqa: E402
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 LOCAL_URL = "http://localhost:8001"
 WEBHOOK_URL_LOCAL = f"{LOCAL_URL}/api/telegram/internal/webhook"
-WEBHOOK_SECRET = "pdpv_internal_webhook_2026"
+WEBHOOK_SECRET = os.environ.get("TELEGRAM_INTERNAL_WEBHOOK_SECRET", "pdpv_internal_webhook_2026")
 
 TEST_USER_ID = 999000111
 TEST_CHAT_ID = 999000111  # same in the seeded fixture
@@ -305,7 +305,7 @@ class TestAdminEndpointRegressions:
     def admin_token(self):
         r = requests.post(
             f"{LOCAL_URL}/api/auth/login",
-            json={"email": "admin@pdpv.pt", "password": "HCNMEnKMLq"},
+            json={"email": "admin@pdpv.pt", "password": os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")},
             timeout=15,
         )
         assert r.status_code == 200, f"login failed: {r.status_code} {r.text[:200]}"

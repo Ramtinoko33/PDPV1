@@ -27,9 +27,9 @@ def _load_backend_url() -> str:
 
 BASE_URL = _load_backend_url()
 
-ADMIN = ("admin@pdpv.pt", "HCNMEnKMLq")
-COLLECTIONS = ("cobranca.teste@pdpv.pt", "TesteFin2026!")
-NO_FIN = ("rececao.teste@pdpv.pt", "TesteFin2026!")
+ADMIN = ("admin@pdpv.pt", os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq"))
+COLLECTIONS = ("cobranca.teste@pdpv.pt", os.environ.get("TEST_COLLECTIONS_PASSWORD", "TesteFin2026!"))
+NO_FIN = ("rececao.teste@pdpv.pt", os.environ.get("TEST_NOFIN_PASSWORD", "TesteFin2026!"))
 
 
 def _login(email: str, password: str) -> dict:

@@ -22,11 +22,11 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 COLLECTIONS_EMAIL = "cobranca.teste@pdpv.pt"
-COLLECTIONS_PASSWORD = "TesteFin2026!"
+COLLECTIONS_PASSWORD = os.environ.get("TEST_COLLECTIONS_PASSWORD", "TesteFin2026!")
 NOFIN_EMAIL = "rececao.teste@pdpv.pt"
-NOFIN_PASSWORD = "TesteFin2026!"
+NOFIN_PASSWORD = os.environ.get("TEST_NOFIN_PASSWORD", "TesteFin2026!")
 
 # --- helpers ---
 

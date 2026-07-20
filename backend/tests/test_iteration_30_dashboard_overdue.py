@@ -19,9 +19,9 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
 
 ADMIN_EMAIL = "admin@pdpv.pt"
-ADMIN_PASSWORD = "HCNMEnKMLq"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "HCNMEnKMLq")
 AGENT_EMAIL = "cobranca.teste@pdpv.pt"
-AGENT_PASSWORD = "TesteFin2026!"
+AGENT_PASSWORD = os.environ.get("TEST_AGENT_PASSWORD", "TesteFin2026!")
 
 
 # ---------- fixtures ----------
