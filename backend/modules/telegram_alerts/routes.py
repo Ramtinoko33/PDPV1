@@ -19,8 +19,16 @@ router = APIRouter(prefix="/telegram-alerts", tags=["Telegram Alerts"])
 
 # ============== WEBHOOK ==============
 @router.post("/webhook")
+async def telegram_alerts_webhook_deprecated(request: Request):
+    """DEPRECATED — Alertas bot consolidated into @pdpv_interno_bot.
+    Returns 200 OK so Telegram stops retrying.
+    """
+    return {"status": "deprecated", "message": "Bot consolidated into @pdpv_interno_bot"}
+
+
+@router.post("/webhook/legacy")
 async def telegram_alerts_webhook(request: Request):
-    """Receive Telegram bot updates (messages + callbacks)."""
+    """Receive Telegram bot updates (LEGACY, unrouted)."""
     try:
         payload = await request.json()
     except Exception:

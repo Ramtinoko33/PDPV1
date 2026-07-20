@@ -123,9 +123,17 @@ async def auto_setup_webhook(request: Request):
 
 
 @router.post("/webhook")
+async def telegram_webhook_deprecated(request: Request):
+    """DEPRECATED — Principal bot (@PDPV_OFICINA_BOT) consolidated into @pdpv_interno_bot.
+    Returns 200 OK so Telegram stops retrying.
+    """
+    return {"status": "deprecated", "message": "Bot consolidated into @pdpv_interno_bot"}
+
+
+@router.post("/webhook/legacy")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Telegram webhook endpoint v3 with message buffering.
+    Telegram webhook endpoint v3 with message buffering (LEGACY, unrouted).
     Waits 15 seconds to collect multiple messages before processing.
     Supports: text, photos, voice messages, and audio files.
     """

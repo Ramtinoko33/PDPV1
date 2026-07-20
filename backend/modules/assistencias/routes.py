@@ -38,7 +38,17 @@ def _check_access(user: dict):
 # ============== Telegram webhook ==============
 @router.post("/webhook")
 async def telegram_webhook(request: Request):
-    """Receive Telegram updates for the Assistências bot."""
+    """DEPRECATED — Assistências bot consolidated into @pdpv_interno_bot.
+    Returns 200 OK to prevent Telegram from retrying; any lingering webhook
+    delivery is silently absorbed. Users hitting the standalone bot will get
+    no response — direct them to @pdpv_interno_bot.
+    """
+    return {"status": "deprecated", "message": "Bot consolidated into @pdpv_interno_bot"}
+
+
+@router.post("/webhook/legacy")
+async def telegram_webhook_legacy(request: Request):
+    """Receive Telegram updates for the Assistências bot (LEGACY, unrouted)."""
     # Optional secret check
     expected_secret = os.environ.get("TELEGRAM_ASSISTENCIAS_WEBHOOK_SECRET")
     if expected_secret:

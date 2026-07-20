@@ -26,8 +26,16 @@ def _check_renting_access(user: dict):
 
 # ============== TELEGRAM WEBHOOK ==============
 @router.post("/webhook")
+async def telegram_webhook_deprecated(payload: dict = None):
+    """DEPRECATED — Renting bot consolidated into @pdpv_interno_bot.
+    Returns 200 OK so Telegram stops retrying.
+    """
+    return {"status": "deprecated", "message": "Bot consolidated into @pdpv_interno_bot"}
+
+
+@router.post("/webhook/legacy")
 async def telegram_webhook(payload: dict):
-    """Handle incoming Telegram updates for the Renting bot."""
+    """Handle incoming Telegram updates for the Renting bot (LEGACY, unrouted)."""
     # Callback queries
     cb = payload.get("callback_query")
     if cb:

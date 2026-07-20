@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 36 — Deprecation of the 4 old bot webhook handlers (telegram, telegram_alerts, renting, assistencias). Created /app/backend/tests/test_iteration_36_webhook_deprecation.py with 24 tests, all PASS: (a) 8 tests verifying the 4 old POST /webhook endpoints now return HTTP 200 with JSON {status:'deprecated', message: contains '@pdpv_interno_bot'} — including with a valid Telegram-shaped callback payload, confirming NO internal state is created (bot silenced); (b) 4 tests confirming /webhook/legacy routes remain registered on all 4 modules (no 404, original code preserved); (c) 5 regression tests on the consolidated /api/telegram/internal/webhook: valid+invalid secret and the 3 delegated flows (menu:assistencias → creates telegram_internal_states + assistencias_bot_state=WAIT_LOCATION for user 999000111; menu:renting → creates renting_records draft; menu:mech_alert → active_flow=mech_alert); (d) 7 regression tests on admin endpoints of the deprecated modules (/api/assistencias/records, /api/renting/records, /api/telegram-alerts/alerts, /api/telegram/internal/pending-users, /api/finance/dashboard, /api/finance/overdue-evolution?days=30, /api/tickets?overdue=true) — all 200. Also re-ran the full iteration_32 delegation suite → 15/15 PASS. No regressions detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_36_webhook_deprecation.py",
+    "/app/test_reports/pytest/iteration_36.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The 4 deprecated /webhook routes are correctly registered BEFORE the legacy handler (FastAPI registration order preserved), so the deprecation stub always wins — good.",
+    "Minor: in modules/renting/routes.py::telegram_webhook_deprecated the signature is `payload: dict = None`, which FastAPI treats as an optional query/body param and would fail to parse a POST with no body — but tests confirm it returns the deprecation JSON in all tested cases (empty JSON body and full callback payload). Consider changing to `async def telegram_webhook_deprecated(request: Request):` to align with the other 3 modules for consistency.",
+    "Minor: the 4 deprecated stubs read no body at all, which is the intent (silent absorb). This is correct per the design.",
+    "The legacy assistencias handler at /webhook/legacy still enforces the optional TELEGRAM_ASSISTENCIAS_WEBHOOK_SECRET → returns 403 when set. That is expected — the route exists (not 404), which is what we validate.",
+    "modules/telegram_alerts/routes.py: MAX_PHOTO_SIZE_MB=3 constant is defined AFTER it is referenced inside the legacy handler (module-scope free variable resolved at call-time), so it still works but is stylistically fragile. Cosmetic.",
+    "Overall: cleanup is surgical and low-risk. All old webhooks are effectively silenced with 200 OK, Telegram will stop retrying the residual Alerts/Assistencias webhooks whose tokens were lost."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_36_webhook_deprecation.py (new file)"
+  ],
+  "success_rate": {"backend": "100% (24/24 iteration 36 + 15/15 iteration 32 regression = 39/39)", "frontend": "N/A — backend only per request"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (from /app/memory/test_credentials.md); TELEGRAM_INTERNAL_WEBHOOK_SECRET=pdpv_internal_webhook_2026",
+  "seed_data_creation": "Test authorized user 999000111 (ADMIN, all flows) upserted into telegram_internal_authorized_users; per-test cleanup of telegram_internal_states / assistencias_bot_state / renting_records drafts scoped to this user.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration_36_webhook_deprecation.py covers 4 deprecated webhooks + 4 legacy routes + internal webhook delegation + 7 admin endpoints. To re-run: `cd /app/backend && REACT_APP_BACKEND_URL=<preview> python -m pytest tests/test_iteration_36_webhook_deprecation.py -v`. Uses localhost:8001 for webhooks (internal secret path) and the same URL for admin endpoints via bearer token. Iteration 32 delegation suite (15 tests) is fully compatible and still passes — the deprecation only touched the 4 old /webhook routes, nothing in the internal bot delegation logic.",
+  "rca of the issue": "N/A — no issues found. The 4 deprecation stubs behave exactly as specified in the review request: 200 OK with {status:'deprecated', message:'Bot consolidated into @pdpv_interno_bot'} on all inputs, no side-effects, legacy code preserved verbatim at /webhook/legacy on each router. The consolidated internal bot (@pdpv_interno_bot) continues receiving updates and the Iteration 32 delegation logic (assistencias/renting/mech_alert) is fully intact."
+}
