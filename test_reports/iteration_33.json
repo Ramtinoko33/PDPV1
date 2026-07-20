@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 33 – Full backend+frontend validation of GET /api/finance/overdue-evolution and the new OverdueEvolutionChart on /finance. 18/18 pytest cases PASS (shape, math consistency, days clamp 1/0/400, auth 401 & 403, and regressions on /dashboard, /collections/today, /clients, /promises, /data-health). Frontend renders the chart with correct KPI values (221 € recovered, 221 € newly overdue, 0 € delta) and the exact 'Estagnado — recuperado a compensar novas vencidas' badge that spec requires for delta=0. Recharts SVG paints, tooltip is functional, tabs (Cobranças Hoje / Clientes / Promessas) remain navigable, freshness badge preserved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/finance – OverdueEvolutionChart", "issues": ["Right Y-axis (scale for the two Bar series) shows '0k' repeated on every tick because both bar values (221 €) are tiny compared to the '(v/1000).toFixed(0)k' formatter — labels collapse to 0k. Consider using a smarter formatter (e.g. show '221' if v<1000 else `${(v/1000).toFixed(0)}k`) or removing the right-axis ticks when max bar value < 1000. Cosmetic only — chart still renders correctly."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_33_overdue_evolution.py",
+    "/app/test_reports/pytest/iteration_33_results.xml"
+  ],
+  "action_items": [
+    "(Optional, cosmetic) Improve the right-axis tick formatter in OverdueEvolutionChart.js so that sub-1k values don't all display as '0k'. Suggested: `tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`}`."
+  ],
+  "critical_code_review_comments": [
+    "backend/modules/finance/routes.py: the endpoint uses a hard limit `days=max(1, min(days, 365))` but does not declare `days` as a Query with ge/le validation. Consider `days: int = Query(30, ge=1, le=365)` so FastAPI returns 422 for invalid input instead of silently clamping (current behaviour is fine but hides caller bugs).",
+    "The math for `newly_overdue = net_change + recovered` assumes recovered_amount is expressed on the same signed convention as overdue drops. This holds today because recovery events are always positive amounts subtracted from overdue. If a future 'reverse recovery' (e.g. reopened invoice) is inserted with negative amount, the formula still works, but a comment/unit-test lock would help.",
+    "OverdueEvolutionChart.js imports `Badge` from '../../components/ui/badge' but never uses the component (only uses the custom pill div). Remove the unused import to satisfy eslint no-unused-vars.",
+    "OverdueEvolutionChart.js: error state only shows generic 'Erro ao carregar histórico' — swallows the axios error. Consider surfacing e.response?.data?.detail for easier support debugging.",
+    "The chart re-fetches on every `days` change but has no abort controller — if user rapidly toggles the period selector (once one exists), stale responses can arrive out of order and overwrite fresher data. Wrap with AbortController + cleanup in useEffect."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (chart renders, KPIs correct, trend badge correct, regressions OK)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (ADMIN + finance_role=OWNER); rececao.teste@pdpv.pt / TesteFin2026! (no finance_role, used to assert 403)",
+  "seed_data_creation": "None. Preview DB has 2 snapshots (2026-07-01, 07-02) + 2 recovery events on 07-02 (sum=221.41 €). This exactly matches the 'estagnado' scenario the user reported in production.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reusable pytest at /app/backend/tests/test_iteration_33_overdue_evolution.py covers /api/finance/overdue-evolution shape, math (newly_overdue = net_change + recovered), auth (401 for anon, 403 for finance_role=null), clamp (1/0/400 days), and regression on /finance/dashboard, /collections/today, /clients, /promises, /data-health. Preview scenario expected values: series len=2, dates 07-01 & 07-02, total_recovered=221.41, total_newly_overdue=221.41, total_delta=0. Frontend badge text for delta=0 = 'Estagnado — recuperado a compensar novas vencidas'.",
+  "rca of the issue": "Not applicable — this iteration adds a new feature (not a bug fix). Feature works end-to-end. Only cosmetic issue is the right-axis '0k' repetition on the recharts ComposedChart when bar values are < 1000, which is a purely visual concern in the current small-data preview environment."
+}

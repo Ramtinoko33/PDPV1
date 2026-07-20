@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import axios from 'axios';
+import OverdueEvolutionChart from './OverdueEvolutionChart';
 import {
   TrendingUp,
   TrendingDown,
@@ -299,6 +300,9 @@ const FinanceDashboard = () => {
           </Card>
         ))}
       </div>
+
+      {/* Evolução do Vencido Cobrável (Recuperado vs Novas Vencidas) */}
+      <OverdueEvolutionChart days={30} />
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

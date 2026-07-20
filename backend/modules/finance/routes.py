@@ -258,6 +258,97 @@ async def get_dashboard(current_user: dict = Depends(require_finance_access)):
 
 # ============== COLLECTIONS TODAY ==============
 
+@router.get("/overdue-evolution")
+async def get_overdue_evolution(
+    days: int = 30,
+    current_user: dict = Depends(require_finance_access),
+):
+    """Time series of daily overdue-collectable evolution + recovered vs newly-overdue split.
+
+    For each of the last N days that had at least one import, returns:
+      - date (YYYY-MM-DD)
+      - total_overdue_collectable (aggregated from finance_client_daily_metrics)
+      - total_balance
+      - recovered_amount (sum of finance_recovery_events for that date)
+      - net_change (today_overdue - previous_day_overdue). Positive → dívida está a crescer;
+        negativo → dívida está a diminuir.
+      - newly_overdue (implicito): net_change + recovered_amount. Faturas que passaram a
+        vencidas no dia. Se `newly_overdue > recovered`, a operação está a perder terreno.
+    """
+    days = max(1, min(days, 365))
+    cutoff = (date.today() - timedelta(days=days - 1)).isoformat()
+
+    # Aggregate daily overdue from snapshots
+    snap_pipeline = [
+        {"$match": {"date": {"$gte": cutoff}}},
+        {"$group": {
+            "_id": "$date",
+            "total_overdue_collectable": {"$sum": "$overdue_balance_collectable"},
+            "total_overdue_accounting": {"$sum": "$overdue_balance_accounting"},
+            "total_balance": {"$sum": "$total_balance"},
+            "total_residual": {"$sum": "$residual_balance"},
+            "clients": {"$sum": 1},
+            "clients_with_overdue": {
+                "$sum": {"$cond": [{"$gt": ["$overdue_balance_collectable", 0]}, 1, 0]}
+            },
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    snaps = await db.finance_client_daily_metrics.aggregate(snap_pipeline).to_list(365)
+
+    # Aggregate recovered per date
+    rec_pipeline = [
+        {"$match": {"date": {"$gte": cutoff}}},
+        {"$group": {
+            "_id": "$date",
+            "recovered_amount": {"$sum": "$amount"},
+            "events": {"$sum": 1},
+        }},
+    ]
+    recs = await db.finance_recovery_events.aggregate(rec_pipeline).to_list(365)
+    rec_by_date = {r["_id"]: r for r in recs}
+
+    # Build time series
+    series = []
+    prev_overdue = None
+    for s in snaps:
+        d = s["_id"]
+        overdue = round(s.get("total_overdue_collectable", 0.0), 2)
+        recovered = round((rec_by_date.get(d) or {}).get("recovered_amount", 0.0), 2)
+        net_change = round(overdue - prev_overdue, 2) if prev_overdue is not None else 0.0
+        # newly_overdue = net_change + recovered  → faturas que se tornaram vencidas
+        # (só significativo quando há histórico do dia anterior)
+        newly_overdue = round(net_change + recovered, 2) if prev_overdue is not None else 0.0
+        series.append({
+            "date": d,
+            "total_overdue_collectable": overdue,
+            "total_overdue_accounting": round(s.get("total_overdue_accounting", 0.0), 2),
+            "total_balance": round(s.get("total_balance", 0.0), 2),
+            "total_residual": round(s.get("total_residual", 0.0), 2),
+            "clients_with_overdue": s.get("clients_with_overdue", 0),
+            "recovered_amount": recovered,
+            "recovered_events": (rec_by_date.get(d) or {}).get("events", 0),
+            "net_change": net_change,
+            "newly_overdue": newly_overdue,
+        })
+        prev_overdue = overdue
+
+    # Summary: how much did overdue change across the whole window?
+    summary = {
+        "days_covered": len(series),
+        "first_date": series[0]["date"] if series else None,
+        "last_date": series[-1]["date"] if series else None,
+        "overdue_at_start": series[0]["total_overdue_collectable"] if series else 0,
+        "overdue_at_end": series[-1]["total_overdue_collectable"] if series else 0,
+        "total_delta": round(
+            series[-1]["total_overdue_collectable"] - series[0]["total_overdue_collectable"], 2
+        ) if len(series) >= 2 else 0,
+        "total_recovered": round(sum(p["recovered_amount"] for p in series), 2),
+        "total_newly_overdue": round(sum(p["newly_overdue"] for p in series), 2),
+    }
+    return {"series": series, "summary": summary}
+
+
 @router.get("/collections/today", response_model=CollectionsTodayResponse)
 async def get_collections_today(
     limit: int = Query(100, ge=1, le=500),
