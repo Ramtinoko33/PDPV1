@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel
 
 from db import db
@@ -26,7 +26,7 @@ def _check_renting_access(user: dict):
 
 # ============== TELEGRAM WEBHOOK ==============
 @router.post("/webhook")
-async def telegram_webhook_deprecated(payload: dict = None):
+async def telegram_webhook_deprecated(request: Request):
     """DEPRECATED — Renting bot consolidated into @pdpv_interno_bot.
     Returns 200 OK so Telegram stops retrying.
     """
