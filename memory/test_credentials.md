@@ -59,3 +59,23 @@
 ### Where pré-tickets land
 - Internal bot finalize → inserts into **`intake_requests`** (NOT `pre_tickets`)
   with `source_bot=PDPV_INTERNAL_BOT`. Visible in `/intake` UI.
+
+
+## Telegram Bot Tokens (LEGACY — DEPRECATED but preserved for rollback)
+
+Post consolidation (Feb 2026), all 4 legacy bots have their **webhook deleted**
+via Telegram API. The internal bot (@pdpv_interno_bot) is the sole active
+receiver of Telegram updates. `.env` has all 4 legacy `TELEGRAM_*_BOT_TOKEN`
+vars pointing to the internal bot's token, so any lingering standalone service
+code sends messages through @pdpv_interno_bot.
+
+**Original tokens** (kept here for future rollback; do NOT put them back in `.env`
+without a plan to re-enable the standalone bots):
+
+| Bot | Username | Original token |
+|---|---|---|
+| Principal | `@PDPV_OFICINA_BOT` | `8644214900:AAE9S_oXJvW7tIB2neOZWZoXyhPrS_tjZiU` |
+| Alertas | `@pdpv_alertas_bot` | `8660518959:AAGRn3bp7EffAVoXwGX9gzgAsjS3vEXFzM4` |
+| Renting | `@pdpv_rentingpneus_bot` | `8545209671:AAGhPStXU9Wqzqlo6gTz7vcCs4plTEpsZY4` |
+| Assistências | `@pdpv_assistencias_bot` | `8232271022:AAEK_y3nimv0pcyRS1c1lWqFyEyaFA6r-oQ` |
+| **Interno (ACTIVE)** | `@pdpv_interno_bot` | value in `TELEGRAM_INTERNAL_BOT_TOKEN` |
