@@ -71,10 +71,22 @@ class DocumentClassification(str, Enum):
     COLLECTABLE = "collectable"           # Cobrável normal
     RESIDUAL = "residual"                 # Saldo residual (<= 1€)
     RESIDUAL_ACCUMULATED = "residual_accumulated"  # Residual acumulado (> 5€ total)
+    MICRO_OLD = "micro_old"               # Micro-saldo antigo (<= 5€ e > 365 dias vencidos)
     CREDIT = "credit"                     # Nota de crédito
     DISPUTE = "dispute"                   # Em disputa
     PAYMENT_PLAN = "payment_plan"         # Em plano de pagamento
+    RESOLVED_OPERATIONALLY = "resolved_operationally"  # Marcado como resolvido operacionalmente
     UNKNOWN = "unknown"
+
+
+class DocumentActionType(str, Enum):
+    """Ações aplicáveis a documentos residuais/micro-old/em disputa"""
+    MARK_COLLECTABLE = "mark_collectable"                   # Forçar cobrança normal
+    MARK_DISPUTE = "mark_dispute"                           # Marcar como em disputa
+    MARK_RESOLVED_OPERATIONALLY = "mark_resolved_operationally"  # Sem cobrança, sem regularização
+    REGULARIZE_INTERNALLY = "regularize_internally"         # Pedir regularização à contabilidade
+    KEEP_IN_COLLECTIONS = "keep_in_collections"             # Reverter marcação e voltar a cobrar
+    RESET = "reset"                                         # Limpar overrides manuais
 
 
 class ActionType(str, Enum):
@@ -217,6 +229,12 @@ class FinanceDocumentResponse(BaseModel):
     amount_overdue: float = 0.0
     days_overdue: int = 0
     classification: DocumentClassification
+    effective_classification: Optional[DocumentClassification] = None
+    manually_marked_collectable: bool = False
+    manual_action: Optional[str] = None
+    manual_action_reason: Optional[str] = None
+    manual_action_by: Optional[str] = None
+    manual_action_at: Optional[str] = None
     last_import_id: str
     created_at: str
     updated_at: str
@@ -439,20 +457,44 @@ class CollectionsTodayResponse(BaseModel):
 
 # --- Regularizations ---
 class RegularizationItem(BaseModel):
-    """Item de regularização"""
+    """Item de regularização (por documento)"""
+    # Documento
+    document_id: str
+    document_type: str
+    document_number: str
+    invoice_date: Optional[str] = None
+    due_date: Optional[str] = None
+    amount_open: float
+    days_overdue: int
+    classification: DocumentClassification
+    manual_action: Optional[str] = None
+
+    # Cliente
     client_id: str
     client_name: str
     genes_code: str
-    residual_balance: float
-    residual_document_count: int
-    suggestion: str  # "ignore", "review", "request_regularization"
+
+    # Agregado do cliente
+    client_residual_balance: float = 0.0
+    client_residual_document_count: int = 0
+
+    # Sugestão
+    suggestion_code: str  # "ignore" | "review" | "request_regularization" | "validate_old_invoice"
+    suggestion_label: str
 
 
 class RegularizationsResponse(BaseModel):
-    """Lista de regularizações"""
+    """Lista de regularizações (por documento)"""
     items: List[RegularizationItem]
     total_residual: float
+    total_documents: int
     total_clients: int
+
+
+class DocumentActionCreate(BaseModel):
+    """Acção manual sobre um documento (residual/micro-old/disputa/resolvido)"""
+    action: DocumentActionType
+    reason: Optional[str] = None
 
 # --- Configurações do módulo ---
 class FinanceSettingsUpdate(BaseModel):
@@ -461,4 +503,5 @@ class FinanceSettingsUpdate(BaseModel):
     residual_client_threshold: Optional[float] = Field(None, ge=0, le=10000)
     residual_percentage_threshold: Optional[float] = Field(None, ge=0, le=1)
     residual_max_documents: Optional[int] = Field(None, ge=1, le=1000)
+    micro_old_days_threshold: Optional[int] = Field(None, ge=30, le=3650)
     show_credit_warning_on_tickets: Optional[bool] = None

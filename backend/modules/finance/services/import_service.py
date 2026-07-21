@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS = {
     'residual_document_threshold': 1.00,      # até 1€ por documento
     'residual_client_threshold': 5.00,        # até 5€ acumulado por cliente
-    'residual_percentage_threshold': 0.005,   # até 0.5% do valor original
+    'residual_percentage_threshold': 0.005,   # até 0.5% do valor original (deprecated)
     'residual_max_documents': 10,             # máximo de documentos residuais por cliente
+    'micro_old_days_threshold': 365,          # dias vencidos p/ considerar micro-saldo antigo
     'show_credit_warning_on_tickets': True,   # aviso genérico nos tickets
 }
 
@@ -124,35 +125,53 @@ def classify_document(
     amount_open: float,
     amount_original: Optional[float],
     is_credit_note: bool,
+    days_overdue: int = 0,
     in_dispute: bool = False,
     in_payment_plan: bool = False,
     config: Optional[Dict[str, Any]] = None
 ) -> DocumentClassification:
     """
-    Classifica um documento (cobrável, residual, crédito, etc.)
+    Classifica um documento (cobrável, residual, micro-old, crédito, etc.)
+
+    Regras (por ordem de precedência):
+      1) Nota de crédito / valor negativo -> CREDIT
+      2) Em disputa -> DISPUTE
+      3) Em plano de pagamento -> PAYMENT_PLAN
+      4) amount_open <= 0 -> COLLECTABLE (nada em aberto)
+      5) amount_open <= residual_document_threshold (default 1€) -> RESIDUAL
+         (sempre, independentemente da % do valor original — evita micro-saldos
+         de €0.80 sobre faturas grandes ficarem como cobráveis)
+      6) amount_open <= residual_client_threshold (default 5€) E
+         days_overdue > 365 -> MICRO_OLD
+         (micro-saldo antigo — provável desactualização contabilística)
+      7) Caso contrário -> COLLECTABLE
     """
     cfg = config or DEFAULT_SETTINGS
-    
-    if is_credit_note or amount_open < 0:
+
+    if is_credit_note or (amount_open is not None and amount_open < 0):
         return DocumentClassification.CREDIT
-    
+
     if in_dispute:
         return DocumentClassification.DISPUTE
-    
+
     if in_payment_plan:
         return DocumentClassification.PAYMENT_PLAN
-    
-    # Verificar se é residual
-    if amount_open > 0 and amount_open <= cfg['residual_document_threshold']:
-        # Verificar percentagem se temos valor original
-        if amount_original and amount_original > 0:
-            percentage = amount_open / amount_original
-            if percentage <= cfg['residual_percentage_threshold']:
-                return DocumentClassification.RESIDUAL
-        else:
-            # Sem valor original, usar apenas threshold absoluto
-            return DocumentClassification.RESIDUAL
-    
+
+    if amount_open is None or amount_open <= 0:
+        return DocumentClassification.COLLECTABLE
+
+    residual_doc_threshold = cfg.get('residual_document_threshold', 1.00)
+    micro_old_threshold = cfg.get('residual_client_threshold', 5.00)
+    micro_old_days = cfg.get('micro_old_days_threshold', 365)
+
+    # Regra 5 — residual absoluto (independente de %)
+    if amount_open <= residual_doc_threshold:
+        return DocumentClassification.RESIDUAL
+
+    # Regra 6 — micro-saldo antigo
+    if amount_open <= micro_old_threshold and days_overdue > micro_old_days:
+        return DocumentClassification.MICRO_OLD
+
     return DocumentClassification.COLLECTABLE
 
 
@@ -256,23 +275,54 @@ async def process_overdue_balances_import(
                 amount_original = doc.get('amount_due')
                 is_credit = doc.get('document_type') == 'NC' or amount_open < 0
                 days_overdue = doc.get('days_overdue', 0)
-                
+
                 classification = classify_document(
                     amount_open=amount_open,
                     amount_original=amount_original,
-                    is_credit_note=is_credit
+                    is_credit_note=is_credit,
+                    days_overdue=days_overdue,
+                    config=cfg,
                 )
-                
-                if classification == DocumentClassification.RESIDUAL:
+
+                # Preservar override manual em documento existente
+                doc_id = f"{genes_code}_{doc['document_number']}"
+                existing_doc = await db.finance_documents.find_one({"id": doc_id}, {
+                    "_id": 0,
+                    "manually_marked_collectable": 1,
+                    "manual_action": 1,
+                    "manual_action_reason": 1,
+                    "manual_action_by": 1,
+                    "manual_action_at": 1,
+                }) or {}
+                manually_marked_collectable = bool(existing_doc.get("manually_marked_collectable", False))
+                manual_action = existing_doc.get("manual_action")
+
+                # Classificação efectiva (o que decide se entra em cobrança)
+                effective = classification
+                if manually_marked_collectable:
+                    effective = DocumentClassification.COLLECTABLE
+                elif manual_action == "mark_dispute":
+                    effective = DocumentClassification.DISPUTE
+                elif manual_action == "mark_resolved_operationally":
+                    effective = DocumentClassification.RESOLVED_OPERATIONALLY
+                elif manual_action == "regularize_internally":
+                    # continua a contar como residual/micro-old, apenas com flag
+                    pass
+
+                # Agregação
+                if effective == DocumentClassification.COLLECTABLE:
+                    if amount_open > 0:
+                        overdue_collectable += amount_open
+                        if days_overdue > oldest_overdue_days:
+                            oldest_overdue_days = days_overdue
+                elif effective in (
+                    DocumentClassification.RESIDUAL,
+                    DocumentClassification.MICRO_OLD,
+                ):
                     total_residual += amount_open
                     residual_doc_count += 1
-                elif classification == DocumentClassification.COLLECTABLE:
-                    overdue_collectable += amount_open
-                    if days_overdue > oldest_overdue_days:
-                        oldest_overdue_days = days_overdue
-                
-                # Criar/atualizar documento
-                doc_id = f"{genes_code}_{doc['document_number']}"
+                # DISPUTE / RESOLVED_OPERATIONALLY / CREDIT / PAYMENT_PLAN: não somam a nenhum bucket operacional
+
                 doc_record = {
                     "id": doc_id,
                     "client_id": existing_client['id'] if existing_client else None,
@@ -286,10 +336,16 @@ async def process_overdue_balances_import(
                     "amount_overdue": amount_open,
                     "days_overdue": days_overdue,
                     "classification": classification.value,
+                    "effective_classification": effective.value,
+                    "manually_marked_collectable": manually_marked_collectable,
+                    "manual_action": manual_action,
+                    "manual_action_reason": existing_doc.get("manual_action_reason"),
+                    "manual_action_by": existing_doc.get("manual_action_by"),
+                    "manual_action_at": existing_doc.get("manual_action_at"),
                     "last_import_id": import_id,
                     "updated_at": now
                 }
-                
+
                 await db.finance_documents.update_one(
                     {"id": doc_id},
                     {"$set": doc_record, "$setOnInsert": {"created_at": now}},
@@ -996,3 +1052,173 @@ async def process_open_documents_import(
         )
     
     return result
+
+
+# ============== RECOMPUTAÇÃO GLOBAL ==============
+
+async def recompute_documents_and_clients(
+    triggered_by: str = "system",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """
+    Reprocessa a classificação de TODOS os documentos existentes na BD (sem re-importar)
+    e recalcula os agregados de cada cliente (`overdue_balance_collectable`,
+    `residual_balance`, `is_residual_only`, `oldest_overdue_days`, `financial_status`,
+    `traffic_light`).
+
+    Respeita overrides manuais (`manually_marked_collectable`, `manual_action`).
+
+    Devolve um sumário. Se `dry_run=True`, não escreve na BD.
+    """
+    cfg = await get_finance_settings()
+    now = datetime.now(timezone.utc).isoformat()
+
+    docs_reclassified = 0
+    docs_total = 0
+    clients_updated = 0
+    changes_by_class: Dict[str, int] = {}
+
+    # 1) Reclassificar documentos e agrupar por cliente
+    per_client_aggregates: Dict[str, Dict[str, Any]] = {}
+
+    async for doc in db.finance_documents.find({}, {"_id": 0}):
+        docs_total += 1
+        amount_open = float(doc.get("amount_open", 0) or 0)
+        amount_original = doc.get("amount_original")
+        days_overdue = int(doc.get("days_overdue", 0) or 0)
+        is_credit = doc.get("document_type") == "NC" or amount_open < 0
+        prev_class = doc.get("classification")
+        manually_marked_collectable = bool(doc.get("manually_marked_collectable", False))
+        manual_action = doc.get("manual_action")
+
+        new_class = classify_document(
+            amount_open=amount_open,
+            amount_original=amount_original,
+            is_credit_note=is_credit,
+            days_overdue=days_overdue,
+            config=cfg,
+        )
+
+        effective = new_class
+        if manually_marked_collectable:
+            effective = DocumentClassification.COLLECTABLE
+        elif manual_action == "mark_dispute":
+            effective = DocumentClassification.DISPUTE
+        elif manual_action == "mark_resolved_operationally":
+            effective = DocumentClassification.RESOLVED_OPERATIONALLY
+
+        if new_class.value != prev_class:
+            docs_reclassified += 1
+            key = f"{prev_class}->{new_class.value}"
+            changes_by_class[key] = changes_by_class.get(key, 0) + 1
+
+        if not dry_run:
+            await db.finance_documents.update_one(
+                {"id": doc["id"]},
+                {"$set": {
+                    "classification": new_class.value,
+                    "effective_classification": effective.value,
+                    "updated_at": now,
+                }}
+            )
+
+        client_id = doc.get("client_id")
+        if not client_id:
+            continue
+
+        agg = per_client_aggregates.setdefault(client_id, {
+            "overdue_collectable": 0.0,
+            "residual_balance": 0.0,
+            "residual_doc_count": 0,
+            "oldest_overdue_days": 0,
+            "in_dispute": False,
+        })
+
+        if effective == DocumentClassification.COLLECTABLE:
+            if amount_open > 0:
+                agg["overdue_collectable"] += amount_open
+                if days_overdue > agg["oldest_overdue_days"]:
+                    agg["oldest_overdue_days"] = days_overdue
+        elif effective in (
+            DocumentClassification.RESIDUAL,
+            DocumentClassification.MICRO_OLD,
+        ):
+            agg["residual_balance"] += amount_open
+            agg["residual_doc_count"] += 1
+        elif effective == DocumentClassification.DISPUTE:
+            agg["in_dispute"] = True
+
+    # 2) Actualizar agregados nos clientes
+    if not dry_run:
+        for client_id, agg in per_client_aggregates.items():
+            client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0})
+            if not client:
+                continue
+
+            overdue_collectable = round(agg["overdue_collectable"], 2)
+            residual_balance = round(agg["residual_balance"], 2)
+            is_residual_only = overdue_collectable <= 0 and residual_balance > 0
+
+            is_blocked = bool(client.get("is_blocked", False))
+            current_status = client.get("financial_status")
+            block_suggested = current_status == FinancialStatus.BLOQUEIO_SUGERIDO.value
+
+            has_active_promise = await db.finance_promises.count_documents({
+                "client_id": client_id, "status": "open"
+            }) > 0
+            has_failed_promise = await db.finance_promises.count_documents({
+                "client_id": client_id, "status": "failed"
+            }) > 0
+
+            financial_status = calculate_financial_status(
+                overdue_collectable=overdue_collectable,
+                residual_balance=residual_balance,
+                is_residual_only=is_residual_only,
+                is_blocked=is_blocked,
+                has_active_promise=has_active_promise,
+                has_failed_promise=has_failed_promise,
+                in_dispute=agg["in_dispute"] or current_status == FinancialStatus.EM_DISPUTA.value,
+                block_suggested=block_suggested,
+            )
+
+            total_balance = float(client.get("total_balance", 0) or 0)
+            traffic_light = calculate_traffic_light(
+                oldest_overdue_days=agg["oldest_overdue_days"],
+                overdue_collectable=overdue_collectable,
+                total_balance=total_balance,
+                has_failed_promise=has_failed_promise,
+                is_blocked=is_blocked,
+                financial_status=financial_status.value,
+            )
+
+            await db.finance_clients.update_one(
+                {"id": client_id},
+                {"$set": {
+                    "overdue_balance_collectable": overdue_collectable,
+                    "residual_balance": residual_balance,
+                    "oldest_overdue_days": agg["oldest_overdue_days"],
+                    "is_residual_only": is_residual_only,
+                    "financial_status": financial_status.value,
+                    "traffic_light": traffic_light.value,
+                    "updated_at": now,
+                }}
+            )
+            clients_updated += 1
+
+    summary = {
+        "triggered_by": triggered_by,
+        "dry_run": dry_run,
+        "documents_total": docs_total,
+        "documents_reclassified": docs_reclassified,
+        "clients_updated": clients_updated,
+        "changes_by_class": changes_by_class,
+        "executed_at": now,
+    }
+    logger.info(f"Finance recompute: {summary}")
+
+    if not dry_run:
+        await db.finance_recompute_log.insert_one({
+            "id": str(uuid.uuid4()),
+            **summary,
+        })
+    return summary

@@ -20,7 +20,7 @@ from .models import (
     # Enums
     FinanceRole, FinancialStatus, TrafficLight,
     ImportType, ImportStatus, ImportSourceMethod,
-    DocumentClassification, ActionType, DelayReason,
+    DocumentClassification, DocumentActionType, ActionType, DelayReason,
     PromiseStatus, BlockRequestStatus, DataHealthStatus,
     # Request/Response
     FinanceClientResponse, FinanceClientListResponse,
@@ -33,6 +33,7 @@ from .models import (
     DashboardResponse, AgingBucket, TopDebtor,
     CollectionsTodayResponse, CollectionItem,
     RegularizationsResponse, RegularizationItem,
+    DocumentActionCreate,
     FinanceSettingsUpdate,
 )
 from .permissions import (
@@ -50,6 +51,7 @@ from .services.import_service import (
     process_credit_evolution_import,
     process_open_documents_import,
     get_finance_settings,
+    recompute_documents_and_clients,
 )
 
 logger = logging.getLogger(__name__)
@@ -352,10 +354,23 @@ async def get_overdue_evolution(
 @router.get("/collections/today", response_model=CollectionsTodayResponse)
 async def get_collections_today(
     limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    min_overdue: Optional[float] = Query(None, ge=0),
+    max_overdue: Optional[float] = Query(None, ge=0),
+    min_days: Optional[int] = Query(None, ge=0),
+    max_days: Optional[int] = Query(None, ge=0),
+    only_low_values: bool = Query(False, description="Apenas vencidos <= 5€"),
+    only_old_docs: bool = Query(False, description="Apenas > 365 dias vencidos"),
+    financial_status: Optional[FinancialStatus] = None,
+    sort_by: str = Query(
+        "priority",
+        pattern="^(priority|overdue_asc|overdue_desc|total_asc|total_desc|days_asc|days_desc|last_action|financial_status|doc_count)$"
+    ),
     current_user: dict = Depends(require_finance_access)
 ):
     """
     Lista de cobranças do dia - clientes prioritários para contactar.
+    Suporta filtros por valor vencido, dias, estado financeiro e ordenação.
     """
     # Verificar se dados estão atualizados
     data_health = await get_data_health(current_user)
@@ -370,7 +385,7 @@ async def get_collections_today(
         )
     
     # Buscar clientes para cobrança (excluir residuais, bloqueados sem ação pendente)
-    query = {
+    query: dict = {
         "overdue_balance_collectable": {"$gt": 0},
         "is_residual_only": {"$ne": True},
         "financial_status": {"$nin": [
@@ -378,21 +393,76 @@ async def get_collections_today(
             FinancialStatus.OK.value
         ]}
     }
-    
+
+    if financial_status:
+        query["financial_status"] = financial_status.value
+
+    if min_overdue is not None or max_overdue is not None:
+        overdue_q = query.get("overdue_balance_collectable", {"$gt": 0})
+        if min_overdue is not None:
+            overdue_q["$gte"] = min_overdue
+        if max_overdue is not None:
+            overdue_q["$lte"] = max_overdue
+        query["overdue_balance_collectable"] = overdue_q
+
+    if only_low_values:
+        overdue_q = query.get("overdue_balance_collectable", {"$gt": 0})
+        overdue_q["$lte"] = 5.0
+        query["overdue_balance_collectable"] = overdue_q
+
+    if min_days is not None or max_days is not None or only_old_docs:
+        days_q: dict = {}
+        if min_days is not None:
+            days_q["$gte"] = min_days
+        if max_days is not None:
+            days_q["$lte"] = max_days
+        if only_old_docs:
+            days_q["$gt"] = max(days_q.get("$gt", 0), 365)
+        query["oldest_overdue_days"] = days_q
+
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"genes_code": {"$regex": search, "$options": "i"}},
+        ]
+
     # Buscar clientes com promessas ativas/falhadas
     active_promises = await db.finance_promises.distinct("client_id", {"status": PromiseStatus.OPEN.value})
     failed_promises = await db.finance_promises.distinct("client_id", {"status": PromiseStatus.FAILED.value})
     active_promises_set = set(active_promises)
     failed_promises_set = set(failed_promises)
-    
-    # Buscar clientes
-    clients_cursor = db.finance_clients.find(query, {"_id": 0}).sort([
-        ("traffic_light", -1),  # Críticos primeiro
-        ("overdue_balance_collectable", -1)
-    ]).limit(limit)
+
+    # Ordenação Mongo (rápido)
+    mongo_sort: List[tuple] = []
+    if sort_by == "overdue_asc":
+        mongo_sort = [("overdue_balance_collectable", 1)]
+    elif sort_by == "overdue_desc":
+        mongo_sort = [("overdue_balance_collectable", -1)]
+    elif sort_by == "total_asc":
+        mongo_sort = [("total_balance", 1)]
+    elif sort_by == "total_desc":
+        mongo_sort = [("total_balance", -1)]
+    elif sort_by == "days_asc":
+        mongo_sort = [("oldest_overdue_days", 1)]
+    elif sort_by == "days_desc":
+        mongo_sort = [("oldest_overdue_days", -1)]
+    elif sort_by == "last_action":
+        mongo_sort = [("last_action_at", 1)]
+    elif sort_by == "financial_status":
+        mongo_sort = [("financial_status", 1)]
+    else:
+        # priority | doc_count -> ordenação em Python
+        mongo_sort = [("traffic_light", -1), ("overdue_balance_collectable", -1)]
+
+    clients_cursor = db.finance_clients.find(query, {"_id": 0}).sort(mongo_sort).limit(limit)
     
     items = []
     total_value = 0.0
+
+    # doc_count precisa de $lookup — fazer em Python (limitado por `limit`)
+    doc_counts: dict[str, int] = {}
+    if sort_by == "doc_count":
+        pass  # calculado abaixo por cliente
     
     async for client in clients_cursor:
         client_id = client["id"]
@@ -411,6 +481,13 @@ async def get_collections_today(
         
         priority_score += min(client.get("oldest_overdue_days", 0) / 10, 20)
         priority_score += min(client.get("overdue_balance_collectable", 0) / 1000, 30)
+
+        if sort_by == "doc_count":
+            doc_counts[client_id] = await db.finance_documents.count_documents({
+                "client_id": client_id,
+                "effective_classification": DocumentClassification.COLLECTABLE.value,
+                "amount_open": {"$gt": 0},
+            })
         
         items.append(CollectionItem(
             client_id=client_id,
@@ -431,8 +508,11 @@ async def get_collections_today(
         
         total_value += client.get("overdue_balance_collectable", 0.0)
     
-    # Ordenar por prioridade
-    items.sort(key=lambda x: x.priority_score, reverse=True)
+    # Ordenar por prioridade (default) ou doc_count
+    if sort_by == "priority":
+        items.sort(key=lambda x: x.priority_score, reverse=True)
+    elif sort_by == "doc_count":
+        items.sort(key=lambda x: doc_counts.get(x.client_id, 0), reverse=True)
     
     return CollectionsTodayResponse(
         items=items,
@@ -950,62 +1030,289 @@ async def unblock_client(
 
 # ============== REGULARIZATIONS ==============
 
+# Mapeamento sugestões -> label PT
+_SUGGESTION_LABELS = {
+    "validate_old_invoice": "Validar recibo/fatura antiga antes de cobrar.",
+    "request_regularization": "Pedir regularização à contabilidade.",
+    "review": "Rever internamente.",
+    "ignore": "Ignorar operacionalmente.",
+}
+
+
+def _build_suggestion(classification: str, days_overdue: int, amount_open: float) -> tuple[str, str]:
+    """Devolve (código, label) da sugestão para o documento."""
+    if classification == DocumentClassification.MICRO_OLD.value:
+        code = "validate_old_invoice"
+    elif classification == DocumentClassification.RESIDUAL_ACCUMULATED.value:
+        code = "request_regularization"
+    elif classification == DocumentClassification.RESIDUAL.value:
+        if amount_open < 0.10:
+            code = "ignore"
+        elif days_overdue > 365:
+            code = "validate_old_invoice"
+        else:
+            code = "review"
+    else:
+        code = "review"
+    return code, _SUGGESTION_LABELS[code]
+
+
 @router.get("/regularizations", response_model=RegularizationsResponse)
 async def get_regularizations(
+    only_micro_old: bool = Query(False, description="Apenas micro-saldos antigos (>365 dias)"),
+    only_residual: bool = Query(False, description="Apenas residuais (<=1€)"),
+    only_low_values: bool = Query(False, description="Apenas valores <=1€"),
+    min_days: Optional[int] = Query(None, ge=0),
+    max_days: Optional[int] = Query(None, ge=0),
+    min_amount: Optional[float] = Query(None, ge=0),
+    max_amount: Optional[float] = Query(None, ge=0),
+    search: Optional[str] = None,
+    sort_by: str = Query("days_overdue", pattern="^(days_overdue|amount_open|client_residual_balance|client_name)$"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(500, ge=1, le=2000),
     current_user: dict = Depends(require_finance_access)
 ):
     """
-    Lista clientes apenas com saldos residuais para regularização.
+    Lista de documentos elegíveis para regularização (residuais, micro-saldos antigos,
+    residuais acumulados). Devolve por documento, com sugestão específica e agregado
+    do cliente. Suporta filtros e ordenação.
     """
-    # Buscar clientes com saldo residual > 0 mas sem dívida cobrável
-    query = {
-        "residual_balance": {"$gt": 0},
-        "$or": [
-            {"overdue_balance_collectable": {"$lte": 0}},
-            {"is_residual_only": True}
+    # Documentos elegíveis (usar effective_classification quando disponível)
+    eligible_classifications = [
+        DocumentClassification.RESIDUAL.value,
+        DocumentClassification.MICRO_OLD.value,
+        DocumentClassification.RESIDUAL_ACCUMULATED.value,
+    ]
+
+    query: dict = {
+        "$and": [
+            {"amount_open": {"$gt": 0}},
+            {"$or": [
+                {"effective_classification": {"$in": eligible_classifications}},
+                {
+                    "effective_classification": {"$exists": False},
+                    "classification": {"$in": eligible_classifications},
+                },
+            ]},
+            {"manually_marked_collectable": {"$ne": True}},
+            {"manual_action": {"$nin": ["mark_resolved_operationally", "mark_collectable"]}},
         ]
     }
-    
-    clients_cursor = db.finance_clients.find(query, {"_id": 0}).sort("residual_balance", -1)
-    
-    items = []
+
+    if only_micro_old:
+        query["classification"] = DocumentClassification.MICRO_OLD.value
+    elif only_residual:
+        query["classification"] = DocumentClassification.RESIDUAL.value
+
+    if only_low_values:
+        query["amount_open"] = {"$gt": 0, "$lte": 1}
+    if min_amount is not None or max_amount is not None:
+        amount_q: dict = query.get("amount_open", {"$gt": 0})
+        if min_amount is not None:
+            amount_q["$gte"] = min_amount
+        if max_amount is not None:
+            amount_q["$lte"] = max_amount
+        query["amount_open"] = amount_q
+    if min_days is not None or max_days is not None:
+        days_q: dict = {}
+        if min_days is not None:
+            days_q["$gte"] = min_days
+        if max_days is not None:
+            days_q["$lte"] = max_days
+        query["days_overdue"] = days_q
+
+    # Cache de agregados de cliente (residual balance + doc count)
+    client_cache: dict[str, dict] = {}
+
+    # Precisamos de sort por campo derivado (client_residual_balance / client_name) —
+    # nesse caso ordenamos em Python; caso contrário ordenamos em Mongo.
+    mongo_sort_field = None
+    if sort_by == "days_overdue":
+        mongo_sort_field = "days_overdue"
+    elif sort_by == "amount_open":
+        mongo_sort_field = "amount_open"
+
+    cursor = db.finance_documents.find(query, {"_id": 0})
+    if mongo_sort_field:
+        cursor = cursor.sort(mongo_sort_field, -1 if sort_dir == "desc" else 1)
+    cursor = cursor.limit(limit)
+
+    items: List[RegularizationItem] = []
     total_residual = 0.0
-    
-    async for client in clients_cursor:
-        # Contar documentos residuais
-        residual_count = await db.finance_documents.count_documents({
-            "client_id": client["id"],
-            "classification": {"$in": [
-                DocumentClassification.RESIDUAL.value,
-                DocumentClassification.RESIDUAL_ACCUMULATED.value
-            ]}
-        })
-        
-        residual_balance = client.get("residual_balance", 0.0)
-        total_residual += residual_balance
-        
-        # Determinar sugestão
-        if residual_count > 10 or residual_balance > 5:
-            suggestion = "review"
-        elif residual_balance < 1:
-            suggestion = "ignore"
-        else:
-            suggestion = "request_regularization"
-        
+    seen_clients: set[str] = set()
+
+    async for doc in cursor:
+        client_id = doc.get("client_id")
+        if not client_id:
+            continue
+
+        if client_id not in client_cache:
+            client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0}) or {}
+            residual_doc_count = await db.finance_documents.count_documents({
+                "client_id": client_id,
+                "manually_marked_collectable": {"$ne": True},
+                "manual_action": {"$nin": ["mark_resolved_operationally", "mark_collectable"]},
+                "$or": [
+                    {"effective_classification": {"$in": eligible_classifications}},
+                    {
+                        "effective_classification": {"$exists": False},
+                        "classification": {"$in": eligible_classifications},
+                    },
+                ],
+            })
+            client_cache[client_id] = {
+                "client_name": client.get("name", "—"),
+                "genes_code": client.get("genes_code", "—"),
+                "residual_balance": client.get("residual_balance", 0.0),
+                "residual_doc_count": residual_doc_count,
+            }
+
+        c = client_cache[client_id]
+
+        if search:
+            s = search.lower()
+            if s not in c["client_name"].lower() and s not in str(c["genes_code"]).lower() and s not in doc.get("document_number", "").lower():
+                continue
+
+        # Filtrar clientes que só devem entrar em regularizações se residual total <= 5€
+        # (regra: clientes com residual < 5€ vão para regularizações; acima disso podem
+        # continuar em cobrança residual acumulada — mas ainda listamos aqui como aviso)
+        classification = doc.get("classification", DocumentClassification.RESIDUAL.value)
+        code, label = _build_suggestion(classification, doc.get("days_overdue", 0), doc.get("amount_open", 0))
+
         items.append(RegularizationItem(
-            client_id=client["id"],
-            client_name=client["name"],
-            genes_code=client["genes_code"],
-            residual_balance=residual_balance,
-            residual_document_count=residual_count,
-            suggestion=suggestion
+            document_id=doc["id"],
+            document_type=doc.get("document_type", "FT"),
+            document_number=doc.get("document_number", "—"),
+            invoice_date=doc.get("invoice_date"),
+            due_date=doc.get("due_date"),
+            amount_open=round(doc.get("amount_open", 0), 2),
+            days_overdue=doc.get("days_overdue", 0),
+            classification=DocumentClassification(classification),
+            manual_action=doc.get("manual_action"),
+            client_id=client_id,
+            client_name=c["client_name"],
+            genes_code=c["genes_code"],
+            client_residual_balance=round(c["residual_balance"], 2),
+            client_residual_document_count=c["residual_doc_count"],
+            suggestion_code=code,
+            suggestion_label=label,
         ))
-    
+        total_residual += doc.get("amount_open", 0)
+        seen_clients.add(client_id)
+
+    # Ordenação em Python quando o campo é derivado
+    if sort_by in ("client_residual_balance", "client_name"):
+        rev = sort_dir == "desc"
+        keyfn = (
+            (lambda i: i.client_residual_balance) if sort_by == "client_residual_balance"
+            else (lambda i: i.client_name.lower())
+        )
+        items.sort(key=keyfn, reverse=rev)
+
     return RegularizationsResponse(
         items=items,
-        total_residual=total_residual,
-        total_clients=len(items)
+        total_residual=round(total_residual, 2),
+        total_documents=len(items),
+        total_clients=len(seen_clients),
     )
+
+
+# --- Acção manual sobre documento ---
+@router.post("/documents/{document_id:path}/action", response_model=FinanceDocumentResponse)
+async def apply_document_action(
+    document_id: str,
+    payload: DocumentActionCreate,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """
+    Aplica uma acção manual num documento (residual/micro-old/regularização).
+    Recalcula automaticamente os agregados do cliente afectado.
+    """
+    doc = await db.finance_documents.find_one({"id": document_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    now = datetime.now(timezone.utc).isoformat()
+    action = payload.action
+
+    update: dict = {"updated_at": now}
+
+    if action == DocumentActionType.MARK_COLLECTABLE:
+        update["manually_marked_collectable"] = True
+        update["manual_action"] = "mark_collectable"
+        update["effective_classification"] = DocumentClassification.COLLECTABLE.value
+    elif action == DocumentActionType.MARK_DISPUTE:
+        update["manually_marked_collectable"] = False
+        update["manual_action"] = "mark_dispute"
+        update["effective_classification"] = DocumentClassification.DISPUTE.value
+    elif action == DocumentActionType.MARK_RESOLVED_OPERATIONALLY:
+        update["manually_marked_collectable"] = False
+        update["manual_action"] = "mark_resolved_operationally"
+        update["effective_classification"] = DocumentClassification.RESOLVED_OPERATIONALLY.value
+    elif action == DocumentActionType.REGULARIZE_INTERNALLY:
+        update["manually_marked_collectable"] = False
+        update["manual_action"] = "regularize_internally"
+        # mantém effective_classification actual (residual/micro-old) — apenas marca pedido
+    elif action == DocumentActionType.KEEP_IN_COLLECTIONS:
+        update["manually_marked_collectable"] = True
+        update["manual_action"] = "keep_in_collections"
+        update["effective_classification"] = DocumentClassification.COLLECTABLE.value
+    elif action == DocumentActionType.RESET:
+        update["manually_marked_collectable"] = False
+        update["manual_action"] = None
+        update["manual_action_reason"] = None
+        update["manual_action_by"] = None
+        update["manual_action_at"] = None
+        # effective_classification volta a acompanhar `classification`
+        update["effective_classification"] = doc.get("classification", DocumentClassification.RESIDUAL.value)
+
+    if action != DocumentActionType.RESET:
+        update["manual_action_reason"] = payload.reason
+        update["manual_action_by"] = current_user["id"]
+        update["manual_action_at"] = now
+
+    await db.finance_documents.update_one({"id": document_id}, {"$set": update})
+
+    # Log de acção do cliente
+    if doc.get("client_id"):
+        await db.finance_actions.insert_one({
+            "id": str(uuid.uuid4()),
+            "client_id": doc["client_id"],
+            "action_type": ActionType.INTERNAL_REGULARIZATION.value,
+            "user_id": current_user["id"],
+            "user_name": current_user.get("name", ""),
+            "notes": f"[{action.value}] doc {doc.get('document_type')} {doc.get('document_number')} · {payload.reason or ''}".strip(),
+            "delay_reason": DelayReason.SALDO_RESIDUAL.value,
+            "next_action_date": None,
+            "created_at": now,
+        })
+
+    # Recomputar agregados (automático)
+    try:
+        await recompute_documents_and_clients(triggered_by=f"doc_action:{action.value}")
+    except Exception as e:
+        logger.exception(f"Recompute failed after doc action: {e}")
+
+    updated_doc = await db.finance_documents.find_one({"id": document_id}, {"_id": 0})
+    return FinanceDocumentResponse(**updated_doc)
+
+
+# --- Recomputação manual ---
+@router.post("/recompute")
+async def trigger_recompute(
+    dry_run: bool = Query(False),
+    current_user: dict = Depends(require_finance_owner),
+):
+    """
+    Aciona a recomputação global de classificações e agregados (apenas OWNER).
+    Útil após alterar thresholds ou corrigir dados manualmente.
+    """
+    summary = await recompute_documents_and_clients(
+        triggered_by=f"manual:{current_user['id']}",
+        dry_run=dry_run,
+    )
+    return summary
 
 
 # ============== IMPORTS ==============
@@ -1217,7 +1524,7 @@ async def update_settings(
     payload: FinanceSettingsUpdate,
     current_user: dict = Depends(require_finance_owner)
 ):
-    """Atualizar configurações (apenas OWNER)."""
+    """Atualizar configurações (apenas OWNER). Aciona recomputação automática."""
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not update:
         raise HTTPException(status_code=400, detail="Nada para atualizar")
@@ -1232,7 +1539,25 @@ async def update_settings(
     )
     
     logger.info(f"Finance settings updated by {current_user['id']}: {list(update.keys())}")
-    return await get_finance_settings()
+
+    # Auto-recompute quando thresholds relevantes forem alterados
+    threshold_keys = {
+        "residual_document_threshold",
+        "residual_client_threshold",
+        "residual_max_documents",
+        "micro_old_days_threshold",
+    }
+    if threshold_keys & set(update.keys()):
+        try:
+            summary = await recompute_documents_and_clients(
+                triggered_by=f"settings_update:{current_user['id']}"
+            )
+            logger.info(f"Auto-recompute after settings: {summary}")
+        except Exception as e:
+            logger.exception(f"Auto-recompute failed after settings update: {e}")
+
+    settings = await get_finance_settings()
+    return settings
 
 
 # ============== AVISO DE CRÉDITO (TICKETS) ==============

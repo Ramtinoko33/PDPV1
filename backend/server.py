@@ -1846,3 +1846,23 @@ async def _deferred_startup():
         await prime_alerts_state_cache()
     except Exception as e:
         logger.error(f"[STARTUP] Telegram internal startup failed: {e}")
+
+    # Finance: one-time migração para aplicar novas regras (MICRO_OLD, residual absoluto)
+    # aos documentos existentes. Só corre se ainda não tiver corrido nesta versão.
+    try:
+        MIGRATION_KEY = "finance_reclass_v2_2026_02"
+        already = await db.finance_recompute_log.find_one({"migration_key": MIGRATION_KEY}, {"_id": 0, "id": 1})
+        if not already:
+            from modules.finance.services.import_service import recompute_documents_and_clients
+            summary = await recompute_documents_and_clients(triggered_by=MIGRATION_KEY)
+            await db.finance_recompute_log.update_one(
+                {"triggered_by": MIGRATION_KEY, "executed_at": summary.get("executed_at")},
+                {"$set": {"migration_key": MIGRATION_KEY}},
+                upsert=False,
+            )
+            logger.info(f"[STARTUP] Finance reclassification migration executed: {summary}")
+        else:
+            logger.info(f"[STARTUP] Finance reclassification migration already applied: {MIGRATION_KEY}")
+    except Exception as e:
+        logger.error(f"[STARTUP] Finance reclassification migration failed: {e}")
+
