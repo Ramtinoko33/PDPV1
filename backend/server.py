@@ -1866,3 +1866,10 @@ async def _deferred_startup():
     except Exception as e:
         logger.error(f"[STARTUP] Finance reclassification migration failed: {e}")
 
+    # Finance: seed default email templates on first boot
+    try:
+        from modules.finance.routes import _seed_default_email_templates_if_empty
+        await _seed_default_email_templates_if_empty()
+    except Exception as e:
+        logger.error(f"[STARTUP] Finance email templates seed failed: {e}")
+

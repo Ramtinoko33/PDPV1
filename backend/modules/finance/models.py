@@ -271,9 +271,12 @@ class FinanceImportResponse(BaseModel):
 
 
 class FinanceImportListResponse(BaseModel):
-    """Lista de importações"""
+    """Lista de importações (paginada)"""
     imports: List[FinanceImportResponse]
     total: int
+    limit: int = 50
+    offset: int = 0
+    has_more: bool = False
 
 
 # --- Finance Action ---
@@ -505,3 +508,43 @@ class FinanceSettingsUpdate(BaseModel):
     residual_max_documents: Optional[int] = Field(None, ge=1, le=1000)
     micro_old_days_threshold: Optional[int] = Field(None, ge=30, le=3650)
     show_credit_warning_on_tickets: Optional[bool] = None
+
+
+# --- Email templates (BD-backed) ---
+class EmailTemplateBase(BaseModel):
+    """Template de email para comunicação manual do Finance."""
+    key: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z0-9_]+$")
+    label: str = Field(..., min_length=1, max_length=120)
+    bucket_hint: Optional[str] = Field(
+        None,
+        description="Bucket sugerido da régua (d0_15/d16_30/d31_60/d61_90/d90p/d120p/promise/dispute/generic)",
+    )
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=8000)
+    whatsapp_body: Optional[str] = Field(None, max_length=4000)
+    is_active: bool = True
+
+
+class EmailTemplateCreate(EmailTemplateBase):
+    pass
+
+
+class EmailTemplateUpdate(BaseModel):
+    label: Optional[str] = Field(None, min_length=1, max_length=120)
+    bucket_hint: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    whatsapp_body: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class EmailTemplateResponse(EmailTemplateBase):
+    id: str
+    created_by: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class EmailTemplateListResponse(BaseModel):
+    templates: List[EmailTemplateResponse]
+    total: int

@@ -71,21 +71,50 @@ const FinanceImports = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedType, setSelectedType] = useState('overdue_balances');
+  const [importsMeta, setImportsMeta] = useState({ total: 0, offset: 0, has_more: false });
+  const [loadingMore, setLoadingMore] = useState(false);
   const fileInputRef = useRef(null);
+
+  const PAGE_SIZE = 50;
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [importsRes, healthRes] = await Promise.all([
-        axios.get(`${API_URL}/api/finance/imports?limit=50`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/finance/imports?limit=${PAGE_SIZE}&offset=0`, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/finance/data-health`, { headers: getAuthHeaders() })
       ]);
       setImports(importsRes.data.imports);
+      setImportsMeta({
+        total: importsRes.data.total,
+        offset: importsRes.data.imports.length,
+        has_more: importsRes.data.has_more,
+      });
       setDataHealth(healthRes.data);
     } catch (err) {
       console.error('Erro ao carregar importações:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreImports = async () => {
+    setLoadingMore(true);
+    try {
+      const res = await axios.get(
+        `${API_URL}/api/finance/imports?limit=${PAGE_SIZE}&offset=${importsMeta.offset}`,
+        { headers: getAuthHeaders() }
+      );
+      setImports((prev) => [...prev, ...res.data.imports]);
+      setImportsMeta({
+        total: res.data.total,
+        offset: importsMeta.offset + res.data.imports.length,
+        has_more: res.data.has_more,
+      });
+    } catch (err) {
+      console.error('Erro ao carregar mais:', err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -378,6 +407,22 @@ const FinanceImports = () => {
               </tbody>
             </table>
           </div>
+          {importsMeta.has_more && (
+            <div className="p-4 border-t flex items-center justify-center gap-3">
+              <span className="text-sm text-slate-500">
+                A mostrar {imports.length} de {importsMeta.total}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadMoreImports}
+                disabled={loadingMore}
+                data-testid="imports-load-more-btn"
+              >
+                {loadingMore ? 'A carregar…' : 'Ver mais'}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

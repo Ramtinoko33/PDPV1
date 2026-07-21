@@ -9,10 +9,11 @@ import logging
 import hashlib
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from db import db
 from core.security import get_current_user
@@ -35,6 +36,7 @@ from .models import (
     RegularizationsResponse, RegularizationItem,
     DocumentActionCreate,
     FinanceSettingsUpdate,
+    EmailTemplateCreate, EmailTemplateUpdate, EmailTemplateResponse, EmailTemplateListResponse,
 )
 from .permissions import (
     require_finance_access,
@@ -42,6 +44,7 @@ from .permissions import (
     require_finance_owner,
     require_collections_agent,
     can_approve_imports,
+    get_finance_role,
     can_manage_blocks,
     check_permission,
 )
@@ -1322,10 +1325,11 @@ async def list_imports(
     type: Optional[ImportType] = None,
     status: Optional[ImportStatus] = None,
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     current_user: dict = Depends(require_finance_access)
 ):
     """
-    Listar importações.
+    Listar importações (paginado, mais recentes primeiro).
     """
     query = {}
     if type:
@@ -1333,10 +1337,15 @@ async def list_imports(
     if status:
         query["status"] = status.value
     
-    imports_cursor = db.finance_imports.find(query, {"_id": 0}).sort("uploaded_at", -1).limit(limit)
-    imports = await imports_cursor.to_list(limit)
-    
     total = await db.finance_imports.count_documents(query)
+
+    imports_cursor = (
+        db.finance_imports.find(query, {"_id": 0})
+        .sort("uploaded_at", -1)
+        .skip(offset)
+        .limit(limit)
+    )
+    imports = await imports_cursor.to_list(limit)
     
     # Enriquecer com nome do utilizador
     user_ids = list({i["uploaded_by"] for i in imports if i.get("uploaded_by")})
@@ -1350,8 +1359,136 @@ async def list_imports(
     
     return FinanceImportListResponse(
         imports=[FinanceImportResponse(**i) for i in imports],
-        total=total
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(imports)) < total,
     )
+
+
+# ============== CLEANUP DE FICHEIROS DE IMPORTAÇÃO ==============
+# NOTA: estas rotas TÊM de estar declaradas ANTES da rota genérica
+# `POST /imports/{import_type}` para evitar que "cleanup" seja tratado como enum.
+
+@router.get("/imports/cleanup/preview")
+async def preview_imports_cleanup(
+    older_than_days: int = Query(30, ge=1, le=365),
+    current_user: dict = Depends(require_finance_reviewer),
+):
+    """
+    Pré-visualização de ficheiros elegíveis para limpeza.
+    Considera imports com status FAILED/REJECTED anteriores a `older_than_days`.
+    Mantém sempre o registo de auditoria em `finance_imports` — apenas apaga
+    o ficheiro binário original em disco.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
+    query = {
+        "status": {"$in": [ImportStatus.FAILED.value, ImportStatus.REJECTED.value]},
+        "uploaded_at": {"$lt": cutoff},
+        "original_file_path": {"$exists": True, "$nin": [None, ""]},
+    }
+
+    items = []
+    total_bytes = 0
+    async for imp in db.finance_imports.find(query, {"_id": 0}):
+        fp = imp.get("original_file_path")
+        exists = False
+        size = 0
+        if fp:
+            p = Path(fp)
+            exists = p.exists()
+            if exists:
+                try:
+                    size = p.stat().st_size
+                except OSError:
+                    size = 0
+        total_bytes += size
+        items.append({
+            "id": imp["id"],
+            "filename": imp.get("filename"),
+            "status": imp["status"],
+            "uploaded_at": imp["uploaded_at"],
+            "file_exists_on_disk": exists,
+            "file_size_bytes": size,
+        })
+
+    return {
+        "cutoff_days": older_than_days,
+        "cutoff_at": cutoff,
+        "total_candidates": len(items),
+        "total_bytes": total_bytes,
+        "items": items,
+    }
+
+
+@router.post("/imports/cleanup")
+async def cleanup_import_files(
+    older_than_days: int = Query(30, ge=1, le=365),
+    dry_run: bool = Query(False),
+    current_user: dict = Depends(require_finance_owner),
+):
+    """
+    Apaga ficheiros binários de imports FAILED/REJECTED mais antigos que N dias.
+    NUNCA apaga o registo em `finance_imports` — auditoria preservada.
+    Actualiza `original_file_path` para `null` e adiciona `file_cleaned_at`.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+
+    query = {
+        "status": {"$in": [ImportStatus.FAILED.value, ImportStatus.REJECTED.value]},
+        "uploaded_at": {"$lt": cutoff},
+        "original_file_path": {"$exists": True, "$nin": [None, ""]},
+    }
+
+    files_deleted = 0
+    bytes_freed = 0
+    errors: List[str] = []
+
+    async for imp in db.finance_imports.find(query, {"_id": 0}):
+        fp = imp.get("original_file_path")
+        if not fp:
+            continue
+        p = Path(fp)
+        size = 0
+        if p.exists():
+            try:
+                size = p.stat().st_size
+            except OSError:
+                size = 0
+
+            if not dry_run:
+                try:
+                    p.unlink()
+                except OSError as e:
+                    errors.append(f"{imp['id']}: {e}")
+                    continue
+
+        if not dry_run:
+            await db.finance_imports.update_one(
+                {"id": imp["id"]},
+                {"$set": {
+                    "original_file_path": None,
+                    "file_cleaned_at": now,
+                    "file_cleaned_by": current_user["id"],
+                }}
+            )
+
+        files_deleted += 1
+        bytes_freed += size
+
+    logger.info(
+        f"Finance imports cleanup by {current_user['id']}: "
+        f"dry_run={dry_run} deleted={files_deleted} bytes_freed={bytes_freed}"
+    )
+
+    return {
+        "dry_run": dry_run,
+        "cutoff_days": older_than_days,
+        "files_deleted": files_deleted,
+        "bytes_freed": bytes_freed,
+        "errors": errors,
+    }
 
 
 @router.post("/imports/{import_type}")
@@ -1588,3 +1725,482 @@ async def credit_warning(
                 return {"show_warning": True}
     
     return {"show_warning": False}
+
+
+# ============== EMAIL TEMPLATES (BD-backed) ==============
+# Templates para comunicação manual — usados pelo QuickCommunicationPanel.
+# CRUD é OWNER-only; listagem é acessível a qualquer finance_role.
+
+DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
+    {
+        "key": "lembrete_amigavel",
+        "label": "Lembrete amigável",
+        "bucket_hint": "d0_15",
+        "subject": "Lembrete de faturação em aberto",
+        "body": (
+            "Bom dia,\n\n"
+            "Vimos por este meio lembrar que existem faturas em aberto. "
+            "Junto envio a conta corrente atualizada.\n\n"
+            "Se já efetuou o pagamento, ignore esta mensagem. Caso contrário, "
+            "agradecemos a regularização assim que possível.\n\n"
+            "Obrigado,\nPDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, esta é uma mensagem da PDPV Automóvel a lembrar que existem faturas em aberto. "
+            "Se já efetuou o pagamento, ignore esta mensagem. Obrigado."
+        ),
+    },
+    {
+        "key": "pedido_pagamento",
+        "label": "Pedido de pagamento",
+        "bucket_hint": "d16_30",
+        "subject": "Pedido de regularização de faturas em aberto",
+        "body": (
+            "Bom dia,\n\n"
+            "Registamos valores em atraso na vossa conta corrente. "
+            "Pedimos a vossa colaboração para regularizar até ao final da semana ou "
+            "nos dar retorno com data prevista de pagamento.\n\n"
+            "Obrigado,\nPDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, temos faturas em aberto que agradecíamos que fossem regularizadas até ao final da semana. Obrigado."
+        ),
+    },
+    {
+        "key": "pedido_comprovativo",
+        "label": "Pedido de comprovativo",
+        "bucket_hint": "generic",
+        "subject": "Pedido de comprovativo de pagamento",
+        "body": (
+            "Bom dia,\n\n"
+            "Referiu que efetuou o pagamento das faturas em aberto. "
+            "Agradecíamos o envio do comprovativo para conciliação interna.\n\n"
+            "Obrigado,\nPDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, referiu que efetuou o pagamento. Pode enviar o comprovativo para conciliação? Obrigado."
+        ),
+    },
+    {
+        "key": "lembrete_promessa",
+        "label": "Lembrete de promessa",
+        "bucket_hint": "promise",
+        "subject": "Lembrete — compromisso de pagamento acordado",
+        "body": (
+            "Bom dia,\n\n"
+            "Lembramos o compromisso de pagamento acordado. Ficamos a aguardar "
+            "o vosso comprovativo ou contacto.\n\n"
+            "Obrigado,\nPDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, a lembrar o compromisso de pagamento acordado. Ficamos a aguardar o vosso retorno. Obrigado."
+        ),
+    },
+    {
+        "key": "promessa_falhada",
+        "label": "Promessa falhada",
+        "bucket_hint": "d61_90",
+        "subject": "Compromisso de pagamento não cumprido",
+        "body": (
+            "Bom dia,\n\n"
+            "Verificamos que o pagamento acordado não foi ainda efetuado. "
+            "Pedimos que nos contacte com urgência para revisão do plano de pagamento.\n\n"
+            "PDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, o pagamento acordado não foi ainda efetuado. Pedimos que nos contacte com urgência. Obrigado."
+        ),
+    },
+    {
+        "key": "plano_pagamento",
+        "label": "Plano de pagamento",
+        "bucket_hint": "d61_90",
+        "subject": "Proposta de plano de pagamento",
+        "body": (
+            "Bom dia,\n\n"
+            "Face aos valores em atraso, propomos um plano de pagamento faseado. "
+            "Ficamos a aguardar a vossa resposta para acordarmos os detalhes.\n\n"
+            "PDPV Automóvel"
+        ),
+        "whatsapp_body": (
+            "Olá, gostaríamos de acordar um plano de pagamento faseado para os valores em atraso. Podemos falar? Obrigado."
+        ),
+    },
+    {
+        "key": "confirmar_email_contabilidade",
+        "label": "Confirmar email financeiro",
+        "bucket_hint": "generic",
+        "subject": "Confirmação do email para envio de faturação",
+        "body": (
+            "Bom dia,\n\n"
+            "Para garantir o correto envio de faturação e conta corrente, agradecíamos "
+            "a confirmação do email financeiro/contabilidade a utilizar.\n\n"
+            "Obrigado,\nPDPV Automóvel"
+        ),
+    },
+    {
+        "key": "aviso_bloqueio",
+        "label": "Aviso pré-bloqueio",
+        "bucket_hint": "d90p",
+        "subject": "Aviso — validação financeira necessária",
+        "body": (
+            "Bom dia,\n\n"
+            "Face aos valores em atraso, informamos que novos serviços poderão exigir "
+            "validação financeira prévia. Ficamos ao dispor para regularizar a situação.\n\n"
+            "PDPV Automóvel"
+        ),
+    },
+]
+
+
+async def _seed_default_email_templates_if_empty() -> None:
+    """Popula templates default se a coleção estiver vazia. Chamada no startup."""
+    count = await db.finance_email_templates.count_documents({})
+    if count > 0:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    docs = []
+    for t in DEFAULT_EMAIL_TEMPLATES:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "key": t["key"],
+            "label": t["label"],
+            "bucket_hint": t.get("bucket_hint"),
+            "subject": t["subject"],
+            "body": t["body"],
+            "whatsapp_body": t.get("whatsapp_body"),
+            "is_active": True,
+            "created_by": None,
+            "created_at": now,
+            "updated_at": now,
+        })
+    if docs:
+        await db.finance_email_templates.insert_many(docs)
+        logger.info(f"Seeded {len(docs)} default finance email templates")
+
+
+@router.get("/email-templates", response_model=EmailTemplateListResponse)
+async def list_email_templates(
+    active_only: bool = Query(True),
+    bucket_hint: Optional[str] = None,
+    current_user: dict = Depends(require_finance_access),
+):
+    """Lista templates de email/whatsapp para comunicação manual."""
+    query: dict = {}
+    if active_only:
+        query["is_active"] = True
+    if bucket_hint:
+        query["bucket_hint"] = bucket_hint
+    templates = []
+    async for t in db.finance_email_templates.find(query, {"_id": 0}).sort([("bucket_hint", 1), ("label", 1)]):
+        templates.append(EmailTemplateResponse(**t))
+    return EmailTemplateListResponse(templates=templates, total=len(templates))
+
+
+@router.post("/email-templates", response_model=EmailTemplateResponse)
+async def create_email_template(
+    payload: EmailTemplateCreate,
+    current_user: dict = Depends(require_finance_owner),
+):
+    """Criar novo template (apenas OWNER)."""
+    existing = await db.finance_email_templates.find_one({"key": payload.key}, {"_id": 0, "id": 1})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Já existe template com key '{payload.key}'")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        **payload.model_dump(),
+        "created_by": current_user["id"],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.finance_email_templates.insert_one(doc)
+    doc.pop("_id", None)
+    return EmailTemplateResponse(**doc)
+
+
+@router.put("/email-templates/{template_id}", response_model=EmailTemplateResponse)
+async def update_email_template(
+    template_id: str,
+    payload: EmailTemplateUpdate,
+    current_user: dict = Depends(require_finance_owner),
+):
+    """Atualizar template (apenas OWNER)."""
+    update = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    r = await db.finance_email_templates.update_one({"id": template_id}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Template não encontrado")
+    doc = await db.finance_email_templates.find_one({"id": template_id}, {"_id": 0})
+    return EmailTemplateResponse(**doc)
+
+
+@router.delete("/email-templates/{template_id}")
+async def delete_email_template(
+    template_id: str,
+    current_user: dict = Depends(require_finance_owner),
+):
+    """Apagar template (apenas OWNER). Recomenda-se desativar via `is_active=false`."""
+    r = await db.finance_email_templates.delete_one({"id": template_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Template não encontrado")
+    return {"success": True}
+
+
+# ============== ENVIO REAL DE EMAIL (Resend) ==============
+class SendEmailPayload(BaseModel):
+    to: str = Field(..., min_length=3, max_length=200)
+    subject: str = Field(..., min_length=1, max_length=250)
+    body: str = Field(..., min_length=1, max_length=8000)
+    template_key: Optional[str] = None
+    linked_document_numbers: Optional[List[str]] = None
+
+
+@router.post("/clients/{client_id}/send-email")
+async def send_client_email(
+    client_id: str,
+    payload: SendEmailPayload,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """
+    Envia um email via Resend em nome da PDPV.
+    Se Resend não estiver configurado ou domínio não estiver verificado, guarda
+    a acção como PENDING no histórico com um marcador `[SEND_FAILED]` — não bloqueia
+    a operação da cobradora.
+
+    Regras:
+      - Cliente tem de existir.
+      - Cliente com apenas saldo residual só pode receber email se current_user é
+        FINANCE_REVIEWER ou OWNER (evita spam por engano à cobradora).
+      - Todas as tentativas ficam gravadas em finance_actions.
+    """
+    import os
+    import resend as _resend
+    import asyncio as _asyncio
+
+    client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # Guardrail: cliente apenas residual só pode receber email com aprovação
+    if client.get("is_residual_only") and get_finance_role(current_user) == FinanceRole.COLLECTIONS_AGENT:
+        raise HTTPException(
+            status_code=403,
+            detail="Cliente apenas com saldo residual — envio requer FINANCE_REVIEWER ou OWNER",
+        )
+
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    email_from = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
+
+    now = datetime.now(timezone.utc).isoformat()
+    action_id = str(uuid.uuid4())
+    sent = False
+    error_msg = None
+    provider_id = None
+
+    if resend_key:
+        try:
+            _resend.api_key = resend_key
+            # Converter corpo texto em HTML simples (preservar linhas)
+            html_body = payload.body.replace("\n", "<br/>")
+            result = await _asyncio.to_thread(
+                _resend.Emails.send,
+                {
+                    "from": email_from,
+                    "to": [payload.to],
+                    "subject": payload.subject,
+                    "html": html_body,
+                    "text": payload.body,
+                },
+            )
+            provider_id = result.get("id") if isinstance(result, dict) else None
+            sent = True
+            logger.info(f"[FINANCE-RESEND] Sent to {payload.to}, id={provider_id}, template={payload.template_key}")
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[FINANCE-RESEND] Send failed to {payload.to}: {e}")
+    else:
+        error_msg = "RESEND_API_KEY não configurada"
+
+    # Gravar sempre no histórico
+    note_parts = [
+        f"[Email {'ENVIADO' if sent else 'FALHOU'} → {payload.to}]",
+        f"template={payload.template_key or '—'}",
+        f"subject=\"{payload.subject}\"",
+    ]
+    if provider_id:
+        note_parts.append(f"resend_id={provider_id}")
+    if error_msg:
+        note_parts.append(f"error={error_msg[:200]}")
+    note = " ".join(note_parts) + "\n\n" + payload.body
+
+    await db.finance_actions.insert_one({
+        "id": action_id,
+        "client_id": client_id,
+        "action_type": ActionType.EMAIL.value,
+        "user_id": current_user["id"],
+        "user_name": current_user.get("name", ""),
+        "notes": note[:4000],
+        "delay_reason": None,
+        "next_action_date": None,
+        "created_at": now,
+        "email_meta": {
+            "to": payload.to,
+            "subject": payload.subject,
+            "template_key": payload.template_key,
+            "linked_document_numbers": payload.linked_document_numbers or [],
+            "sent": sent,
+            "provider": "resend" if sent else None,
+            "provider_id": provider_id,
+            "error": error_msg,
+        },
+    })
+
+    return {
+        "sent": sent,
+        "provider_id": provider_id,
+        "error": error_msg,
+        "action_id": action_id,
+    }
+
+
+
+# ============== RÉGUA DE COBRANÇA (dunning ladder) ==============
+# Régua curta e determinística para orientar a cobradora — não é call-center automatizado.
+# Bucket derivado de oldest_overdue_days + estado financeiro.
+
+DUNNING_BUCKETS: List[Dict[str, Any]] = [
+    {
+        "key": "d0_15",
+        "label": "D+0 a D+15 — Lembrete amigável",
+        "min_days": 0, "max_days": 15,
+        "tone": "friendly",
+        "suggested_template_keys": ["lembrete_amigavel"],
+        "suggested_actions": ["send_account_statement", "friendly_reminder"],
+        "color": "green",
+    },
+    {
+        "key": "d16_30",
+        "label": "D+16 a D+30 — Contacto direto",
+        "min_days": 16, "max_days": 30,
+        "tone": "neutral",
+        "suggested_template_keys": ["pedido_pagamento", "lembrete_amigavel"],
+        "suggested_actions": ["send_account_statement", "call_direct", "request_confirmation"],
+        "color": "yellow",
+    },
+    {
+        "key": "d31_60",
+        "label": "D+31 a D+60 — Pedido formal",
+        "min_days": 31, "max_days": 60,
+        "tone": "firm",
+        "suggested_template_keys": ["pedido_pagamento", "pedido_comprovativo"],
+        "suggested_actions": ["request_payment", "request_promise", "escalate_to_reviewer"],
+        "color": "orange",
+    },
+    {
+        "key": "d61_90",
+        "label": "D+61 a D+90 — Promessa formal / Plano",
+        "min_days": 61, "max_days": 90,
+        "tone": "firm",
+        "suggested_template_keys": ["promessa_falhada", "plano_pagamento"],
+        "suggested_actions": ["formal_promise", "propose_payment_plan"],
+        "color": "red",
+    },
+    {
+        "key": "d90p",
+        "label": "D+90+ — Sugerir bloqueio",
+        "min_days": 91, "max_days": 120,
+        "tone": "escalation",
+        "suggested_template_keys": ["aviso_bloqueio", "plano_pagamento"],
+        "suggested_actions": ["suggest_block", "review_dispute", "senior_review"],
+        "color": "red",
+    },
+    {
+        "key": "d120p",
+        "label": "D+120+ — Decisão de gestão",
+        "min_days": 121, "max_days": 100000,
+        "tone": "escalation",
+        "suggested_template_keys": ["aviso_bloqueio"],
+        "suggested_actions": ["management_decision", "external_collection", "regularize_technical"],
+        "color": "black",
+    },
+]
+
+
+def _resolve_bucket(days: int, financial_status: Optional[str]) -> Dict[str, Any]:
+    """Devolve o bucket da régua para um cliente."""
+    # Estados especiais têm bucket próprio
+    if financial_status == FinancialStatus.PROMESSA_ATIVA.value:
+        return {
+            "key": "promise",
+            "label": "Com promessa ativa",
+            "min_days": days, "max_days": days,
+            "tone": "waiting",
+            "suggested_template_keys": ["lembrete_promessa"],
+            "suggested_actions": ["wait_promise", "monitor_progress"],
+            "color": "blue",
+        }
+    if financial_status == FinancialStatus.EM_DISPUTA.value:
+        return {
+            "key": "dispute",
+            "label": "Em disputa",
+            "min_days": days, "max_days": days,
+            "tone": "hold",
+            "suggested_template_keys": ["pedido_comprovativo"],
+            "suggested_actions": ["review_dispute", "wait_resolution"],
+            "color": "purple",
+        }
+    if financial_status == FinancialStatus.BLOQUEADO.value:
+        return {
+            "key": "blocked",
+            "label": "Cliente bloqueado",
+            "min_days": days, "max_days": days,
+            "tone": "hold",
+            "suggested_template_keys": [],
+            "suggested_actions": ["management_decision"],
+            "color": "black",
+        }
+
+    for b in DUNNING_BUCKETS:
+        if b["min_days"] <= days <= b["max_days"]:
+            return b
+    return DUNNING_BUCKETS[-1]
+
+
+@router.get("/dunning-ladder")
+async def get_dunning_ladder(current_user: dict = Depends(require_finance_access)):
+    """Devolve a régua de cobrança estática (buckets + templates sugeridos)."""
+    return {"buckets": DUNNING_BUCKETS}
+
+
+@router.get("/clients/{client_id}/dunning-bucket")
+async def get_client_dunning_bucket(
+    client_id: str,
+    current_user: dict = Depends(require_finance_access),
+):
+    """Devolve o bucket actual do cliente + templates sugeridos."""
+    client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    days = int(client.get("oldest_overdue_days", 0) or 0)
+    status = client.get("financial_status")
+    bucket = _resolve_bucket(days, status)
+
+    # Enriquecer com templates completos
+    templates: List[Dict[str, Any]] = []
+    for key in bucket.get("suggested_template_keys", []):
+        t = await db.finance_email_templates.find_one({"key": key, "is_active": True}, {"_id": 0})
+        if t:
+            templates.append(t)
+
+    return {
+        "client_id": client_id,
+        "oldest_overdue_days": days,
+        "financial_status": status,
+        "bucket": bucket,
+        "suggested_templates": templates,
+    }
+

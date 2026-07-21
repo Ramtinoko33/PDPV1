@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import QuickCommunicationPanel from './QuickCommunicationPanel';
 import axios from 'axios';
 import {
   ArrowLeft,
@@ -251,10 +252,51 @@ const FinanceClientDetail = () => {
     note: 'Nota',
     promise_created: 'Promessa Criada',
     promise_updated: 'Promessa Atualizada',
+    dispute_marked: 'Disputa',
+    payment_plan_marked: 'Plano de Pagamento',
     block_suggested: 'Bloqueio Sugerido',
     block_approved: 'Bloqueio Aprovado',
     block_rejected: 'Bloqueio Rejeitado',
-    unblocked: 'Desbloqueado'
+    unblocked: 'Desbloqueado',
+    internal_regularization: 'Regularização Interna',
+  };
+
+  const actionTypeStyles = {
+    phone_call:            { bg: 'bg-slate-100',   dot: 'bg-slate-400',   icon: Phone,         iconColor: 'text-slate-600' },
+    whatsapp:              { bg: 'bg-emerald-50',  dot: 'bg-emerald-500', icon: MessageSquare, iconColor: 'text-emerald-600' },
+    email:                 { bg: 'bg-blue-50',     dot: 'bg-blue-500',    icon: Mail,          iconColor: 'text-blue-600' },
+    note:                  { bg: 'bg-yellow-50',   dot: 'bg-yellow-500',  icon: FileText,      iconColor: 'text-yellow-700' },
+    promise_created:       { bg: 'bg-indigo-50',   dot: 'bg-indigo-500',  icon: CheckCircle,   iconColor: 'text-indigo-600' },
+    promise_updated:       { bg: 'bg-indigo-50',   dot: 'bg-indigo-500',  icon: CheckCircle,   iconColor: 'text-indigo-600' },
+    dispute_marked:        { bg: 'bg-purple-50',   dot: 'bg-purple-500',  icon: AlertTriangle, iconColor: 'text-purple-600' },
+    payment_plan_marked:   { bg: 'bg-teal-50',     dot: 'bg-teal-500',    icon: Calendar,      iconColor: 'text-teal-600' },
+    block_suggested:       { bg: 'bg-amber-50',    dot: 'bg-amber-500',   icon: AlertTriangle, iconColor: 'text-amber-600' },
+    block_approved:        { bg: 'bg-red-50',      dot: 'bg-red-600',     icon: Ban,           iconColor: 'text-red-600' },
+    block_rejected:        { bg: 'bg-slate-50',    dot: 'bg-slate-500',   icon: XCircle,       iconColor: 'text-slate-500' },
+    unblocked:             { bg: 'bg-green-50',    dot: 'bg-green-600',   icon: CheckCircle,   iconColor: 'text-green-600' },
+    internal_regularization: { bg: 'bg-orange-50', dot: 'bg-orange-500',  icon: FileText,      iconColor: 'text-orange-600' },
+  };
+
+  const groupHistoryByDay = (items) => {
+    const groups = {};
+    for (const it of items) {
+      const day = (it.created_at || '').slice(0, 10);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(it);
+    }
+    return Object.entries(groups).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  };
+
+  const formatDayLabel = (isoDay) => {
+    if (!isoDay) return '—';
+    try {
+      const d = new Date(isoDay);
+      const today = new Date();
+      const yest = new Date(); yest.setDate(today.getDate() - 1);
+      if (d.toDateString() === today.toDateString()) return 'Hoje';
+      if (d.toDateString() === yest.toDateString()) return 'Ontem';
+      return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' });
+    } catch { return isoDay; }
   };
 
   const delayReasonLabels = {
@@ -266,6 +308,7 @@ const FinanceClientDetail = () => {
     cliente_dificil: 'Cliente Difícil',
     acordo_em_curso: 'Acordo em Curso',
     erro_interno: 'Erro Interno',
+    saldo_residual: 'Saldo Residual',
     outro: 'Outro'
   };
 
@@ -400,49 +443,80 @@ const FinanceClientDetail = () => {
           </Card>
         </TabsContent>
 
-        {/* History Tab */}
+        {/* History Tab - Timeline agrupado por dia */}
         <TabsContent value="history">
           <Card>
             <CardContent className="p-4">
-              <div className="space-y-4">
-                {history.map((action) => (
-                  <div key={action.id} className="flex gap-4 pb-4 border-b last:border-0">
-                    <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                      {action.action_type === 'phone_call' && <Phone className="h-4 w-4" />}
-                      {action.action_type === 'whatsapp' && <MessageSquare className="h-4 w-4" />}
-                      {action.action_type === 'email' && <Mail className="h-4 w-4" />}
-                      {action.action_type === 'note' && <FileText className="h-4 w-4" />}
-                      {action.action_type === 'promise_created' && <CheckCircle className="h-4 w-4 text-blue-600" />}
-                      {action.action_type === 'block_suggested' && <AlertTriangle className="h-4 w-4 text-yellow-600" />}
-                      {action.action_type === 'block_approved' && <Ban className="h-4 w-4 text-red-600" />}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">
-                          {actionTypeLabels[action.action_type] || action.action_type}
-                        </span>
-                        <span className="text-sm text-slate-500">
-                          por {action.user_name}
-                        </span>
-                        <span className="text-sm text-slate-400">
-                          {formatDateTime(action.created_at)}
+              {history.length === 0 ? (
+                <p className="text-center text-slate-500 py-8">
+                  Sem histórico de comunicações e ações.
+                </p>
+              ) : (
+                <div className="relative" data-testid="finance-history-timeline">
+                  {groupHistoryByDay(history).map(([day, items]) => (
+                    <div key={day} className="mb-6" data-testid={`history-day-${day}`}>
+                      <div className="sticky top-0 z-10 bg-white pb-2 mb-3 border-b flex items-center gap-2">
+                        <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                          {formatDayLabel(day)}
+                        </Badge>
+                        <span className="text-xs text-slate-400">
+                          {items.length} evento{items.length > 1 ? 's' : ''}
                         </span>
                       </div>
-                      {action.notes && (
-                        <p className="text-sm text-slate-600 mt-1">{action.notes}</p>
-                      )}
-                      {action.delay_reason && (
-                        <Badge variant="outline" className="mt-1 text-xs">
-                          Motivo: {delayReasonLabels[action.delay_reason] || action.delay_reason}
-                        </Badge>
-                      )}
+                      <div className="relative pl-8 space-y-4">
+                        {/* linha vertical do timeline */}
+                        <div className="absolute left-3 top-1 bottom-1 w-px bg-slate-200"></div>
+                        {items.map((action) => {
+                          const style = actionTypeStyles[action.action_type] ||
+                            { bg: 'bg-slate-100', dot: 'bg-slate-400', icon: FileText, iconColor: 'text-slate-500' };
+                          const Icon = style.icon;
+                          return (
+                            <div key={action.id} className="relative" data-testid={`history-item-${action.id}`}>
+                              {/* dot */}
+                              <div className={`absolute -left-6 top-1 h-3 w-3 rounded-full ring-4 ring-white ${style.dot}`}></div>
+                              <div className={`rounded-lg border p-3 ${style.bg}`}>
+                                <div className="flex items-start gap-2">
+                                  <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${style.iconColor}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-baseline gap-2 flex-wrap">
+                                      <span className="font-semibold text-slate-900">
+                                        {actionTypeLabels[action.action_type] || action.action_type}
+                                      </span>
+                                      <span className="text-xs text-slate-500">
+                                        por {action.user_name || '—'}
+                                      </span>
+                                      <span className="text-xs text-slate-400 ml-auto">
+                                        {new Date(action.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                    {action.notes && (
+                                      <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap break-words">
+                                        {action.notes.length > 500 ? action.notes.slice(0, 500) + '…' : action.notes}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {action.delay_reason && (
+                                        <Badge variant="outline" className="text-xs">
+                                          Motivo: {delayReasonLabels[action.delay_reason] || action.delay_reason}
+                                        </Badge>
+                                      )}
+                                      {action.next_action_date && (
+                                        <Badge variant="outline" className="text-xs">
+                                          Próx. ação: {action.next_action_date}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {history.length === 0 && (
-                  <p className="text-center text-slate-500 py-4">Sem histórico de contactos</p>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -477,6 +551,12 @@ const FinanceClientDetail = () => {
                 </div>
               </CardContent>
             </Card>
+
+            <QuickCommunicationPanel
+              client={client}
+              getAuthHeaders={getAuthHeaders}
+              onCommunicationLogged={fetchData}
+            />
             
             <Card>
               <CardHeader>

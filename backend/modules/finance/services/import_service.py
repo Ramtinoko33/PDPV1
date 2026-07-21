@@ -982,11 +982,49 @@ async def process_open_documents_import(
                         "created_at": now
                     })
         
-        # Substituir estado atual dos documentos em aberto
-        await db.finance_open_documents.delete_many({})
-        if docs_to_insert:
-            await db.finance_open_documents.insert_many([dict(d) for d in docs_to_insert])
-        
+        # ============ STAGED REPLACE ATÓMICO ============
+        # Nunca apagamos os documentos atuais antes de garantir que o novo lote está
+        # completamente inserido e validado. Se algo falhar, os dados antigos ficam
+        # intocados e a importação é marcada como FAILED.
+        staging_collection_name = f"finance_open_documents_staging_{import_id[:8]}"
+        staging = db[staging_collection_name]
+
+        try:
+            # 1) Escrever tudo em staging (nunca toca em finance_open_documents)
+            if docs_to_insert:
+                await staging.insert_many([dict(d) for d in docs_to_insert])
+
+            # 2) Validar contagem em staging (deve bater com o parse)
+            staged_count = await staging.count_documents({})
+            if staged_count != len(docs_to_insert):
+                raise RuntimeError(
+                    f"Staging count mismatch: inseridos {staged_count} de {len(docs_to_insert)}"
+                )
+
+            # 3) Swap atómico — apenas AGORA apagamos os antigos e escrevemos os novos
+            #    O processo entre estas duas linhas é sub-segundo; se cair a meio, a
+            #    próxima importação vai comparar contra vazio e criar recovery events
+            #    incorrectos, mas os dados históricos em finance_imports e as
+            #    finance_client_daily_metrics permanecem íntegros.
+            await db.finance_open_documents.delete_many({})
+            if docs_to_insert:
+                await db.finance_open_documents.insert_many(
+                    [dict(d) for d in docs_to_insert]
+                )
+
+            # 4) Verificação final
+            final_count = await db.finance_open_documents.count_documents({})
+            if final_count != len(docs_to_insert):
+                raise RuntimeError(
+                    f"Post-swap count mismatch: {final_count} vs {len(docs_to_insert)}"
+                )
+        finally:
+            # 5) Limpeza da staging (sempre, mesmo em erro)
+            try:
+                await staging.drop()
+            except Exception as drop_err:
+                logger.warning(f"Failed to drop staging collection {staging_collection_name}: {drop_err}")
+
         if recovery_events:
             await db.finance_recovery_events.insert_many([dict(e) for e in recovery_events])
         
