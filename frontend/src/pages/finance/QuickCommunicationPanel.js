@@ -298,13 +298,15 @@ export default function QuickCommunicationPanel({ client, getAuthHeaders, onComm
               {channel === 'whatsapp' ? <MessageSquare className="h-5 w-5 text-emerald-600" /> : <Mail className="h-5 w-5 text-blue-600" />}
               Preparar mensagem — {channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
             </DialogTitle>
-            <DialogDescription>
-              Cliente: <strong>{client?.name}</strong> · #{client?.genes_code} · vencido {formatCurrency(client?.overdue_balance_collectable)}
-              {bucket && (
-                <span className="ml-2">
-                  · <Badge className={`${bucketStyle} border ml-1`}>{bucket.label}</Badge>
-                </span>
-              )}
+            <DialogDescription asChild>
+              <div>
+                Cliente: <strong>{client?.name}</strong> · #{client?.genes_code} · vencido {formatCurrency(client?.overdue_balance_collectable)}
+                {bucket && (
+                  <span className="ml-2">
+                    · <Badge className={`${bucketStyle} border ml-1`}>{bucket.label}</Badge>
+                  </span>
+                )}
+              </div>
             </DialogDescription>
           </DialogHeader>
 
