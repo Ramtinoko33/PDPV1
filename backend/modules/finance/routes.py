@@ -2705,6 +2705,7 @@ async def export_clients(
     """
     import io
     import openpyxl
+    from openpyxl.styles import Font
     from fastapi.responses import StreamingResponse
 
     # Reproduzir a mesma query de list_clients (versão simplificada)
@@ -2771,7 +2772,7 @@ async def export_clients(
     ]
     ws.append(headers)
     for cell in ws[1]:
-        cell.font = openpyxl.styles.Font(bold=True)
+        cell.font = Font(bold=True)
 
     count = 0
     async for c in db.finance_clients.find(query, {"_id": 0}).sort("overdue_balance_collectable", -1).limit(10000):

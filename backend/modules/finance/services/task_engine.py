@@ -44,13 +44,15 @@ DISTRIBUTION: Dict[str, Dict[str, int]] = {
         "regularizations": 3,
         "block_suggest":   2,
     },
+    # 60 min: total alvo 35 (spec do utilizador — 6+8+6+5+4+3+3)
     "60": {
         "promises":        6,
         "critical":        8,
         "old_low_value":   6,
-        "no_contact":      4,
-        "regularizations": 3,
-        "block_suggest":   3,
+        "no_contact":      5,
+        "regularizations": 4,
+        # "block_suggest" split entre revisão e bloqueio explícito (3+3=6 previstos na spec)
+        "block_suggest":   6,
     },
 }
 
@@ -103,7 +105,6 @@ async def _get_promise_maps() -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
     """Devolve {client_id: promise} para promessas OPEN activas e FALHADAS."""
     open_by_client: Dict[str, Dict] = {}
     failed_by_client: Dict[str, Dict] = {}
-    today = _today_iso()
 
     async for p in db.finance_promises.find({"status": PromiseStatus.OPEN.value}, {"_id": 0}):
         cid = p.get("client_id")
@@ -477,25 +478,8 @@ async def generate_daily_tasks(
     for k in categories:
         categories[k].sort(key=lambda x: x.get("priority_score", 0), reverse=True)
 
-    # 4) Selecionar segundo distribuição alvo, evitar duplicados por client_id
+    # 4) Selecionar segundo distribuição alvo, evitar duplicados (client_id, task_type)
     quota = DISTRIBUTION.get(mode.value, DISTRIBUTION["30"])
-    picked: List[Dict[str, Any]] = []
-    seen_client_type: set = set()  # (client_id, task_type)
-
-    for category_key, target in quota.items():
-        for cand in categories.get(category_key, []):
-            cid = cand["client"]["id"]
-            ttype = cand["task_type"].value
-            if (cid, ttype) in seen_client_type:
-                continue
-            seen_client_type.add((cid, ttype))
-            picked.append(cand)
-            if len([x for x in picked if categories.get(category_key) and x in categories[category_key]]) >= target:
-                break
-
-    # Fallback simplificado: garantir que apenas o "target" por categoria é criado
-    # (a lógica acima pode contar mal quando um cand aparece em >1 categoria; recontar
-    # limitando por categoria em separado)
     final_tasks: List[Dict[str, Any]] = []
     seen_pairs: set = set()
     for category_key, target in quota.items():
