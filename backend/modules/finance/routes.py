@@ -2820,7 +2820,6 @@ async def export_clients(
 async def tasks_effectiveness(
     date_from: Optional[str] = Query(None, description="ISO date (default: -30 dias)"),
     date_to: Optional[str] = Query(None, description="ISO date (default: hoje)"),
-    mode: Optional[str] = Query(None, description="30 | 45 | 60"),
     assigned_to: Optional[str] = None,
     task_type: Optional[str] = None,
     customer_segment: Optional[str] = None,
@@ -2946,9 +2945,9 @@ async def tasks_effectiveness(
     async for p in db.finance_promises.find(promises_q, {"_id": 0, "amount": 1}):
         total_promised_amount += float(p.get("amount", 0) or 0)
 
-    block_suggestions = totals.get("done", 0)  # aproximação a partir de task_type
+    block_suggestions_treated = by_task_type.get("SUGGEST_BLOCK", {}).get("done", 0)
     regularizations_treated = by_task_type.get("REVIEW_RESIDUAL", {}).get("done", 0) + by_task_type.get("REVIEW_LOW_VALUE_OLD_DEBT", {}).get("done", 0)
-    block_task_done = by_task_type.get("SUGGEST_BLOCK", {}).get("done", 0)
+    block_task_done = block_suggestions_treated
 
     # Resumo diário (hoje)
     today_iso = today.isoformat()
@@ -2963,7 +2962,6 @@ async def tasks_effectiveness(
             "customer_segment": customer_segment,
             "status": status,
             "feedback_reason": feedback_reason,
-            "mode": mode,
         },
         "totals": totals,
         "rates": {

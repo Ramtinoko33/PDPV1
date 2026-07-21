@@ -14,6 +14,31 @@
 - **Deploy source going forward:** this chat, after Finance is merged in.
 
 ## Completed Features
+- [x] **CRM Finance — Dashboard Eficácia das Tarefas (Fev 2026, iteration_42 15/15 backend pytest + frontend E2E 20/20 data-testids):**
+  - **Endpoint `GET /api/finance/tasks/effectiveness`** (require_finance_access, COLLECTIONS_AGENT auto-scoped a self): agrega finance_tasks + finance_actions + finance_promises no período. Filtros: `date_from`/`date_to` (default -30d), `task_type`, `customer_segment`, `status`, `feedback_reason`. Devolve estrutura completa:
+    - `totals` — contadores por status (generated/open/done/postponed/converted/rejected/expired/in_review)
+    - `rates` — completion_rate, rejection_rate, postpone_rate (com divide-by-zero safety `max(generated, 1)`)
+    - `amounts.covered_by_done` — soma dos amount_collectable apenas nas tarefas DONE
+    - `amounts.promised_total` — soma das promessas criadas no período
+    - `communications` — emails, whatsapps, phone_calls, notes (finance_actions no range)
+    - `promises_created`, `regularizations_treated`, `block_task_done`
+    - `by_task_type[]` — ordenado por generated DESC com completion_rate + rejection_rate por tipo
+    - `by_segment[]` — breakdown por segmento
+    - `top_postpone_reasons[]`, `top_reject_reasons[]`, `top_converted_from_type[]` (top 5)
+    - `daily_series[]` — série temporal ordenada por date
+    - `today_summary` — planned/done/untreated (open+in_review)/postponed/rejected do dia
+  - **Frontend `/finance/tasks-effectiveness`** (novo, menu com ícone BarChart3 acessível a ADMIN/SUPERVISOR/AGENT — backend faz auto-scope para COLLECTIONS_AGENT):
+    - Filtros: date_from/date_to, task_type, segmento, estado
+    - 6 KPI cards de topo (Geradas/Feitas/Adiadas/Convertidas/Rejeitadas/Abertas)
+    - 5 taxas + valores (Taxa conclusão/rejeição/adiamento, Valor coberto, Prometido)
+    - Card "Resumo diário — hoje" com 5 mini-stats
+    - Card "Comunicações no período" com 5 mini-stats (emails/WhatsApps/telefonemas/promessas/bloqueios)
+    - Gráfico Recharts LineChart de evolução diária (generated/done/rejected/postponed)
+    - Tabela "Performance por task_type" com badges verdes/amarelos/vermelhos consoante taxa
+    - 3 cards de "Top motivos" (adiamento/rejeição/conversão)
+    - Gráfico BarChart por segmento
+  - **Read-only por design** — não permite editar regras ou tarefas. Base para futura IA explicativa (quando ligada) usar estes padrões para explicar/melhorar sugestões.
+  - Ajustes pós-review: menu incluído para AGENT (auto-scope no backend), removido `mode` param não usado + dead code `block_suggestions`. Testes: `/app/backend/tests/test_iteration_42_tasks_effectiveness.py`.
 - [x] **CRM Finance — Motor de Tarefas de Hoje + Excel Export + name_normalized (Fev 2026, iteration_41 15/15 backend + frontend E2E OK):**
   - **Rule engine (`task_engine.py`)** — determinístico, sem IA livre. 6 categorias de candidatos com scores + motivos: promessas (falhadas + due-today), críticos (traffic_light CRITICAL/RED/ORANGE, sem promessa ativa), old_low_value (residuais ≤50€ ou dívidas 90+ dias valor médio), no_contact (last_action_at >30d ou nunca), regularizações (docs residuais/micro-old), block_suggest (>120d + valor). **Distribuição alvo**: 30 min = 15 tarefas (3+5+3+2+2+0), 45 min = 24 (5+6+5+3+3+2), 60 min = 35 (6+8+6+5+4+6 — spec do utilizador). Guardrails: (a) `data_health` bloqueado → apenas `UPLOAD_GENES_MAP` com priority=999; (b) residual-only nunca em cobrança normal; (c) promessa ativa exclui cobrança (só gera FOLLOW_PROMISE_DUE_TODAY se hoje); (d) EM_DISPUTA/BLOQUEADO excluídos; (e) sem duplicados (client_id, task_type). `force_regenerate=false` devolve as existentes se já geradas hoje; `true` arquiva (status EXPIRED) e regenera.
   - **`finance_tasks` collection**: 15 task_types (FOLLOW_FAILED_PROMISE, FOLLOW_PROMISE_DUE_TODAY, SEND_ACCOUNT_STATEMENT, REQUEST_PAYMENT, REQUEST_PROOF, CALL_HIGH_VALUE_CLIENT, REVIEW_OLD_DEBT, REVIEW_LOW_VALUE_OLD_DEBT, UPDATE_FINANCE_CONTACT, REVIEW_RESIDUAL, SUGGEST_BLOCK, REVIEW_DISPUTE, CREATE_PAYMENT_PLAN, SET_NEXT_ACTION, UPLOAD_GENES_MAP), 7 status (OPEN/DONE/POSTPONED/CONVERTED/REJECTED/EXPIRED/IN_REVIEW), source (rule_engine|ai|manual). Cada tarefa tem priority_score, priority_reason, suggested_action, bucket, customer_segment, amount_collectable, days_overdue, assigned_to, generation_id.
