@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 42 — CRM Finance > Eficácia das Tarefas (Dashboard). Backend 15/15 pytest PASSED covering structure, filters (date/task_type/status/segment/feedback_reason), rate math (divide-by-zero safety + consistency), permissions (OWNER sees all, COLLECTIONS_AGENT auto-scoped, no-finance-role 403, unauth 401/403) and regression (/tasks/today + /clients-export). Frontend page /finance/tasks-effectiveness renders correctly for OWNER with all 20 data-testids present, filters interactive, refresh button works, no runtime errors. Menu visibility + access-control inconsistency noted (see action_items).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/finance/tasks-effectiveness (TasksEffectiveness.js — Performance por task_type table)",
+        "issues": ["React hydration console warnings: '<span> cannot be a child of <tbody>' and '<tr> cannot be a child of <span>'. Same root cause already reported in iteration_41 (data-ve-dynamic tooling span wrapping table rows). Not blocking, but persists on this new page's <table> because it uses the same <tbody>/<tr> pattern."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_42_tasks_effectiveness.py",
+    "/app/test_reports/pytest/iteration_42.xml"
+  ],
+  "action_items": [
+    "(Consistency) Menu 'Eficácia Tarefas' is gated on roles ['ADMIN','SUPERVISOR'] in Layout.js:217, but the route (App.js:229) and backend endpoint use requireFinanceAccess/require_finance_access. Result: COLLECTIONS_AGENT (role=AGENT, finance_role=COLLECTIONS_AGENT) CANNOT see the menu item but CAN access the URL directly and the API returns 200 with data auto-scoped to self. Either (a) widen menu to roles ['ADMIN','SUPERVISOR','AGENT'] and rely on backend for finance_role check (matches other finance menu items pattern), or (b) tighten the route to require ADMIN/SUPERVISOR only. Recommend (a) since backend already forces assigned_to=self for agents — this is the intended UX per the review-request note.",
+    "(Non-blocking / pre-existing) The <span data-ve-dynamic> tooling wrapper still produces hydration warnings around <tbody>/<tr> — also flagged in iteration_41 on FinanceClients."
+  ],
+  "critical_code_review_comments": [
+    "routes.py tasks_effectiveness: `block_suggestions = totals.get('done', 0)` on line 2949 is unused (never returned) and its comment '# aproximação a partir de task_type' is misleading. Safe to delete.",
+    "routes.py tasks_effectiveness: `mode` query param is accepted but never actually used inside the aggregation (only echoed back in filters.mode). Either wire it to filter finance_tasks (mode field on task) or drop the parameter.",
+    "routes.py tasks_effectiveness: total_promised_amount does an extra `db.finance_promises.find(promises_q, {'_id':0,'amount':1})` iteration on top of `count_documents`. Consider a single Mongo `$group` aggregation `[{$match: promises_q},{$group:{_id:null,total:{$sum:'$amount'},count:{$sum:1}}}]` to avoid two network round-trips.",
+    "routes.py tasks_effectiveness: dictionary lookup `totals[st] = totals.get(st, 0) + 1` accepts any unknown status silently and inserts it as a new key alongside the fixed schema (which promises 8 fields). If a task has status='foo' this would leak into totals. Consider whitelisting statuses.",
+    "routes.py tasks_effectiveness: iterates all matching tasks in memory (`async for t in db.finance_tasks.find(q)`); at 100k+ tasks this becomes O(N) work per request. For a dashboard, this is fine now but consider pre-computing daily rollups on tasks state transitions.",
+    "TasksEffectiveness.js: no error state UI (only console.error). If the API returns 500, the user sees an empty dashboard with no explanation. Add a `errorMsg` state + toast/banner.",
+    "TasksEffectiveness.js: `useCallback` deps include `getAuthHeaders` — if AuthContext returns a new object on every render, this re-fetches every render. Verify or wrap headers in useMemo in AuthContext.",
+    "TasksEffectiveness.js: `todayIso()` used in JSX ('Resumo diário — {todayIso()}') is recomputed on every render — negligible, but stylistically inconsistent with the const-based filter defaults."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_42_tasks_effectiveness.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15 pytest)", "frontend": "100% (all 20 data-testids present, filters interactive, permissions correct)"},
+  "test_credentials": "admin@pdpv.pt/HCNMEnKMLq (OWNER) — validated; cobranca.teste@pdpv.pt/TesteFin2026! (COLLECTIONS_AGENT) — validated (auto-scoped to self); rececao.teste@pdpv.pt/TesteFin2026! (no finance) — validated (403 backend, redirect to /dashboard frontend).",
+  "seed_data_creation": "None. Endpoint is read-only. Tests use whatever data is present.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend endpoint GET /api/finance/tasks/effectiveness is fully covered by /app/backend/tests/test_iteration_42_tasks_effectiveness.py — run with `REACT_APP_BACKEND_URL=<url> pytest backend/tests/test_iteration_42_tasks_effectiveness.py -v`. Frontend page renders correctly. Login endpoint returns `token` (not `access_token`) — tests handle both. Only unresolved item is the menu/route/access-control triple-check inconsistency for COLLECTIONS_AGENT visibility — main agent to decide widen menu or tighten route.",
+  "rca of the issue": "N/A — no blocking issues. Menu inconsistency is a UX consistency question, not a bug: Layout.js line 217 gates 'Eficácia Tarefas' on roles ['ADMIN','SUPERVISOR'] while backend uses finance_role. COLLECTIONS_AGENT (role=AGENT + finance_role=COLLECTIONS_AGENT) is invisible in menu but functional via URL — mirrors the existing menu pattern for other finance items should be verified for consistency."
+}

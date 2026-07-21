@@ -29,6 +29,7 @@ import {
   FinanceDashboard,
   CollectionsToday,
   TasksToday,
+  TasksEffectiveness,
   FinanceClients,
   FinanceClientDetail,
   FinanceImports,
@@ -223,6 +224,11 @@ function AppRoutes() {
       <Route path="/finance/tasks-today" element={
         <ProtectedRoute requireFinanceAccess>
           <TasksToday />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/tasks-effectiveness" element={
+        <ProtectedRoute requireFinanceAccess>
+          <TasksEffectiveness />
         </ProtectedRoute>
       } />
       <Route path="/finance/clients" element={

@@ -2812,3 +2812,192 @@ async def export_clients(
         },
     )
 
+
+
+# ============== DASHBOARD DE EFICÁCIA DAS TAREFAS ==============
+
+@router.get("/tasks/effectiveness")
+async def tasks_effectiveness(
+    date_from: Optional[str] = Query(None, description="ISO date (default: -30 dias)"),
+    date_to: Optional[str] = Query(None, description="ISO date (default: hoje)"),
+    mode: Optional[str] = Query(None, description="30 | 45 | 60"),
+    assigned_to: Optional[str] = None,
+    task_type: Optional[str] = None,
+    customer_segment: Optional[str] = None,
+    status: Optional[str] = None,
+    feedback_reason: Optional[str] = None,
+    current_user: dict = Depends(require_finance_access),
+):
+    """
+    Métricas agregadas sobre eficácia do motor de tarefas.
+    Não corre IA — apenas agregação de finance_tasks + finance_actions + finance_promises.
+    """
+    # Range default: últimos 30 dias
+    today = date.today()
+    df = date_from or (today - timedelta(days=30)).isoformat()
+    dt = date_to or today.isoformat()
+
+    q: Dict[str, Any] = {"due_date": {"$gte": df, "$lte": dt}}
+    if assigned_to:
+        q["assigned_to"] = assigned_to
+    elif get_finance_role(current_user) == FinanceRole.COLLECTIONS_AGENT:
+        q["assigned_to"] = current_user["id"]
+    if task_type:
+        q["task_type"] = task_type
+    if customer_segment:
+        q["customer_segment"] = customer_segment
+    if status:
+        q["status"] = status
+    if feedback_reason:
+        q["feedback_reason"] = feedback_reason
+
+    # Counters por status + task_type + reason + segmento
+    totals = {"generated": 0, "open": 0, "done": 0, "postponed": 0, "converted": 0, "rejected": 0, "expired": 0, "in_review": 0}
+    amount_covered = 0.0
+    by_task_type: Dict[str, Dict[str, int]] = {}
+    by_segment: Dict[str, Dict[str, int]] = {}
+    postpone_reasons: Dict[str, int] = {}
+    reject_reasons: Dict[str, int] = {}
+    convert_from_type: Dict[str, int] = {}
+    by_day: Dict[str, Dict[str, int]] = {}
+    by_mode: Dict[str, int] = {}
+
+    async for t in db.finance_tasks.find(q, {"_id": 0}):
+        totals["generated"] += 1
+        st = (t.get("status") or "OPEN").lower()
+        totals[st] = totals.get(st, 0) + 1
+        amount_covered += float(t.get("amount_collectable", 0) or 0) if st == "done" else 0
+
+        tt = t.get("task_type", "unknown")
+        by_task_type.setdefault(tt, {"generated": 0, "done": 0, "rejected": 0, "postponed": 0, "converted": 0})
+        by_task_type[tt]["generated"] += 1
+        by_task_type[tt][st] = by_task_type[tt].get(st, 0) + 1
+
+        seg = t.get("customer_segment") or "UNKNOWN"
+        by_segment.setdefault(seg, {"generated": 0, "done": 0, "rejected": 0})
+        by_segment[seg]["generated"] += 1
+        by_segment[seg][st] = by_segment[seg].get(st, 0) + 1
+
+        # by_day (agregar por due_date)
+        day = t.get("due_date") or (t.get("created_at") or "")[:10]
+        by_day.setdefault(day, {"generated": 0, "done": 0, "rejected": 0, "postponed": 0, "open": 0, "converted": 0})
+        by_day[day]["generated"] += 1
+        by_day[day][st] = by_day[day].get(st, 0) + 1
+
+        # Motivos
+        if st == "postponed" and t.get("feedback_reason"):
+            postpone_reasons[t["feedback_reason"]] = postpone_reasons.get(t["feedback_reason"], 0) + 1
+        if st == "rejected" and t.get("feedback_reason"):
+            reject_reasons[t["feedback_reason"]] = reject_reasons.get(t["feedback_reason"], 0) + 1
+        if st == "converted":
+            convert_from_type[tt] = convert_from_type.get(tt, 0) + 1
+
+    generated = max(totals["generated"], 1)  # evitar divide-by-zero
+    completion_rate = round(totals["done"] * 100.0 / generated, 1)
+    rejection_rate = round(totals["rejected"] * 100.0 / generated, 1)
+    postpone_rate = round(totals["postponed"] * 100.0 / generated, 1)
+
+    # Enriquecer by_task_type com taxa
+    task_type_stats = []
+    for tt, s in by_task_type.items():
+        g = max(s["generated"], 1)
+        task_type_stats.append({
+            "task_type": tt,
+            "generated": s["generated"],
+            "done": s.get("done", 0),
+            "rejected": s.get("rejected", 0),
+            "postponed": s.get("postponed", 0),
+            "converted": s.get("converted", 0),
+            "completion_rate": round(s.get("done", 0) * 100.0 / g, 1),
+            "rejection_rate": round(s.get("rejected", 0) * 100.0 / g, 1),
+        })
+    task_type_stats.sort(key=lambda x: x["generated"], reverse=True)
+
+    # Top motivos (ordenados)
+    def _top(d: Dict[str, int], n: int = 5) -> List[Dict[str, Any]]:
+        return [{"reason": k, "count": v} for k, v in sorted(d.items(), key=lambda x: x[1], reverse=True)[:n]]
+
+    # Série temporal por dia (ordenado)
+    daily_series = [
+        {"date": day, **counts}
+        for day, counts in sorted(by_day.items())
+    ]
+
+    # Contadores agregados de comunicações e promessas no período
+    # (usar range de datas em created_at das finance_actions/promises)
+    range_q: Dict[str, Any] = {"created_at": {"$gte": df, "$lt": (date.fromisoformat(dt) + timedelta(days=1)).isoformat()}}
+    if q.get("assigned_to"):
+        range_q_user = {**range_q, "user_id": q["assigned_to"]}
+    else:
+        range_q_user = range_q
+
+    emails_sent = await db.finance_actions.count_documents({**range_q_user, "action_type": "email"})
+    whatsapps = await db.finance_actions.count_documents({**range_q_user, "action_type": "whatsapp"})
+    phone_calls = await db.finance_actions.count_documents({**range_q_user, "action_type": "phone_call"})
+    notes = await db.finance_actions.count_documents({**range_q_user, "action_type": "note"})
+
+    if q.get("assigned_to"):
+        promises_q = {**range_q, "created_by": q["assigned_to"]}
+    else:
+        promises_q = range_q
+    promises_created = await db.finance_promises.count_documents(promises_q)
+
+    total_promised_amount = 0.0
+    async for p in db.finance_promises.find(promises_q, {"_id": 0, "amount": 1}):
+        total_promised_amount += float(p.get("amount", 0) or 0)
+
+    block_suggestions = totals.get("done", 0)  # aproximação a partir de task_type
+    regularizations_treated = by_task_type.get("REVIEW_RESIDUAL", {}).get("done", 0) + by_task_type.get("REVIEW_LOW_VALUE_OLD_DEBT", {}).get("done", 0)
+    block_task_done = by_task_type.get("SUGGEST_BLOCK", {}).get("done", 0)
+
+    # Resumo diário (hoje)
+    today_iso = today.isoformat()
+    today_summary = by_day.get(today_iso, {}) or {"generated": 0, "done": 0, "postponed": 0, "rejected": 0, "open": 0, "converted": 0}
+    untreated_today = today_summary.get("open", 0) + today_summary.get("in_review", 0)
+
+    return {
+        "range": {"from": df, "to": dt},
+        "filters": {
+            "assigned_to": q.get("assigned_to"),
+            "task_type": task_type,
+            "customer_segment": customer_segment,
+            "status": status,
+            "feedback_reason": feedback_reason,
+            "mode": mode,
+        },
+        "totals": totals,
+        "rates": {
+            "completion_rate": completion_rate,
+            "rejection_rate": rejection_rate,
+            "postpone_rate": postpone_rate,
+        },
+        "amounts": {
+            "covered_by_done": round(amount_covered, 2),
+            "promised_total": round(total_promised_amount, 2),
+        },
+        "communications": {
+            "emails": emails_sent,
+            "whatsapps": whatsapps,
+            "phone_calls": phone_calls,
+            "notes": notes,
+        },
+        "promises_created": promises_created,
+        "regularizations_treated": regularizations_treated,
+        "block_task_done": block_task_done,
+        "by_task_type": task_type_stats,
+        "by_segment": [
+            {"segment": k, **v} for k, v in sorted(by_segment.items(), key=lambda x: x[1]["generated"], reverse=True)
+        ],
+        "top_postpone_reasons": _top(postpone_reasons),
+        "top_reject_reasons": _top(reject_reasons),
+        "top_converted_from_type": _top(convert_from_type),
+        "daily_series": daily_series,
+        "today_summary": {
+            "planned": today_summary.get("generated", 0),
+            "done": today_summary.get("done", 0),
+            "untreated": untreated_today,
+            "postponed": today_summary.get("postponed", 0),
+            "rejected": today_summary.get("rejected", 0),
+        },
+    }
+
