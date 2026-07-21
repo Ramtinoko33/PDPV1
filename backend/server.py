@@ -1879,16 +1879,24 @@ async def _deferred_startup():
         BACKFILL_KEY = "finance_backfill_customer_link_v1_2026_02"
         already = await db.finance_recompute_log.find_one({"migration_key": BACKFILL_KEY}, {"_id": 0, "id": 1})
         if not already:
-            from modules.finance.services.customer_link import backfill_all_finance_clients
+            from modules.finance.services.customer_link import (
+                backfill_all_finance_clients,
+                ensure_customers_name_normalized_index,
+            )
+            idx_summary = await ensure_customers_name_normalized_index()
             summary = await backfill_all_finance_clients(force=False)
             await db.finance_recompute_log.insert_one({
                 "id": str(uuid.uuid4()),
                 "triggered_by": BACKFILL_KEY,
                 "migration_key": BACKFILL_KEY,
                 "executed_at": datetime.now(timezone.utc).isoformat(),
-                "summary": summary,
+                "summary": {**summary, "name_normalized_index": idx_summary},
             })
-            logger.info(f"[STARTUP] Finance customer_link backfill executed: {summary}")
+            logger.info(f"[STARTUP] Finance customer_link backfill executed: idx={idx_summary} link={summary}")
+        else:
+            # Mesmo com migração aplicada, garantir que o índice existe (idempotente)
+            from modules.finance.services.customer_link import ensure_customers_name_normalized_index
+            await ensure_customers_name_normalized_index()
     except Exception as e:
         logger.error(f"[STARTUP] Finance customer_link backfill failed: {e}")
 

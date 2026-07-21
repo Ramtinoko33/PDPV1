@@ -38,6 +38,13 @@ from .models import (
     FinanceSettingsUpdate,
     FinanceClientContactsUpdate, CustomerSegment,
     EmailTemplateCreate, EmailTemplateUpdate, EmailTemplateResponse, EmailTemplateListResponse,
+    # Finance Tasks
+    TaskMode, TaskType, TaskStatus, TaskSource,
+    PostponeReason, RejectReason,
+    FinanceTaskResponse,
+    TaskGenerateRequest, TaskGenerateResponse,
+    TaskDonePayload, TaskPostponePayload, TaskConvertPayload, TaskRejectPayload,
+    TaskListResponse,
 )
 from .permissions import (
     require_finance_access,
@@ -2440,4 +2447,367 @@ async def get_client_dunning_bucket(
         "bucket": bucket,
         "suggested_templates": templates,
     }
+
+
+
+# ============== FINANCE TASKS — MOTOR DE TAREFAS DE HOJE ==============
+
+@router.post("/tasks/generate", response_model=TaskGenerateResponse)
+async def generate_tasks(
+    payload: TaskGenerateRequest,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """
+    Gera lista diária de tarefas para a cobradora.
+    - Se dados desatualizados: apenas cria UPLOAD_GENES_MAP.
+    - Se já existem tarefas hoje e `force_regenerate=False`: devolve as existentes.
+    - Se `force_regenerate=True`: arquiva tarefas OPEN de hoje (status EXPIRED) antes de gerar novas.
+    """
+    from .services.task_engine import generate_daily_tasks
+
+    result = await generate_daily_tasks(
+        mode=payload.mode,
+        assigned_to=payload.assigned_to or current_user["id"],
+        force_regenerate=payload.force_regenerate,
+    )
+
+    tasks = [FinanceTaskResponse(**t) for t in result["tasks"]]
+    return TaskGenerateResponse(
+        generation_id=result["generation_id"],
+        mode=TaskMode(result["mode"]),
+        tasks_created=result["tasks_created"],
+        tasks_archived=result["tasks_archived"],
+        blocked_reason=result.get("blocked_reason"),
+        tasks=tasks,
+    )
+
+
+@router.get("/tasks/today", response_model=TaskListResponse)
+async def get_tasks_today(
+    status_in: Optional[str] = Query(None, description="Estados separados por vírgula (ex: OPEN,IN_REVIEW)"),
+    assigned_to: Optional[str] = None,
+    current_user: dict = Depends(require_finance_access),
+):
+    """
+    Devolve as tarefas do dia com resumo agregado.
+    Se `assigned_to` não for dado, devolve as do próprio utilizador (se for COLLECTIONS_AGENT).
+    """
+    today = date.today().isoformat()
+    q: Dict[str, Any] = {"due_date": today}
+    if assigned_to:
+        q["assigned_to"] = assigned_to
+    elif get_finance_role(current_user) == FinanceRole.COLLECTIONS_AGENT:
+        q["assigned_to"] = current_user["id"]
+    if status_in:
+        statuses = [s.strip().upper() for s in status_in.split(",") if s.strip()]
+        q["status"] = {"$in": statuses}
+
+    tasks: List[FinanceTaskResponse] = []
+    total = 0
+    summary = {
+        "open": 0, "done": 0, "postponed": 0, "converted": 0, "rejected": 0, "expired": 0,
+        "total_amount": 0.0, "promises_created": 0, "contacts_registered": 0,
+    }
+    async for t in db.finance_tasks.find(q, {"_id": 0}).sort("priority_score", -1):
+        total += 1
+        status = t.get("status", "OPEN")
+        summary[status.lower()] = summary.get(status.lower(), 0) + 1
+        if t.get("status") == TaskStatus.DONE.value:
+            summary["total_amount"] += float(t.get("amount_collectable", 0) or 0)
+        tasks.append(FinanceTaskResponse(**t))
+
+    # Contar promessas criadas hoje e contactos (finance_actions) hoje pelo utilizador
+    if q.get("assigned_to"):
+        summary["promises_created"] = await db.finance_promises.count_documents({
+            "created_by": q["assigned_to"],
+            "created_at": {"$gte": today},
+        })
+        summary["contacts_registered"] = await db.finance_actions.count_documents({
+            "user_id": q["assigned_to"],
+            "created_at": {"$gte": today},
+            "action_type": {"$in": ["whatsapp", "email", "phone_call", "note"]},
+        })
+
+    return TaskListResponse(tasks=tasks, total=total, summary=summary)
+
+
+async def _task_action_footer(
+    task_id: str,
+    user: dict,
+    action_type: str,
+    reason: Optional[str],
+    note: Optional[str],
+) -> None:
+    """Regista `feedback` no histórico finance_actions ligado ao cliente da tarefa."""
+    t = await db.finance_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not t or not t.get("client_id"):
+        return
+    await db.finance_actions.insert_one({
+        "id": str(uuid.uuid4()),
+        "client_id": t["client_id"],
+        "action_type": ActionType.NOTE.value,
+        "user_id": user["id"],
+        "user_name": user.get("name", ""),
+        "notes": f"[Tarefa {action_type.upper()}] type={t.get('task_type')} reason={reason or '—'} note={note or '—'}",
+        "delay_reason": None,
+        "next_action_date": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@router.post("/tasks/{task_id}/done", response_model=FinanceTaskResponse)
+async def task_done(
+    task_id: str,
+    payload: TaskDonePayload,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """Marca tarefa como Feita."""
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.finance_tasks.update_one(
+        {"id": task_id, "status": TaskStatus.OPEN.value},
+        {"$set": {
+            "status": TaskStatus.DONE.value,
+            "completed_at": now,
+            "outcome": payload.outcome,
+            "feedback_action": "done",
+        }}
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada ou não está aberta")
+    await _task_action_footer(task_id, current_user, "done", None, payload.outcome)
+    t = await db.finance_tasks.find_one({"id": task_id}, {"_id": 0})
+    return FinanceTaskResponse(**t)
+
+
+@router.post("/tasks/{task_id}/postpone", response_model=FinanceTaskResponse)
+async def task_postpone(
+    task_id: str,
+    payload: TaskPostponePayload,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """Adia tarefa (motivo + próxima data obrigatórios)."""
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.finance_tasks.update_one(
+        {"id": task_id, "status": TaskStatus.OPEN.value},
+        {"$set": {
+            "status": TaskStatus.POSTPONED.value,
+            "completed_at": now,
+            "feedback_action": "postpone",
+            "feedback_reason": payload.reason.value,
+            "feedback_note": payload.note,
+            "next_action_date": payload.next_action_date,
+        }}
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada ou não está aberta")
+    await _task_action_footer(task_id, current_user, "postpone", payload.reason.value, payload.note)
+    t = await db.finance_tasks.find_one({"id": task_id}, {"_id": 0})
+    return FinanceTaskResponse(**t)
+
+
+@router.post("/tasks/{task_id}/convert", response_model=FinanceTaskResponse)
+async def task_convert(
+    task_id: str,
+    payload: TaskConvertPayload,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """Fecha a tarefa como CONVERTED e cria uma nova com o novo task_type."""
+    from .services.task_engine import SUGGESTED_ACTIONS
+    now = datetime.now(timezone.utc).isoformat()
+    t = await db.finance_tasks.find_one({"id": task_id, "status": TaskStatus.OPEN.value}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada ou não está aberta")
+
+    new_task = {
+        **{k: v for k, v in t.items() if k != "_id"},
+        "id": str(uuid.uuid4()),
+        "task_type": payload.new_task_type.value,
+        "priority_reason": f"Convertida de {t.get('task_type')} — {payload.reason or 'sem motivo'}",
+        "suggested_action": SUGGESTED_ACTIONS.get(payload.new_task_type, ""),
+        "status": TaskStatus.OPEN.value,
+        "created_at": now,
+        "completed_at": None,
+        "outcome": None,
+        "feedback_action": None,
+        "feedback_reason": None,
+        "feedback_note": None,
+        "next_action_date": None,
+        "converted_to_task_id": None,
+        "source": TaskSource.MANUAL.value,
+    }
+    await db.finance_tasks.insert_one(new_task)
+
+    await db.finance_tasks.update_one(
+        {"id": task_id},
+        {"$set": {
+            "status": TaskStatus.CONVERTED.value,
+            "completed_at": now,
+            "feedback_action": "convert",
+            "feedback_note": payload.reason,
+            "converted_to_task_id": new_task["id"],
+        }}
+    )
+    await _task_action_footer(task_id, current_user, "convert", payload.new_task_type.value, payload.reason)
+    updated = await db.finance_tasks.find_one({"id": task_id}, {"_id": 0})
+    return FinanceTaskResponse(**updated)
+
+
+@router.post("/tasks/{task_id}/reject", response_model=FinanceTaskResponse)
+async def task_reject(
+    task_id: str,
+    payload: TaskRejectPayload,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """Rejeita tarefa (não faz sentido). Motivo obrigatório."""
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.finance_tasks.update_one(
+        {"id": task_id, "status": TaskStatus.OPEN.value},
+        {"$set": {
+            "status": TaskStatus.REJECTED.value,
+            "completed_at": now,
+            "feedback_action": "reject",
+            "feedback_reason": payload.reason.value,
+            "feedback_note": payload.note,
+        }}
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada ou não está aberta")
+    await _task_action_footer(task_id, current_user, "reject", payload.reason.value, payload.note)
+    t = await db.finance_tasks.find_one({"id": task_id}, {"_id": 0})
+    return FinanceTaskResponse(**t)
+
+
+# ============== EXPORT CLIENTES FILTRADOS ==============
+
+@router.get("/clients-export")
+async def export_clients(
+    # Aceita os MESMOS filtros do GET /clients (subset comum)
+    search: Optional[str] = None,
+    status: Optional[FinancialStatus] = None,
+    traffic_light: Optional[TrafficLight] = None,
+    has_overdue: Optional[bool] = None,
+    is_blocked: Optional[bool] = None,
+    customer_segment: Optional[CustomerSegment] = None,
+    min_overdue: Optional[float] = None,
+    max_overdue: Optional[float] = None,
+    min_days: Optional[int] = None,
+    max_days: Optional[int] = None,
+    aging_bucket: Optional[str] = None,
+    no_contact_days: Optional[int] = None,
+    never_contacted: Optional[bool] = None,
+    missing_finance_email: Optional[bool] = None,
+    has_residual: Optional[bool] = None,
+    current_user: dict = Depends(require_finance_access),
+):
+    """
+    Exporta a lista de clientes filtrada para Excel (xlsx).
+    Usa os mesmos filtros de GET /clients (subset — sem paginação/ordenação).
+    """
+    import io
+    import openpyxl
+    from fastapi.responses import StreamingResponse
+
+    # Reproduzir a mesma query de list_clients (versão simplificada)
+    query: Dict[str, Any] = {}
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"genes_code": {"$regex": search, "$options": "i"}},
+        ]
+    if status: query["financial_status"] = status.value
+    if traffic_light: query["traffic_light"] = traffic_light.value
+    if customer_segment: query["customer_segment"] = customer_segment.value
+    if is_blocked is not None: query["is_blocked"] = is_blocked
+
+    overdue_range: Dict[str, Any] = {}
+    if has_overdue is True: overdue_range["$gt"] = 0
+    elif has_overdue is False: overdue_range["$lte"] = 0
+    if min_overdue is not None: overdue_range["$gte"] = min_overdue
+    if max_overdue is not None: overdue_range["$lte"] = max_overdue
+    if overdue_range: query["overdue_balance_collectable"] = overdue_range
+
+    days_range: Dict[str, Any] = {}
+    if min_days is not None: days_range["$gte"] = min_days
+    if max_days is not None: days_range["$lte"] = max_days
+    if aging_bucket:
+        aging_map = {"0_30": (0, 30), "31_60": (31, 60), "61_90": (61, 90),
+                     "90p": (91, None), "120p": (121, None), "180p": (181, None), "365p": (366, None)}
+        rng = aging_map.get(aging_bucket)
+        if rng:
+            lo, hi = rng
+            days_range["$gte"] = max(days_range.get("$gte", lo), lo)
+            if hi is not None:
+                days_range["$lte"] = min(days_range.get("$lte", hi), hi)
+    if days_range: query["oldest_overdue_days"] = days_range
+
+    if never_contacted:
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"last_action_at": {"$exists": False}}, {"last_action_at": None}, {"last_action_at": ""},
+        ]}]
+    elif no_contact_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=no_contact_days)).isoformat()
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"last_action_at": {"$exists": False}}, {"last_action_at": None}, {"last_action_at": ""},
+            {"last_action_at": {"$lt": cutoff}},
+        ]}]
+    if missing_finance_email:
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"finance_email": {"$exists": False}}, {"finance_email": None}, {"finance_email": ""},
+        ]}]
+    if has_residual is True:
+        query["residual_balance"] = {"$gt": 0}
+    elif has_residual is False:
+        query["residual_balance"] = {"$lte": 0}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Clientes Finance"
+    headers = [
+        "Código", "Nome", "Segmento", "Estado", "Semáforo",
+        "Saldo Total", "Vencido Cobravel", "Residual",
+        "Dias Vencido", "Bloqueado",
+        "Email Finance", "Telefone Finance", "Telemóvel Finance", "Contacto",
+        "Último Contacto",
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = openpyxl.styles.Font(bold=True)
+
+    count = 0
+    async for c in db.finance_clients.find(query, {"_id": 0}).sort("overdue_balance_collectable", -1).limit(10000):
+        ws.append([
+            c.get("genes_code", ""),
+            c.get("name", ""),
+            c.get("customer_segment", ""),
+            c.get("financial_status", ""),
+            c.get("traffic_light", ""),
+            round(c.get("total_balance", 0) or 0, 2),
+            round(c.get("overdue_balance_collectable", 0) or 0, 2),
+            round(c.get("residual_balance", 0) or 0, 2),
+            c.get("oldest_overdue_days", 0),
+            "SIM" if c.get("is_blocked") else "não",
+            c.get("finance_email") or "",
+            c.get("finance_phone") or "",
+            c.get("finance_mobile") or "",
+            c.get("finance_contact_name") or "",
+            (c.get("last_action_at") or "")[:19],
+        ])
+        count += 1
+
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    filename = f"clientes_finance_{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Total-Exported": str(count),
+        },
+    )
 

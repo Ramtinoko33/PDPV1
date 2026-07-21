@@ -232,6 +232,39 @@ const FinanceClients = () => {
           >
             <Filter className="h-4 w-4" />
           </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                const params = new URLSearchParams();
+                if (searchTerm) params.append('search', searchTerm);
+                if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+                if (filters.traffic_light && filters.traffic_light !== 'all') params.append('traffic_light', filters.traffic_light);
+                if (filters.customer_segment && filters.customer_segment !== 'all') params.append('customer_segment', filters.customer_segment);
+                if (filters.has_overdue && filters.has_overdue !== 'all') params.append('has_overdue', filters.has_overdue);
+                if (filters.is_blocked) params.append('is_blocked', filters.is_blocked);
+                if (filters.aging_bucket && filters.aging_bucket !== 'all') params.append('aging_bucket', filters.aging_bucket);
+                if (filters.min_overdue !== '') params.append('min_overdue', filters.min_overdue);
+                if (filters.max_overdue !== '') params.append('max_overdue', filters.max_overdue);
+                if (filters.no_contact_days !== '') params.append('no_contact_days', filters.no_contact_days);
+                if (filters.never_contacted) params.append('never_contacted', 'true');
+                if (filters.missing_finance_email) params.append('missing_finance_email', 'true');
+                if (filters.has_residual !== '') params.append('has_residual', filters.has_residual);
+                const res = await fetch(`${API_URL}/api/finance/clients-export?${params}`, { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error('Falha no export');
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `clientes_finance_${new Date().toISOString().slice(0,10)}.xlsx`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch { /* silencioso */ }
+            }}
+            data-testid="clients-export-btn"
+          >
+            Exportar Excel
+          </Button>
           <Button variant="outline" size="icon" onClick={fetchClients}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>

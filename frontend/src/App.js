@@ -28,6 +28,7 @@ import AdminTelegramUsers from "./pages/AdminTelegramUsers";
 import {
   FinanceDashboard,
   CollectionsToday,
+  TasksToday,
   FinanceClients,
   FinanceClientDetail,
   FinanceImports,
@@ -217,6 +218,11 @@ function AppRoutes() {
       <Route path="/finance/collections-today" element={
         <ProtectedRoute requireFinanceAccess>
           <CollectionsToday />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/tasks-today" element={
+        <ProtectedRoute requireFinanceAccess>
+          <TasksToday />
         </ProtectedRoute>
       } />
       <Route path="/finance/clients" element={

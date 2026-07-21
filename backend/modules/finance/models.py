@@ -580,3 +580,140 @@ class EmailTemplateResponse(EmailTemplateBase):
 class EmailTemplateListResponse(BaseModel):
     templates: List[EmailTemplateResponse]
     total: int
+
+
+# ============== FINANCE TASKS (motor de tarefas diárias) ==============
+
+class TaskType(str, Enum):
+    """Tipos de tarefa sugeridos pelo motor de regras."""
+    FOLLOW_FAILED_PROMISE = "FOLLOW_FAILED_PROMISE"
+    FOLLOW_PROMISE_DUE_TODAY = "FOLLOW_PROMISE_DUE_TODAY"
+    SEND_ACCOUNT_STATEMENT = "SEND_ACCOUNT_STATEMENT"
+    REQUEST_PAYMENT = "REQUEST_PAYMENT"
+    REQUEST_PROOF = "REQUEST_PROOF"
+    CALL_HIGH_VALUE_CLIENT = "CALL_HIGH_VALUE_CLIENT"
+    REVIEW_OLD_DEBT = "REVIEW_OLD_DEBT"
+    REVIEW_LOW_VALUE_OLD_DEBT = "REVIEW_LOW_VALUE_OLD_DEBT"
+    UPDATE_FINANCE_CONTACT = "UPDATE_FINANCE_CONTACT"
+    REVIEW_RESIDUAL = "REVIEW_RESIDUAL"
+    SUGGEST_BLOCK = "SUGGEST_BLOCK"
+    REVIEW_DISPUTE = "REVIEW_DISPUTE"
+    CREATE_PAYMENT_PLAN = "CREATE_PAYMENT_PLAN"
+    SET_NEXT_ACTION = "SET_NEXT_ACTION"
+    UPLOAD_GENES_MAP = "UPLOAD_GENES_MAP"
+
+
+class TaskStatus(str, Enum):
+    OPEN = "OPEN"
+    DONE = "DONE"
+    POSTPONED = "POSTPONED"
+    CONVERTED = "CONVERTED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    IN_REVIEW = "IN_REVIEW"
+
+
+class TaskSource(str, Enum):
+    RULE_ENGINE = "rule_engine"
+    AI = "ai"
+    MANUAL = "manual"
+
+
+class TaskMode(str, Enum):
+    MIN_30 = "30"
+    MIN_45 = "45"
+    MIN_60 = "60"
+
+
+class PostponeReason(str, Enum):
+    MISSING_INVOICE = "missing_invoice"
+    MISSING_STATEMENT = "missing_statement"
+    NEED_CONFIRM_FINANCE_EMAIL = "need_confirm_finance_email"
+    AWAITING_PROOF = "awaiting_proof"
+    AWAITING_INTERNAL_ANSWER = "awaiting_internal_answer"
+    CLIENT_REQUESTED_LATER = "client_requested_later"
+    AWAITING_ACCOUNTING = "awaiting_accounting"
+    OTHER = "other"
+
+
+class RejectReason(str, Enum):
+    DUPLICATE = "duplicate"
+    ACTIVE_PROMISE = "active_promise"
+    IN_DISPUTE = "in_dispute"
+    RESIDUAL_HANDLED = "residual_handled"
+    WRONG_CLIENT_LINK = "wrong_client_link"
+    WRONG_DOCUMENT = "wrong_document"
+    DATA_LOOKS_INCORRECT = "data_looks_incorrect"
+    BLOCKED_NO_ACTION_NEEDED = "blocked_no_action_needed"
+    OTHER = "other"
+
+
+class FinanceTaskResponse(BaseModel):
+    id: str
+    client_id: Optional[str] = None
+    client_key: Optional[str] = None
+    client_name: Optional[str] = None
+    genes_code: Optional[str] = None
+    task_type: TaskType
+    priority_score: float = 0.0
+    priority_reason: str
+    suggested_action: str
+    bucket: Optional[str] = None
+    customer_segment: Optional[str] = None
+    amount_collectable: float = 0.0
+    days_overdue: int = 0
+    status: TaskStatus = TaskStatus.OPEN
+    assigned_to: Optional[str] = None
+    created_at: str
+    due_date: Optional[str] = None
+    completed_at: Optional[str] = None
+    outcome: Optional[str] = None
+    feedback_action: Optional[str] = None
+    feedback_reason: Optional[str] = None
+    feedback_note: Optional[str] = None
+    next_action_date: Optional[str] = None
+    converted_to_task_id: Optional[str] = None
+    source: TaskSource = TaskSource.RULE_ENGINE
+    import_id: Optional[str] = None
+    generation_id: Optional[str] = None
+
+
+class TaskGenerateRequest(BaseModel):
+    mode: TaskMode = TaskMode.MIN_30
+    assigned_to: Optional[str] = None
+    force_regenerate: bool = False
+
+
+class TaskGenerateResponse(BaseModel):
+    generation_id: str
+    mode: TaskMode
+    tasks_created: int
+    tasks_archived: int
+    blocked_reason: Optional[str] = None
+    tasks: List[FinanceTaskResponse] = []
+
+
+class TaskDonePayload(BaseModel):
+    outcome: Optional[str] = Field(None, max_length=1000)
+
+
+class TaskPostponePayload(BaseModel):
+    reason: PostponeReason
+    next_action_date: str = Field(..., description="ISO date (YYYY-MM-DD)")
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+class TaskConvertPayload(BaseModel):
+    new_task_type: TaskType
+    reason: Optional[str] = Field(None, max_length=1000)
+
+
+class TaskRejectPayload(BaseModel):
+    reason: RejectReason
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+class TaskListResponse(BaseModel):
+    tasks: List[FinanceTaskResponse]
+    total: int
+    summary: Dict[str, Any]

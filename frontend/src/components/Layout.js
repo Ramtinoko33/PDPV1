@@ -32,7 +32,8 @@ import {
   CalendarClock,
   Coins,
   Ban,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Sparkles
 } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -212,6 +213,7 @@ const Layout = ({ children }) => {
       children: [
         { path: '/finance', label: 'Painel Finance', icon: Landmark, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/collections-today', label: 'Cobranças Hoje', icon: TrendingDown, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
+        { path: '/finance/tasks-today', label: 'Tarefas de Hoje', icon: Sparkles, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/clients', label: 'Clientes Finance', icon: Users, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/promises', label: 'Promessas', icon: CalendarClock, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
         { path: '/finance/regularizations', label: 'Regularizações', icon: Coins, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },

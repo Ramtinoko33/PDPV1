@@ -106,7 +106,7 @@ async def match_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
     """
     Tenta encontrar um customer pelo nome (exact normalized match).
     Devolve o customer se houver correspondência única, senão None.
-    Estratégia intencionalmente conservadora — nunca fazer link em caso de dúvida.
+    Usa o campo indexado `name_normalized` quando existe (fallback: full-scan).
     """
     if not name:
         return None
@@ -114,16 +114,58 @@ async def match_customer_by_name(name: str) -> Optional[Dict[str, Any]]:
     if not normalized or len(normalized) < 3:
         return None
 
-    # Tentar match exact em name normalized
-    # (mais eficiente com index em `_name_normalized` mas para MVP fazemos client-side)
+    # 1) Fast path — usa índice em name_normalized
+    fast = []
+    async for c in db.customers.find(
+        {"name_normalized": normalized},
+        {"_id": 0, "id": 1, "name": 1, "customer_type": 1, "emails": 1, "phones": 1, "email": 1, "phone": 1, "mobile": 1},
+    ):
+        fast.append(c)
+        if len(fast) > 1:
+            return None
+    if fast:
+        return fast[0]
+
+    # 2) Fallback lento — se o backfill ainda não correu ou há customers sem name_normalized
     candidates: List[Dict[str, Any]] = []
-    async for c in db.customers.find({}, {"_id": 0, "id": 1, "name": 1, "customer_type": 1, "emails": 1, "phones": 1, "email": 1, "phone": 1, "mobile": 1}):
+    async for c in db.customers.find(
+        {"name_normalized": {"$exists": False}},
+        {"_id": 0, "id": 1, "name": 1, "customer_type": 1, "emails": 1, "phones": 1, "email": 1, "phone": 1, "mobile": 1},
+    ):
         if _normalize_name(c.get("name", "")) == normalized:
             candidates.append(c)
             if len(candidates) > 1:
-                # ambíguo — não fazer link
                 return None
     return candidates[0] if candidates else None
+
+
+async def ensure_customers_name_normalized_index() -> Dict[str, Any]:
+    """
+    Idempotente:
+      - Cria índice em `customers.name_normalized` (não-único, pode haver homónimos).
+      - Preenche `name_normalized` em documentos que ainda não têm.
+    Retorna sumário {index_created, backfilled}.
+    """
+    created = False
+    try:
+        existing = await db.customers.index_information()
+        if "name_normalized_1" not in existing:
+            await db.customers.create_index("name_normalized")
+            created = True
+    except Exception as e:
+        logger.warning(f"[FINANCE] Failed creating name_normalized index: {e}")
+
+    backfilled = 0
+    async for c in db.customers.find(
+        {"name_normalized": {"$exists": False}}, {"_id": 0, "id": 1, "name": 1}
+    ):
+        n = _normalize_name(c.get("name", ""))
+        if n:
+            await db.customers.update_one({"id": c["id"]}, {"$set": {"name_normalized": n}})
+            backfilled += 1
+
+    logger.info(f"[FINANCE] ensure_customers_name_normalized_index: created={created} backfilled={backfilled}")
+    return {"index_created": created, "backfilled": backfilled}
 
 
 async def backfill_finance_client(
