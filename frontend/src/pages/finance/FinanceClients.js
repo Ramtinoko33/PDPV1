@@ -228,6 +228,7 @@ const FinanceClients = () => {
             variant={showFilters ? "default" : "outline"} 
             size="icon"
             onClick={() => setShowFilters(!showFilters)}
+            data-testid="clients-toggle-filters"
           >
             <Filter className="h-4 w-4" />
           </Button>
