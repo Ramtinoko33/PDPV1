@@ -2452,6 +2452,39 @@ async def get_client_dunning_bucket(
 
 # ============== FINANCE TASKS — MOTOR DE TAREFAS DE HOJE ==============
 
+@router.post("/tasks/reset")
+async def reset_tasks(
+    confirm: str = Query(..., description="Escrever exatamente RESET para confirmar"),
+    current_user: dict = Depends(require_finance_owner),
+):
+    """
+    RESET COMPLETO do motor de Tarefas + Eficácia.
+    - Apaga TODAS as tarefas (`finance_tasks`)
+    - Apaga todos os action-logs de feedback de tarefas (`finance_actions` com notas `[Tarefa ...]`)
+    Restrito a OWNER. Requer query param `confirm=RESET`.
+    """
+    if confirm != "RESET":
+        raise HTTPException(status_code=400, detail="confirmação inválida — enviar confirm=RESET")
+
+    tasks_deleted = (await db.finance_tasks.delete_many({})).deleted_count
+    # apagar apenas notas do feedback de tarefas (para não perder outras notas manuais)
+    feedback_deleted = (await db.finance_actions.delete_many({
+        "action_type": "note",
+        "notes": {"$regex": r"^\[Tarefa "},
+    })).deleted_count
+
+    logger.warning(
+        f"FINANCE TASKS RESET by user {current_user.get('email')} — "
+        f"tasks_deleted={tasks_deleted}, feedback_actions_deleted={feedback_deleted}"
+    )
+    return {
+        "ok": True,
+        "tasks_deleted": tasks_deleted,
+        "feedback_actions_deleted": feedback_deleted,
+        "message": "Motor de Tarefas e histórico de eficácia limpos.",
+    }
+
+
 @router.post("/tasks/generate", response_model=TaskGenerateResponse)
 async def generate_tasks(
     payload: TaskGenerateRequest,

@@ -1,176 +1,43 @@
-# PDPV Tickets - PRD
+# PRD — PDPV Tickets & CRM Finance
 
-## Tech Stack
-- Frontend: React + Shadcn UI + TailwindCSS
-- Backend: FastAPI (Python)
-- Database: MongoDB (Motor async)
-- Storage: Emergent Object Storage
-- AI Vision: GPT-5.2 via Emergent LLM Key
-- Notifications: Telegram Bot + Web Push (VAPID) + Resend
+## Problema original
+Plataforma interna full-stack para gestão de tickets de assistência e CRM Finance (cobranças) da PDPV. React + FastAPI + MongoDB, deploy em `garage-support.emergent.host`.
 
-## Chat Migration Notice (Feb 2026)
-- **This chat is the primary/authoritative codebase.** Contains WhatsApp Fase 1 + 1.5, Renting, Assistências, Intake, Telegram bots — everything except Finance.
-- **Finance module** (CRM Finance + Cobranças Hoje pages) exists only in the parallel chat and will be imported here via GitHub before final deploy.
-- **Deploy source going forward:** this chat, after Finance is merged in.
+## O que está implementado
+- Sistema de Tickets (backoffice + intake público + Telegram router com deduplicação)
+- **CRM Finance completo**: importação em staging, regularizações, micro-saldos, segmentação, comunicação manual (Email via Resend + WhatsApp redirect), export Excel.
+- **Motor de Tarefas de Hoje** baseado em regras (`task_engine.py`).
+- **Dashboard de Eficácia de Tarefas** (`/api/finance/tasks/effectiveness`).
+- **Reset admin** de Tarefas + Eficácia via `POST /api/finance/tasks/reset?confirm=RESET` (OWNER only) — Feb 2026.
 
-## Completed Features
-- [x] **CRM Finance — Dashboard Eficácia das Tarefas (Fev 2026, iteration_42 15/15 backend pytest + frontend E2E 20/20 data-testids):**
-  - **Endpoint `GET /api/finance/tasks/effectiveness`** (require_finance_access, COLLECTIONS_AGENT auto-scoped a self): agrega finance_tasks + finance_actions + finance_promises no período. Filtros: `date_from`/`date_to` (default -30d), `task_type`, `customer_segment`, `status`, `feedback_reason`. Devolve estrutura completa:
-    - `totals` — contadores por status (generated/open/done/postponed/converted/rejected/expired/in_review)
-    - `rates` — completion_rate, rejection_rate, postpone_rate (com divide-by-zero safety `max(generated, 1)`)
-    - `amounts.covered_by_done` — soma dos amount_collectable apenas nas tarefas DONE
-    - `amounts.promised_total` — soma das promessas criadas no período
-    - `communications` — emails, whatsapps, phone_calls, notes (finance_actions no range)
-    - `promises_created`, `regularizations_treated`, `block_task_done`
-    - `by_task_type[]` — ordenado por generated DESC com completion_rate + rejection_rate por tipo
-    - `by_segment[]` — breakdown por segmento
-    - `top_postpone_reasons[]`, `top_reject_reasons[]`, `top_converted_from_type[]` (top 5)
-    - `daily_series[]` — série temporal ordenada por date
-    - `today_summary` — planned/done/untreated (open+in_review)/postponed/rejected do dia
-  - **Frontend `/finance/tasks-effectiveness`** (novo, menu com ícone BarChart3 acessível a ADMIN/SUPERVISOR/AGENT — backend faz auto-scope para COLLECTIONS_AGENT):
-    - Filtros: date_from/date_to, task_type, segmento, estado
-    - 6 KPI cards de topo (Geradas/Feitas/Adiadas/Convertidas/Rejeitadas/Abertas)
-    - 5 taxas + valores (Taxa conclusão/rejeição/adiamento, Valor coberto, Prometido)
-    - Card "Resumo diário — hoje" com 5 mini-stats
-    - Card "Comunicações no período" com 5 mini-stats (emails/WhatsApps/telefonemas/promessas/bloqueios)
-    - Gráfico Recharts LineChart de evolução diária (generated/done/rejected/postponed)
-    - Tabela "Performance por task_type" com badges verdes/amarelos/vermelhos consoante taxa
-    - 3 cards de "Top motivos" (adiamento/rejeição/conversão)
-    - Gráfico BarChart por segmento
-  - **Read-only por design** — não permite editar regras ou tarefas. Base para futura IA explicativa (quando ligada) usar estes padrões para explicar/melhorar sugestões.
-  - Ajustes pós-review: menu incluído para AGENT (auto-scope no backend), removido `mode` param não usado + dead code `block_suggestions`. Testes: `/app/backend/tests/test_iteration_42_tasks_effectiveness.py`.
-- [x] **CRM Finance — Motor de Tarefas de Hoje + Excel Export + name_normalized (Fev 2026, iteration_41 15/15 backend + frontend E2E OK):**
-  - **Rule engine (`task_engine.py`)** — determinístico, sem IA livre. 6 categorias de candidatos com scores + motivos: promessas (falhadas + due-today), críticos (traffic_light CRITICAL/RED/ORANGE, sem promessa ativa), old_low_value (residuais ≤50€ ou dívidas 90+ dias valor médio), no_contact (last_action_at >30d ou nunca), regularizações (docs residuais/micro-old), block_suggest (>120d + valor). **Distribuição alvo**: 30 min = 15 tarefas (3+5+3+2+2+0), 45 min = 24 (5+6+5+3+3+2), 60 min = 35 (6+8+6+5+4+6 — spec do utilizador). Guardrails: (a) `data_health` bloqueado → apenas `UPLOAD_GENES_MAP` com priority=999; (b) residual-only nunca em cobrança normal; (c) promessa ativa exclui cobrança (só gera FOLLOW_PROMISE_DUE_TODAY se hoje); (d) EM_DISPUTA/BLOQUEADO excluídos; (e) sem duplicados (client_id, task_type). `force_regenerate=false` devolve as existentes se já geradas hoje; `true` arquiva (status EXPIRED) e regenera.
-  - **`finance_tasks` collection**: 15 task_types (FOLLOW_FAILED_PROMISE, FOLLOW_PROMISE_DUE_TODAY, SEND_ACCOUNT_STATEMENT, REQUEST_PAYMENT, REQUEST_PROOF, CALL_HIGH_VALUE_CLIENT, REVIEW_OLD_DEBT, REVIEW_LOW_VALUE_OLD_DEBT, UPDATE_FINANCE_CONTACT, REVIEW_RESIDUAL, SUGGEST_BLOCK, REVIEW_DISPUTE, CREATE_PAYMENT_PLAN, SET_NEXT_ACTION, UPLOAD_GENES_MAP), 7 status (OPEN/DONE/POSTPONED/CONVERTED/REJECTED/EXPIRED/IN_REVIEW), source (rule_engine|ai|manual). Cada tarefa tem priority_score, priority_reason, suggested_action, bucket, customer_segment, amount_collectable, days_overdue, assigned_to, generation_id.
-  - **Endpoints**: `POST /tasks/generate` (mode 30/45/60 + assigned_to + force_regenerate), `GET /tasks/today` (summary + tasks filtered by status_in), `POST /tasks/{id}/done|postpone|convert|reject`. Todas as acções criam entrada em `finance_actions` (visível na timeline C4). Requerem COLLECTIONS_AGENT+; rececionistas recebem 403.
-  - **Feedback estruturado por acção**: (a) `done` com outcome opcional; (b) `postpone` requer PostponeReason (8 valores: missing_invoice/missing_statement/need_confirm_finance_email/awaiting_proof/awaiting_internal_answer/client_requested_later/awaiting_accounting/other) + `next_action_date` obrigatório; (c) `convert` fecha original como CONVERTED com `converted_to_task_id` e cria nova em OPEN com source=manual; (d) `reject` requer RejectReason (9 valores: duplicate/active_promise/in_dispute/residual_handled/wrong_client_link/wrong_document/data_looks_incorrect/blocked_no_action_needed/other).
-  - **Frontend `TasksToday.js`** (novo, rota `/finance/tasks-today`, item menu "Tarefas de Hoje" com ícone Sparkles): tabs de modo 30/45/60, botão gerar/regerar, banner de aviso se `blocked_reason`, 6 summary cards (Abertas/Feitas/Adiadas/Convertidas/Rejeitadas/Valor coberto), lista de tarefas OPEN com 4 botões por linha (Feito/Adiar/Mudar ação/Não faz), lista separada "Já tratadas". Dialogs específicos por tipo com validação (motivo obrigatório em reject; data obrigatória em postpone).
-  - **Quick win 1 — Export Excel**: `GET /api/finance/clients-export` (nota: hífen, não `/clients/export`, para evitar colisão com `/clients/{id}`) devolve xlsx com 15 colunas (Código, Nome, Segmento, Estado, Semáforo, Saldo Total, Vencido Cobravel, Residual, Dias, Bloqueado, Email/Tel/Móvel Finance, Contacto, Último Contacto). Aceita todos os filtros do GET /clients. Header `X-Total-Exported`. Frontend: botão "Exportar Excel" (`clients-export-btn`) na FinanceClients aplica os filtros actuais e faz download automático.
-  - **Quick win 2 — Índice `name_normalized`**: `ensure_customers_name_normalized_index()` cria índice não-único em `customers.name_normalized` e faz backfill (upper, sem acentos, single-space). `match_customer_by_name` usa índice como fast-path (O(log N)) e fallback lento só se docs sem backfill. Corre no startup em cada arranque (idempotente). Preview: 11.261 customers indexados em segundos.
-  - Testes: `/app/backend/tests/test_iteration_41_finance_tasks_engine.py` (15 casos) + `/app/backend/tests/test_iteration_41_guardrail_data_health.py`.
-- [x] **CRM Finance — Bloco B (Segmentação + Contactos + Filtros Avançados) (Fev 2026, iteration_40 18/18 backend + frontend E2E OK):**
-  - **CustomerSegment enum**: PARTICULAR/EMPRESA/FROTA/SEGURADORA/LEASING/CONTA_CORRENTE/OUTRO/UNKNOWN adicionado ao `finance_client`. Mapping `CUSTOMER_TYPE_TO_SEGMENT` cobre os 15 valores reais do GENES (AGRICULTOR→EMPRESA, FROTISTA→FROTA, FUNCIONARIOS→PARTICULAR, etc.).
-  - **Serviço `customer_link.py`**: `match_customer_by_name()` normaliza (upper, sem acentos, sem pontuação) e devolve apenas se houver 1 match exacto (conservador). `backfill_finance_client(id, force=False)` liga ao customer, preenche `customer_segment` (só se UNKNOWN ou force) e `finance_email/phone/mobile` (só se vazios — **NUNCA sobrescreve manual**). Idempotente. `backfill_all_finance_clients()` corre em massa e é chamado no startup uma vez com migration_key `finance_backfill_customer_link_v1_2026_02`.
-  - **Contactos financeiros dedicados**: `finance_email`, `finance_phone`, `finance_mobile`, `finance_contact_name`, `finance_contacts_updated_at`, `finance_contacts_updated_by`. Alerta visual "Email financeiro em falta" na ficha do cliente.
-  - **`PATCH /api/finance/clients/{id}/contacts`** (COLLECTIONS_AGENT+): actualiza segmento + contactos. Auditoria dupla: (a) `finance_client_contact_history` com `changes[{field,old,new}]` + `reason` granular; (b) `finance_actions` como `note` com o summary das mudanças (visível na timeline C4). Strings vazias normalizadas para `None`. No-op se nada mudou.
-  - **`POST /clients/{id}/backfill-contacts`** (FINANCE_REVIEWER) e **`POST /clients/backfill-all`** (OWNER-only).
-  - **Filtros avançados em `GET /api/finance/clients`**: `customer_segment`, `min_overdue`/`max_overdue`, `min_days`/`max_days`, `aging_bucket` (0_30/31_60/61_90/90p/120p/180p/365p), `has_active_promise`, `has_failed_promise`, `no_contact_days` (X dias sem `last_action_at`), `never_contacted`, `missing_finance_email`, `has_residual`, `has_overdue`, `is_blocked`, `status`, `traffic_light`, `search`.
-  - **Ordenação `sort_by`**: `name` | `overdue_asc/desc` | `total_asc/desc` | `days_asc/desc` | `last_action` | `doc_count` | `financial_status`.
-  - **Frontend `FinanceClients.js`**: painel de filtros completo com 6 presets de valor (até 10 €, 10–50, 50–100, 100–500, +500, +1.000), 7 aging buttons (0–30 → +365), dropdowns de segmento/estado/semáforo/sort/vencido/bloqueio, inputs manuais min/max e no_contact_days, 5 toggles (nunca contactado, email em falta, promessa ativa, promessa falhada, com residuais).
-  - **Frontend `FinanceContactsCard.js`** (novo): card na aba Info com badge de segmento colorido por tipo, alerta amarelo "Email financeiro em falta", edição inline com Textarea de motivo, guarda com toast + refresh + entry na timeline C4.
-  - **Regressão iteration_38/39 mantida**: /email-templates seed >= 8, /dunning-ladder >= 6 buckets, /imports paginação, /send-email Resend, staged replace, cleanup — tudo continua OK.
-  - Utilizadores seed persistidos: `cobranca.teste@pdpv.pt / TesteFin2026!` (COLLECTIONS_AGENT), `rececao.teste@pdpv.pt / TesteFin2026!` (sem finance_role, verifica que 403 é devolvido). Testes: `/app/backend/tests/test_iteration_40_finance_crm_block_b.py`.
-- [x] **CRM Finance — Bloco A (Robustez Produção) + Bloco C (Comunicação Manual) (Fev 2026, iteration_39 24/24 backend + frontend 100%):**
-  - **A1 Staged Replace em `finance_open_documents`**: parse → coleção temporária `finance_open_documents_staging_{importid}` → validação de contagem → `delete_many` + `insert_many` na coleção real → verificação pós-swap → `finally: staging.drop()`. Se o parse falhar, os documentos antigos ficam intactos (validado: 203 docs preservados após parse corrompido).
-  - **A2 Paginação em `GET /api/finance/imports`**: `limit` (1–200) + `offset` (>=0) + `total` + `has_more`. Frontend `FinanceImports.js` mostra "Ver mais" quando `has_more=true`.
-  - **A3 Cleanup ficheiros FAILED/REJECTED**: `GET /imports/cleanup/preview?older_than_days=30` (FINANCE_REVIEWER) lista candidatos com tamanho em disco; `POST /imports/cleanup?older_than_days=30&dry_run=bool` (OWNER) apaga o binário mas preserva `finance_imports` (auditoria) — apenas define `original_file_path=null`, `file_cleaned_at`, `file_cleaned_by`. **Route ordering crítica**: rotas `/imports/cleanup*` DEVEM estar declaradas ANTES de `POST /imports/{import_type}` para não colidir com o enum path param.
-  - **C1 Templates de email BD-backed**: coleção `finance_email_templates` seed com 8 defaults no startup (`lembrete_amigavel`, `pedido_pagamento`, `pedido_comprovativo`, `lembrete_promessa`, `promessa_falhada`, `plano_pagamento`, `confirmar_email_contabilidade`, `aviso_bloqueio`). Cada template tem `key` (regex `[a-z0-9_]+`), `label`, `subject`, `body`, `whatsapp_body`, `bucket_hint`, `is_active`. CRUD `POST/PUT/DELETE /email-templates` é OWNER-only; `GET /email-templates` acessível a qualquer finance_role.
-  - **C2 Envio real de email via Resend**: `POST /api/finance/clients/{id}/send-email` com body `{to, subject, body, template_key, linked_document_numbers}`. Guardrail: cliente `is_residual_only` bloqueia envio por COLLECTIONS_AGENT (403), mas OWNER/FINANCE_REVIEWER podem. Se `RESEND_API_KEY` estiver vazia ou o Resend falhar, retorna `sent=false` com `error` mas **grava sempre** a acção em `finance_actions` com `email_meta{to, subject, template_key, sent, provider_id, error}` — não bloqueia a operação da cobradora. Testado com sandbox `delivered@resend.dev`.
-  - **C3 Comunicação WhatsApp**: novo componente `QuickCommunicationPanel.js` na aba "Info" da ficha do cliente. Botões: **WhatsApp** (`wa.me/${numero}?text=...` numa nova aba) desactivado sem número, **Email** (mailto: ou `Enviar agora` via Resend) desactivado sem email, **Copiar mensagem** (clipboard). Cada acção grava automaticamente em `finance_actions` com `action_type=whatsapp|email` e `notes` contendo o número/email + template + mensagem completa.
-  - **C4 Timeline no histórico**: aba "Histórico" na ficha do cliente reescrita para **timeline agrupado por dia** (`Hoje`/`Ontem`/data-longa) com dots coloridos + ícones + estilo por `action_type`: `whatsapp` verde, `email` azul, `note` amarelo, `promise_created/updated` indigo, `dispute_marked` roxo, `payment_plan_marked` teal, `block_suggested` amber, `block_approved` red, `unblocked` green, `internal_regularization` orange, `phone_call` slate. Cada item mostra hora, autor, `notes`, badges de `delay_reason` e `next_action_date`. Data-testids: `finance-history-timeline`, `history-day-{iso}`, `history-item-{id}`.
-  - **C5 Régua de cobrança (dunning ladder)**: 6 buckets fixos + resolução dinâmica.
-    - `d0_15` (green) → `lembrete_amigavel`; `d16_30` (yellow) → `pedido_pagamento`/`lembrete_amigavel`; `d31_60` (orange) → `pedido_pagamento`/`pedido_comprovativo`; `d61_90` (red) → `promessa_falhada`/`plano_pagamento`; `d90p` (red) → `aviso_bloqueio`/`plano_pagamento`; `d120p` (black) → `aviso_bloqueio`.
-    - Estados especiais têm bucket próprio: `PROMESSA_ATIVA` → `promise` (blue), `EM_DISPUTA` → `dispute` (purple), `BLOQUEADO` → `blocked` (black).
-    - Endpoints: `GET /api/finance/dunning-ladder` (a lista completa) e `GET /api/finance/clients/{id}/dunning-bucket` (bucket resolvido + templates enriquecidos). O painel de comunicação mostra o bucket como badge e destaca templates recomendados com ⭐.
-  - Testes: `/app/backend/tests/test_iteration_39_finance_crm_communication.py` (24 pytest). Utilizadores COLLECTIONS_AGENT e RECECAO seed em preview: `cobranca.teste@pdpv.pt / TesteFin2026!` e `rececao.teste@pdpv.pt / TesteFin2026!`.
-- [x] **CRM Finance — Regularizações + Filtros v2 (Fev 2026, iteration_38 34/34 backend + frontend OK):** Fix crítico do caso real reportado (FT 023/1115 com 0,80€ vencido / 1220 dias aparecia como Cobrável). (1) Nova regra de classificação em `classify_document(days_overdue=…)`: `amount_open <= residual_document_threshold (1€)` → **RESIDUAL sempre** (removida dependência de % do valor original, que falhava para micro-saldos em faturas grandes); `amount_open <= 5€` E `days_overdue > 365` → nova classe **MICRO_OLD** ("Micro-saldo antigo a validar"). (2) Novo estado `RESOLVED_OPERATIONALLY` e override manual por documento (`manually_marked_collectable`, `manual_action`) com log em `finance_actions`. (3) `effective_classification` separado de `classification` — agregados (`overdue_balance_collectable`, `residual_balance`) usam o efectivo, permitindo forçar cobrança sem perder classificação original. (4) Nova função `recompute_documents_and_clients()` que reprocessa TODOS os documentos e recalcula agregados (traffic_light, financial_status, oldest_overdue_days) — respeita overrides manuais e escreve log em `finance_recompute_log`. Trigger automático em: (a) PUT /settings quando thresholds mudam; (b) POST /documents/{id:path}/action após aplicar override; (c) migração one-time no startup (`finance_reclass_v2_2026_02`). (5) Refactor `GET /api/finance/regularizations` — devolve por documento (não por cliente) com campos completos: document, cliente, agregado de cliente, `suggestion_code`+`suggestion_label` ("Validar recibo/fatura antiga antes de cobrar" para MICRO_OLD). Filtros: `only_micro_old`, `only_residual`, `only_low_values`, `min/max_amount`, `min/max_days`, `search`, `sort_by` (days_overdue/amount_open/client_residual_balance/client_name) × `sort_dir`. (6) Novo endpoint `POST /api/finance/documents/{document_id:path}/action` — usa `:path` converter porque IDs contêm "/". Actions: `mark_collectable`, `mark_dispute`, `mark_resolved_operationally`, `regularize_internally`, `keep_in_collections`, `reset`. (7) Novo endpoint `POST /api/finance/recompute` (OWNER-only, `?dry_run=true` disponível). (8) `GET /api/finance/collections/today` ganhou filtros (`min/max_overdue`, `min/max_days`, `only_low_values`, `only_old_docs`, `financial_status`, `search`) e ordenação (`priority`, `overdue_asc/desc`, `total_asc/desc`, `days_asc/desc`, `last_action`, `financial_status`, `doc_count`). (9) Frontend `Regularizations.js` reescrito: tabela por documento (10 colunas incluindo Sugestão), painel de filtros com toggles/inputs/sort, 5 botões de acção por linha com dialog de confirmação e input de motivo. (10) Frontend `CollectionsToday.js`: painel colapsável de filtros avançados + dropdown de ordenação com 10 opções. Migração automática no startup só corre 1× por versão (chave `finance_reclass_v2_2026_02`). CASO REAL VALIDADO: docs criados via curl com 0,80€/1220d → residual; 3,50€/500d → micro_old; 3,50€/100d → collectable; 500€/45d → collectable. Testes: `/app/backend/tests/test_iteration_38_finance_regularizations.py`.
-- [x] **CRM Finance — FASE 2 completa (Jul 2026, iteration_24: 14/14 backend + frontend 100%):** (1) **Parser Documentos em Aberto** ligado (`process_open_documents_import`) — coleção `finance_open_documents` (replace total por import), NC classificadas como créditos. (2) **Comparação diária**: docs desaparecidos → `probable_payment`, valor em aberto reduzido → `partial_payment`, eventos em `finance_recovery_events`; Dashboard com cards Recuperado Hoje/Semana/Mês (`recovered_today/week/month` no DashboardResponse). (3) **Verificação automática de promessas** (`verify_promises_after_import` chamada após overdue import): promessas open com promise_date passada → fulfilled/partial/failed comparando `baseline_overdue` (gravado na criação) vs saldo atual; fallback via daily metrics; cliente → PROMESSA_FALHADA/CRITICAL; auditoria via finance_action `promise_updated` de sistema. (4) **Settings BD-backed** (`finance_settings` doc 'global', GET require_finance_access / PUT require_finance_owner com validação Pydantic de ranges) — thresholds residuais usados dinamicamente pelo import; página `/finance/settings` (menu só OWNER/ADMIN). (5) **Aviso genérico nos tickets**: `GET /api/finance/credit-warning?phone=` (qualquer autenticado, match últimos 9 dígitos, nunca devolve valores) + `CreditWarningBanner` no TicketDetail; toggle nas settings. (6) **Sparkline evolução trimestral** na ficha do cliente (recharts LineChart, tab Informação, badge tendência %). NOTA testing agent: `process_open_documents_import` faz delete_many({}) global — testes devem snapshot/restaurar `finance_open_documents`.
-- [x] **WhatsApp desativado em standby (Jul 2026):** `WHATSAPP_ENABLED=false` a pedido do utilizador até o Finance estar concluído. Webhook devolve 503 "WhatsApp disabled" — comportamento esperado, NÃO é bug.
-- [x] **CRM Finance — 4ª opção de importação: Evolução Crédito (Jul 2026):** Backend `process_credit_evolution_import` liga o `evolution_parser.py` existente: guarda série trimestral por cliente em `finance_credit_evolution` (upsert por genes_code) + enriquece `finance_clients` com `credit_trend_percentage`/`credit_trend_absolute`. Data-health passou a 4 tipos (credit_evolution, quarterly, warning se >92 dias, nunca bloqueante). UI Importações: Select com 4 opções, cada uma identificando o ficheiro GENES exato — saldosvencidos.xlsx (Saldos Vencidos, diário), Exemplo de mapa.xlsx (Documentos em Aberto, diário, parser Fase 2), infocliente.xlsx (Info Clientes, semanal), evoluçaocredito3em3meses.xlsx (Evolução Crédito, trimestral) — grid de estado com 4 cards. Testado com o ficheiro REAL do utilizador: 5 clientes, 6 trimestres (03-2025→06-2026), trends calculados (ex: cliente b +103,7%).
-- [x] **CRM Finance — MVP P0 completo (Jul 2026):** Novas páginas: `/finance/promises` (lista global de promessas, filtro por estado, ações Cumprida/Parcial/Falhada/Cancelada via PATCH), `/finance/regularizations` (cards total residual + clientes, tabela com sugestões), `/finance/blocks` (Pedidos Pendentes com aprovar/rejeitar em dialog, Clientes Bloqueados com desbloquear, Histórico; acesso UI restrito a OWNER/FINANCE_REVIEWER/ADMIN via `financeRoles` no menu + guard 403 na página). Importações ganhou colunas Utilizador/Origem (cobre spec "Atualização de Dados"). Backend: `GET /promises` enriquecido com client_name/genes_code; `GET /imports` com uploaded_by_name. **BUG CRÍTICO CORRIGIDO:** importações `pending_approval` (diff >30%) aplicavam os dados imediatamente — agora o processamento pára antes de aplicar, o ficheiro original é guardado em `/app/backend/uploads/finance_imports/{import_id}.xlsx` e o `POST /imports/{id}/approve` reprocessa com `force_approved=True`, aplicando os dados só após aprovação. Testado: iteration_23.json — 7/7 backend, 100% frontend. Menu Importações agora visível a AGENT (COLLECTIONS_AGENT pode carregar o mapa diário). NOTA: utilizador testou ao vivo com ficheiros de exemplo reais (clientes genes_code 1-5, imports saldosvencidos.xlsx/infocliente.xlsx — preservados).
-- [x] **CRM Finance — verificação + hardening (Jun 2026):** Verificação E2E completa do módulo consolidado. Testado: upload saldos vencidos (parser agrupado GENES), classificação residual (0,02€ → REGULARIZACAO_TECNICA, excluído de Cobranças Hoje, presente em Regularizações), dedupe por hash, semáforos (RED 75d / ORANGE 25d), ações, promessas, workflow completo sugerir→aprovar→bloquear→desbloquear, matriz de permissões (COLLECTIONS_AGENT 403 em aprovar/desbloquear; sem finance_role 403 em tudo). **Fixes:** (1) Dashboard excluía clientes residuais da agregação (`$match is_residual_only` removido) — total_residual e dívida contabilística agora corretos. (2) `PUT /api/users/{id}` não gravava `finance_role` — corrigido com `model_fields_set` (permite limpar para null). (3) UserManagement.js ganhou seletor "Perfil CRM Finance" (Sem acesso / Collections Agent / Finance Reviewer / Owner) — `data-testid="user-finance-role-select"`. Utilizadores de teste finance criados (ver test_credentials.md).
-- [x] **CRM Finance — consolidação via GitHub (Jun 2026):** Módulo importado cirurgicamente do chat paralelo. Backend `modules/finance/` (models, routes ~20 endpoints, permissions RBAC próprio via `finance_role`, parsers overdue/client_info/documents/evolution, import_service com regras residuais 1€/5€/0.5%/10docs e thresholds anomalia 10%/30%). Frontend `pages/finance/` (Dashboard, CollectionsToday, FinanceClients, FinanceClientDetail, FinanceImports com data-health embebido). Menu "Finance" na sidebar gated por `finance_role` (ADMIN vê sempre).
-- [x] **WhatsApp Phase 1.5 — go-live hardening (Feb 2026):** (a) `WHATSAPP_ENABLED` env hard kill-switch (503 "disabled" se !=true) aplicado em webhook GET/POST e em ambos endpoints de envio. (b) Slot novo `WHATSAPP_BUSINESS_ACCOUNT_ID` em `.env`/`.env.example`. (c) Índice MongoDB único+sparse em `ticket_messages.external_message_id` (dedupe enforced at DB) + handler de `DuplicateKeyError` no `save_ticket_message`. (d) Bug crítico corrigido: webhook estava a gravar intakes com `status="NEW"` (não-enum) e sem `source`, partindo `/api/intake` com 500. Agora grava `status="PENDING"`, `source="whatsapp"`, `source_type="bot_whatsapp"`, `origin_channel="WHATSAPP"`. (e) `/api/tickets` e `/api/intake` (list+detail) agora têm helpers resilientes (`_safe_ticket_response`/`_safe_intake_response`) que skipam docs malformados em listas (log + skip) e devolvem 422 claro em detalhe. Status legados mapeados (NEW→PENDING, REVIEW/TRIAGED→PROCESSING). (f) Smoke-test script `/app/backend/scripts/whatsapp_smoke_test.py` valida 6 cenários pós-deploy (verify, inbound→intake, dedup, 2nd msg attach, signature opcional). (g) Testes pytest: 17/17 (13 originais + 4 novos `test_whatsapp_phase1_5.py`). Tester resilience garantido vs docs malformados.
-- [x] **WhatsApp Phase 1 (Feb 2026):** Canal WhatsApp integrado no detalhe do ticket. Webhook reescrito para nunca criar tickets finais — apenas pré-tickets (`intake_requests`) ou associação a ticket/intake aberto. Endpoints novos: `GET /api/whatsapp/tickets/{id}/window` (janela 24h), `GET /api/whatsapp/intake/{id}/window`, `GET /api/whatsapp/templates` (4 templates internos), `POST /api/whatsapp/tickets/{id}/messages` (enforcement 503/409), `POST /api/whatsapp/tickets/{id}/send-quote-link`. Schema `ticket_messages` expandido (`channel, phone_to, status, raw_payload_id, template_name, error, intake_id`). Nova coleção `whatsapp_raw_payloads` com TTL 90 dias. Dedupe por `external_message_id`. Status updates (sent/delivered/read/failed) propagados. Frontend: `WhatsAppPanel.js` injetado como tab em `TicketDetail.js` com thread tipo bolha, badge da janela, templates rápidos, botão "Enviar link de orçamento". Validado por testing_agent_v3_fork (13/13 backend pytest + frontend OK — iteration_22.json).
-- [x] **Módulo Assistências - Fase 2 (Feb 2026):**
-  - Notificações push aos office users (admin+supervisor) ao criar nova assistência via bot (`notify_supervisors`).
-  - Endpoint `GET /api/assistencias/stats/advanced` — totais, por funcionário, por status, por mês (com € faturado).
-  - Endpoint `GET /api/assistencias/export/csv` — exportação CSV com BOM UTF-8 e separador `;` (compatível Excel PT).
-  - Admin UI `/admin/assistencias-users` — gestão do bot (estado, configurar webhook) + autorizar funcionários (linka telegram_user_id ↔ User).
-  - Sidebar: "Assistências" passou a grupo colapsável com sub-items "Lista" + "Bot & Utilizadores".
-  - Frontend: botões "Estatísticas" (modal) e "CSV" (download) na AssistenciasPage (admin/supervisor only).
-- [x] **Módulo Assistências - Fase 1 (Feb 2026):** Novo módulo independente para gerir assistências externas de campo, com ciclo de vida completo Funcionário → Bot Telegram → Faturação → Confirmação de Entrega.
-  - **Backend** (`/app/backend/modules/assistencias/`): models.py (status flow + 7 estados + transições válidas), service.py (state machine bot 6 passos, OCR matrícula via GPT-4o, audit logs por ação), routes.py (`/api/assistencias/*`), pdf_extraction.py (extração de fatura via GPT-4o vision, PyMuPDF para render), bot_api.py (Telegram API wrapper).
-  - **Schema MongoDB**: coleção `assistencias` (registo + audit_logs[]), `assistencias_bot_users` (autorizações).
-  - **Permissão nova**: `has_assistencias_access` no perfil User (toggle em UserManagement).
-  - **Bot Telegram (dedicado novo bot)**: `/nova_assistencia` → localização → matrícula (foto+OCR ou texto) → folha de obra → fotos adicionais (até 6) → notas (texto/voz com transcrição Whisper) → criar registo. Vars `TELEGRAM_ASSISTENCIAS_BOT_TOKEN` + `TELEGRAM_ASSISTENCIAS_WEBHOOK_SECRET` em backend/.env (token a aguardar).
-  - **Frontend**: AssistenciasPage (6 cards stats + filtros + lista), AssistenciasDetail (anexos, timeline, upload PDF, modal de revisão de extração IA, envio Telegram, confirmar entrega, marcar não faturável, eliminar admin). Sidebar item novo com ícone Truck.
-  - **Fluxo de faturação**: Office uploadFatura → GPT-4o extrai → modal de confirmação → envio automático ao funcionário via Telegram com botão inline "Entreguei ao cliente" → status FATURADA_CONCLUIDA.
-- [x] **Code quality safe fixes round 2 (Feb 2026):** 2 catch blocks silenciosos em RentingDetail.js → `console.error`. AuthContext/NotificationContext: `value` envolvido em `useMemo` (+ `getAuthHeaders` em `useCallback`) para evitar re-render churn em consumers. App.js: 12 arrays inline `allowedRoles` movidos para 4 constantes module-level (`ROLES_ALL`, `ROLES_ALL_WITH_CREATOR`, `ROLES_MANAGERS`, `ROLES_ADMIN_ONLY`). NormalizationSettings.js: index-key com eslint-disable justificado.
-- [x] **Code quality safe fixes (Feb 2026):** Resolveu 7 catch blocks silenciosos (TicketDetail.js, RentingPage.js) → `console.error`. Substituiu 9 `key={index}` por keys estáveis (CreateTicket: valor único; IntakePage: composite; CustomerManagement: eslint-disable justificado). Movidos secrets hardcoded de 5 ficheiros de teste para `os.environ.get()` com defaults. Substituído `is True/False` por `==` em test_ticket_statuses_iteration8.py.
-- [x] **SLA pause on AGENDADO (Feb 2026):** `routes/tickets.py` — status AGENDADO agora pausa o SLA (igual a AGUARDA_CLIENTE) em vez de o terminar como "final". Resume automaticamente ao voltar a EM_TRATAMENTO/ABERTO/ACEITE_LINK, com nota de sistema diferenciada ("aguarda resposta do cliente" vs "ticket agendado").
-- [x] **Renting admin delete (Feb 2026):** `RentingDetail.js` — botão vermelho "Eliminar" visível apenas a ADMIN, com `AlertDialog` de confirmação (mostra matrícula, avisa que é irreversível). Reaproveita endpoint existente `DELETE /api/renting/records/{id}` (já admin-only no backend).
-- [x] **Sidebar Telegram grouped (Feb 2026):** Layout.js — "Telegram" e "Telegram Users" fundidos num único grupo colapsável (sub-items Configuração + Utilizadores), com auto-expand quando rota filha está ativa.
-- [x] **Reports - Accepted quotes per agent (Feb 2026):** `POST /api/admin/reports` enriched with `metrics.total_accepted_value` (sum of `quote_value` where `quote_response_status=ACCEPTED`) and per-agent `quotes_accepted_count` + `quotes_accepted_value`. Frontend `/admin/reports`: "Orçamentos Aceites" card shows count + green € value; "Desempenho por Agente" table gained "Aceites (Qtd)" and "Valor Aceite" columns. **Clickable column sorting on all 6 columns** (toggle asc/desc, default Valor Aceite ↓ for top performers first) with visual arrow indicators.
-- [x] **Pré-tickets unification (Feb 2026):** PDPV Bot Interno (`@PDPV_INTERNAL_BOT`, TELEGRAM_INTERNAL_BOT_TOKEN) deixou de criar em `pre_tickets`; passa a gravar em **`intake_requests`** (módulo `/intake` existente). `source=telegram, source_type=telegram_internal_bot, source_bot=PDPV_INTERNAL_BOT, origin_channel=TELEGRAM_INTERNAL_BOT`. `sender_name` = cliente (extraído pela IA); `created_by_name` = funcionário Telegram. Coleção `pre_tickets` mantida intocada (0 docs) por enquanto. `/intake` enriquecido com painel IA (confidence_score, missing_fields, mensagens originais, transcrições, image_hints), proxy de anexos `GET /api/intake/{id}/attachments/{aid}` (descarrega via Telegram CDN com bot token), badges discriminadoras (Bot Interno indigo / Bot Antigo azul). Convert dialog pré-preenche a partir de `ai_extracted`. Conversão para ticket continua 100% manual via `/convert_to_ticket`. Página admin `/admin/telegram-users` para gerir `telegram_internal_authorized_users` (ADMIN-only).
-- [x] Ticket CRUD, SLA engine, Quote management, PDF generation
-- [x] Public quote links (accept/reject), Acceptance questionnaire
-- [x] Telegram Alerts module (bot, Vision, convert, notifications)
-- [x] Telegram Alerts flow refined (Feb 2026): GENES screenshot → alert only (no ticket), explicit [Sim]/[Não] for problem photos, up to 4 problem_images compressed, then assignee. Conversion transfers problem_images to ticket (alert_image stays internal).
-- [x] Telegram Alerts conversation state machine (Feb 2026): IDLE → WAITING_PROBLEM_PHOTO_CONFIRMATION → COLLECTING_PROBLEM_IMAGES (max 4, 10s inactivity) → WAITING_MECHANIC_NOTE_CONFIRMATION → COLLECTING_MECHANIC_NOTE (1 text up to 1000 chars OR 1 audio up to 60s with Whisper transcription) → WAITING_ASSIGNEE_SELECTION → IDLE. No duplicate alerts during collection. AI extraction runs only on first GENES image. /reset command for manual recovery. Alert detail UI has 3 sections (Imagem do alerta, Fotos das avarias, Comentário do mecânico). mechanic_comment transfers to ticket as internal-only.
-- [x] Telegram Alerts UX tolerance (Feb 2026): Text fallback for Yes/No (sim/s/ok/não/n/...), photo in WAIT_PROBLEM_PHOTO_CONF auto-treats as YES + appends, photo in other active states asks "Add to current / Create new alert" via inline keyboard. 10-min global inactivity watchdog clears stuck state. `/restart` and `/cancel` aliases for `/reset`. State transitions logged to `telegram_alerts_state_logs` collection (chat_id, prev/new state, action, alert_id, timestamp).
-- [x] Telegram Alerts comment step rebuild (Feb 2026): Three-button choice [📝 Texto] / [🎤 Áudio] / [Sem comentário] in WAITING_MECHANIC_COMMENT. New states COLLECTING_TEXT_COMMENT and COLLECTING_AUDIO_COMMENT (separate). `mechanic_comment.internal_only = True` flag. UI label renamed "Fotos da avaria" (singular). Photo confirmation message: "Quer adicionar fotos da avaria para anexar ao alerta?". Audio sent directly in WAITING_MECHANIC_COMMENT auto-transitions to audio collection.
-- [x] Renting module Phase 1 (Feb 2026) — NEW isolated module `/api/renting/*`:
-  - Separate Telegram bot (TELEGRAM_RENTING_BOT_TOKEN) with `/novo_renting`, `/cancelar`
-  - Full state machine: driver → phone → renting company → plate photo (GPT-5.2 OCR) → KM photo (OCR) → 4 wheels in order (FE/FD/TD/TE) each with 3 photos (full/DOT/tread) + AI extraction (size/brand/model/load_speed/dot/tread_mm) → service type (6 options) → observations (text/audio with Whisper) → completed
-  - Collections: `renting_records` (drafts + completed)
-  - Object Storage integration via `services/storage_service` (MongoDB stores only URLs)
-  - New permission `has_renting_access` (User edit toggle)
-  - Frontend: `/renting` (list with filters/search + stats), `/renting/:id` (detail with editable fields, wheel photos grid, observations audio player + transcription)
-  - Sidebar entry "Renting" (Car icon)
-- [x] Renting Phase 2 — Reception desk + audit history (Feb 2026):
-  - New `RentingStatus` value `in_progress` ("Em tratamento"). Bot finalizes as `in_progress` (not `completed`).
-  - Server-side transition validation: draft→in_progress, in_progress↔completed; cannot mark `completed` without `authorization_number`.
-  - New fields `proposed_tires` (textarea) + `authorization_number` (input) on detail page.
-  - Audit history array embedded in `renting_records.history[]` — tracks every PUT change with `{field, old_value, new_value, changed_at, changed_by, changed_by_name}`. Telegram-driven status changes use `changed_by="telegram_bot"`.
-  - UI: 3-state badge + transition buttons (Marcar Em tratamento / Concluir / Reabrir), warning when auth_number missing, History timeline card on detail.
-  - Stats endpoint returns `in_progress` counter; list filter supports `in_progress`.
-- [x] Renting Phase 3 — PDF + Copiar resumo (Feb 2026):
-  - New endpoint `GET /api/renting/records/{id}/pdf` returns a technical PDF (ReportLab) with header navy+yellow, info table (Renting/Matrícula/Condutor/Telefone/KM/Serviço), tire technical table (medida/marca/modelo/índice/DOT/piso), 3 photos per wheel (flanco/DOT/piso), and matrícula+KM photos. Multi-page with footer pagination. Excludes internal fields: observations, history, proposed_tires, authorization_number.
-  - Frontend: "📄 PDF" button (blob download with auth headers, opens in new tab) and "📋 Copiar resumo" button (client-side `buildSummaryText`, copies a clean WhatsApp/SMS-ready summary using `navigator.clipboard` with `document.execCommand` fallback).
-- [x] Renting Phase 4 — Notificações internas de receção (Feb 2026):
-  - New fields in `renting_records`: `seen_by_reception` (bool), `seen_by_reception_at`, `seen_by_reception_user_id`, `seen_by_reception_user_name`.
-  - New endpoint `GET /api/renting/pending-count` returns unseen `in_progress` count. Sidebar polls every 30s and shows red badge ao lado de "Renting".
-  - `GET /api/renting/records/{id}` now auto-marks the record as seen by current user on first detail open (idempotent; adds 1 history entry).
-  - Stats endpoint exposes `pending_unseen`.
-  - List filter `status=unseen` returns only `in_progress AND seen_by_reception != true`.
-  - Frontend `/renting`: dedicated red "Pendentes por tratar" card section at top with quick "Abrir" button per item; list rows highlighted in pink with "Novo" badge when unseen.
-  - "Por ler" added to status filter dropdown.
-- [x] Quote normalizer v2 (packages, tires, priorities, commercial copy)
-- [x] Client preview in quote creation (real-time debounced)
-- [x] Tire brand tiers (premium/mid/budget) with taglines + Recomendado badge
-- [x] Quote context system (diagnostic vs customer_request)
-- [x] Smart suggestion engine (scoring: technical wording, packages, attachments, expansion)
-- [x] Passive learning system (events + aggregated stats + admin view)
-- [x] Context display text on public quote page
+## Roles Finance
+- OWNER, FINANCE_REVIEWER, COLLECTIONS_AGENT.
 
-## Key Endpoints - Quote Context
-- GET /api/tickets/{id}/quote-context - Get auto-detected or manual context
-- PUT /api/tickets/{id}/quote-context - Set context manually
-- POST /api/tickets/{id}/quote-suggestion - Compute suggestion score
-- POST /api/tickets/{id}/quote-context-learn - Record learning event
-- GET /api/admin/quote-context-stats - Admin stats view
+## Backlog prioritizado
+### P0 — Correções Críticas (Code Review pendente)
+- Remover `eval()` em `modules/assistencias/routes.py:394` → `ast.literal_eval()`.
+- Corrigir dependências de hooks em `QuickCommunicationPanel.js`, `TasksToday.js`, `TasksEffectiveness.js`, `Regularizations.js`.
+- Rever armazenamento de JWT (`AuthContext.js`, `usePushNotifications.js`).
 
-## Pending
-- [ ] P2 Finance (sugestões code review, não bloqueantes): staged replace em finance_open_documents (hoje delete_many global — parse errors→rejected protege); credit-evolution-card só visível na tab Informação (considerar destacar); relatório semanal (Fase 2 spec, ainda não pedido explicitamente).
-- [ ] LOW: hydration warnings `<span data-ve-dynamic>` dentro de `<tbody>` — origem no runtime visual-edit da plataforma, cosmético.
-- [ ] LOW: apagar ficheiro original de imports FAILED/REJECTED (storage leak menor); paginação em GET /finance/imports.
-- [ ] P3: Excel import
-- [ ] P3: Client portal
-- [ ] P3: Estatísticas por empresa de renting + exportação CSV
-- [ ] Future: WhatsApp module (blocked - needs Meta token)
-- [ ] Future: Mover fluxos Renting/Alertas inline no bot interno (desligar 2 bots antigos)
-- [ ] Cleanup: apagar endpoints DEPRECATED `pre_tickets` em `telegram_internal/routes.py`
+### P1 — Security Audit
+- SEC-001: bloquear `role=ADMIN` em auto-register.
+- SEC-002: reforçar JWT secret / algoritmo.
+- SEC-004: autenticar webhooks legacy (WhatsApp inbound / Telegram transcribed).
+- SEC-005: proteger endpoint público `/api/seed`.
 
-## Status
-**Sistema considerado pronto pelo utilizador (Feb 2026).** Backlog acima é opcional/futuro.
+### P2 — Refactor / UX
+- Namespace obrigatório de callbacks Telegram (`renting:*`, etc.).
+- Sub-view "por utilizador" no Dashboard de Eficácia.
+- IA explicativa opcional no motor de Tarefas.
+- Refactor de componentes gigantes: `TicketDetail.js` (2200+), `AdminSettings.js` (2000+), `IntakePage.js`, `parse_client_info`.
+- Limpeza `console.log`, index-as-key.
 
-**Deploy readiness (Feb 2026):** ✅ PASS — deployment_agent confirmou zero blockers. Correções aplicadas:
-- `TELEGRAM_RENTING_BOT_TOKEN` em `backend/.env` agora com aspas duplas (evita parse errors em containers K8s).
-- `.gitignore` limpo (removidas ~40 linhas duplicadas de `*.env` / cache paths que bloqueavam ficheiros necessários).
-- WhatsApp confirmado OFF em produção (`WHATSAPP_ENABLED=false`; rotas `/api/whatsapp/*` retornam 404).
-- Smoke test admin@pdpv.pt: login OK, `finance_role: OWNER` OK, `/api/finance/dashboard` OK (200 com dados reais).
+### Futuro
+- Relatórios financeiros semanais via Telegram.
+- Integrações B2B (TecAlliance).
 
-## Environments
-- Preview: https://intake-ai-gateway.preview.emergentagent.com
-- Production: https://tickets.pneusdpedrov.com
+## Credenciais de teste
+Ver `/app/memory/test_credentials.md`.
+
+## Última alteração
+- Feb 2026: Adicionado endpoint `POST /api/finance/tasks/reset` (OWNER only, requer `confirm=RESET`). Limpa `finance_tasks` completamente e apaga apenas actions de feedback de tarefas. Validado em Preview.
