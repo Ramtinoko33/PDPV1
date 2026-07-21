@@ -36,6 +36,7 @@ from .models import (
     RegularizationsResponse, RegularizationItem,
     DocumentActionCreate,
     FinanceSettingsUpdate,
+    FinanceClientContactsUpdate, CustomerSegment,
     EmailTemplateCreate, EmailTemplateUpdate, EmailTemplateResponse, EmailTemplateListResponse,
 )
 from .permissions import (
@@ -537,44 +538,183 @@ async def list_clients(
     traffic_light: Optional[TrafficLight] = None,
     has_overdue: Optional[bool] = None,
     is_blocked: Optional[bool] = None,
+    # --- Novos filtros avançados (Bloco B) ---
+    customer_segment: Optional[CustomerSegment] = None,
+    min_overdue: Optional[float] = Query(None, ge=0),
+    max_overdue: Optional[float] = Query(None, ge=0),
+    min_total: Optional[float] = Query(None, ge=0),
+    max_total: Optional[float] = Query(None, ge=0),
+    min_days: Optional[int] = Query(None, ge=0),
+    max_days: Optional[int] = Query(None, ge=0),
+    aging_bucket: Optional[str] = Query(
+        None,
+        description="0_30 | 31_60 | 61_90 | 90p | 120p | 180p | 365p",
+    ),
+    has_active_promise: Optional[bool] = None,
+    has_failed_promise: Optional[bool] = None,
+    no_contact_days: Optional[int] = Query(
+        None, ge=0, le=3650,
+        description="Clientes sem `last_action_at` nos últimos X dias (inclui nunca contactados).",
+    ),
+    never_contacted: Optional[bool] = None,
+    missing_finance_email: Optional[bool] = None,
+    has_residual: Optional[bool] = None,
+    sort_by: str = Query(
+        "name",
+        pattern="^(name|overdue_asc|overdue_desc|total_asc|total_desc|days_asc|days_desc|last_action|doc_count|financial_status)$",
+    ),
     current_user: dict = Depends(require_finance_access)
 ):
     """
-    Lista clientes financeiros com filtros.
+    Lista clientes financeiros com filtros avançados e ordenação.
     """
-    query = {}
-    
+    query: dict = {}
+
     if search:
         query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
             {"genes_code": {"$regex": search, "$options": "i"}},
         ]
-    
+
     if status:
         query["financial_status"] = status.value
-    
     if traffic_light:
         query["traffic_light"] = traffic_light.value
-    
-    if has_overdue is True:
-        query["overdue_balance_collectable"] = {"$gt": 0}
-    elif has_overdue is False:
-        query["overdue_balance_collectable"] = {"$lte": 0}
-    
     if is_blocked is not None:
         query["is_blocked"] = is_blocked
-    
-    # Contar total
+    if customer_segment:
+        query["customer_segment"] = customer_segment.value
+
+    # Vencido cobravel
+    overdue_range: dict = {}
+    if has_overdue is True:
+        overdue_range["$gt"] = 0
+    elif has_overdue is False:
+        overdue_range["$lte"] = 0
+    if min_overdue is not None:
+        overdue_range["$gte"] = min_overdue
+    if max_overdue is not None:
+        overdue_range["$lte"] = max_overdue
+    if overdue_range:
+        query["overdue_balance_collectable"] = overdue_range
+
+    # Saldo total
+    total_range: dict = {}
+    if min_total is not None:
+        total_range["$gte"] = min_total
+    if max_total is not None:
+        total_range["$lte"] = max_total
+    if total_range:
+        query["total_balance"] = total_range
+
+    # Dias vencidos (+ aging bucket preset)
+    days_range: dict = {}
+    if min_days is not None:
+        days_range["$gte"] = min_days
+    if max_days is not None:
+        days_range["$lte"] = max_days
+    if aging_bucket:
+        aging_map = {
+            "0_30":   (0, 30),
+            "31_60":  (31, 60),
+            "61_90":  (61, 90),
+            "90p":    (91, None),
+            "120p":   (121, None),
+            "180p":   (181, None),
+            "365p":   (366, None),
+        }
+        rng = aging_map.get(aging_bucket)
+        if rng:
+            lo, hi = rng
+            days_range["$gte"] = max(days_range.get("$gte", lo), lo)
+            if hi is not None:
+                days_range["$lte"] = min(days_range.get("$lte", hi), hi)
+    if days_range:
+        query["oldest_overdue_days"] = days_range
+
+    # Promessas — requerem lookup em finance_promises
+    if has_active_promise is True:
+        client_ids = await db.finance_promises.distinct("client_id", {"status": PromiseStatus.OPEN.value})
+        query["id"] = {"$in": client_ids}
+    elif has_active_promise is False:
+        client_ids = await db.finance_promises.distinct("client_id", {"status": PromiseStatus.OPEN.value})
+        query["id"] = {"$nin": client_ids}
+    if has_failed_promise is True:
+        client_ids = await db.finance_promises.distinct("client_id", {"status": PromiseStatus.FAILED.value})
+        # merge com condição anterior
+        existing = query.get("id", {})
+        if "$in" in existing:
+            query["id"]["$in"] = list(set(existing["$in"]) & set(client_ids))
+        elif "$nin" in existing:
+            query["id"] = {"$in": [c for c in client_ids if c not in existing["$nin"]]}
+        else:
+            query["id"] = {"$in": client_ids}
+
+    # Sem contacto nos últimos X dias
+    if never_contacted:
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"last_action_at": {"$exists": False}},
+            {"last_action_at": None},
+            {"last_action_at": ""},
+        ]}]
+    elif no_contact_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=no_contact_days)).isoformat()
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"last_action_at": {"$exists": False}},
+            {"last_action_at": None},
+            {"last_action_at": ""},
+            {"last_action_at": {"$lt": cutoff}},
+        ]}]
+
+    # Missing finance email
+    if missing_finance_email:
+        query["$and"] = query.get("$and", []) + [{"$or": [
+            {"finance_email": {"$exists": False}},
+            {"finance_email": None},
+            {"finance_email": ""},
+        ]}]
+
+    # Residuais
+    if has_residual is True:
+        query["residual_balance"] = {"$gt": 0}
+    elif has_residual is False:
+        query["residual_balance"] = {"$lte": 0}
+
+    # Total
     total = await db.finance_clients.count_documents(query)
-    
-    # Buscar página
+
+    # Ordenação
+    sort_map = {
+        "name":             [("name", 1)],
+        "overdue_asc":      [("overdue_balance_collectable", 1)],
+        "overdue_desc":     [("overdue_balance_collectable", -1)],
+        "total_asc":        [("total_balance", 1)],
+        "total_desc":       [("total_balance", -1)],
+        "days_asc":         [("oldest_overdue_days", 1)],
+        "days_desc":        [("oldest_overdue_days", -1)],
+        "last_action":      [("last_action_at", 1)],  # ordena null primeiro (não contactados)
+        "financial_status": [("financial_status", 1)],
+    }
+    mongo_sort = sort_map.get(sort_by, [("name", 1)])
+
     skip = (page - 1) * page_size
-    clients_cursor = db.finance_clients.find(query, {"_id": 0}).sort("name", 1).skip(skip).limit(page_size)
-    
-    clients = []
+    clients_cursor = db.finance_clients.find(query, {"_id": 0}).sort(mongo_sort).skip(skip).limit(page_size)
+
+    clients: List[FinanceClientResponse] = []
+    doc_counts: Dict[str, int] = {}
     async for client in clients_cursor:
+        # Doc count opcional (só quando é pedido para ordenar por ele)
+        if sort_by == "doc_count":
+            doc_counts[client["id"]] = await db.finance_documents.count_documents({
+                "client_id": client["id"],
+                "amount_open": {"$gt": 0},
+                "effective_classification": DocumentClassification.COLLECTABLE.value,
+            })
         clients.append(FinanceClientResponse(**client))
-    
+
+    if sort_by == "doc_count":
+        clients.sort(key=lambda c: doc_counts.get(c.id, 0), reverse=True)
+
     return FinanceClientListResponse(
         clients=clients,
         total=total,
@@ -600,6 +740,103 @@ async def get_client(client_id: str, current_user: dict = Depends(require_financ
         client["credit_trend_absolute"] = evo.get("trend_absolute")
     
     return FinanceClientResponse(**client)
+
+
+@router.patch("/clients/{client_id}/contacts", response_model=FinanceClientResponse)
+async def update_client_contacts(
+    client_id: str,
+    payload: FinanceClientContactsUpdate,
+    current_user: dict = Depends(require_collections_agent),
+):
+    """
+    Atualiza contactos financeiros dedicados e/ou segmento de um cliente.
+    - Guarda auditoria em `finance_client_contact_history`.
+    - Cria `finance_action` do tipo `note` a referir a alteração.
+    - COLLECTIONS_AGENT, FINANCE_REVIEWER e OWNER podem editar.
+    """
+    client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    update_fields: Dict[str, Any] = {}
+    changes: List[Dict[str, Any]] = []
+    for field in ("customer_segment", "finance_email", "finance_phone", "finance_mobile", "finance_contact_name"):
+        new_val = getattr(payload, field)
+        if new_val is None:
+            continue
+        if hasattr(new_val, "value"):  # enum
+            new_val = new_val.value
+        # Normalizar strings vazias → None (evita "" a passar por preenchido)
+        if isinstance(new_val, str) and new_val.strip() == "":
+            new_val = None
+        old_val = client.get(field)
+        if new_val != old_val:
+            update_fields[field] = new_val
+            changes.append({"field": field, "old": old_val, "new": new_val})
+
+    if not changes:
+        return FinanceClientResponse(**client)
+
+    now = datetime.now(timezone.utc).isoformat()
+    update_fields["finance_contacts_updated_at"] = now
+    update_fields["finance_contacts_updated_by"] = current_user["id"]
+    update_fields["updated_at"] = now
+
+    await db.finance_clients.update_one({"id": client_id}, {"$set": update_fields})
+
+    # Auditoria detalhada
+    await db.finance_client_contact_history.insert_one({
+        "id": str(uuid.uuid4()),
+        "client_id": client_id,
+        "user_id": current_user["id"],
+        "user_name": current_user.get("name", ""),
+        "reason": payload.reason,
+        "changes": changes,
+        "created_at": now,
+    })
+
+    # Registo no histórico de acções (visível na timeline C4)
+    change_summary = ", ".join([f"{c['field']}: {c['old'] or '—'} → {c['new'] or '—'}" for c in changes])
+    await db.finance_actions.insert_one({
+        "id": str(uuid.uuid4()),
+        "client_id": client_id,
+        "action_type": ActionType.NOTE.value,
+        "user_id": current_user["id"],
+        "user_name": current_user.get("name", ""),
+        "notes": f"[Contactos/Segmento atualizados] {change_summary}\n{(payload.reason or '').strip()}",
+        "delay_reason": None,
+        "next_action_date": None,
+        "created_at": now,
+    })
+
+    updated = await db.finance_clients.find_one({"id": client_id}, {"_id": 0})
+    return FinanceClientResponse(**updated)
+
+
+@router.post("/clients/{client_id}/backfill-contacts")
+async def backfill_client_contacts(
+    client_id: str,
+    force: bool = Query(False, description="Se True, atualiza segmento mesmo já definido"),
+    current_user: dict = Depends(require_finance_reviewer),
+):
+    """
+    Executa backfill do finance_client a partir do customer ligado (ou match por nome).
+    Nunca sobrescreve valores manuais nos contactos.
+    """
+    from .services.customer_link import backfill_finance_client
+    r = await backfill_finance_client(client_id, force=force)
+    return r
+
+
+@router.post("/clients/backfill-all")
+async def backfill_all_clients(
+    force: bool = Query(False),
+    current_user: dict = Depends(require_finance_owner),
+):
+    """Executa backfill em massa de todos os finance_clients (OWNER-only)."""
+    from .services.customer_link import backfill_all_finance_clients
+    r = await backfill_all_finance_clients(force=force)
+    return r
 
 
 @router.get("/clients/{client_id}/documents")

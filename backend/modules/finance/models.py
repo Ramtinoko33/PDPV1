@@ -146,6 +146,18 @@ class DataHealthStatus(str, Enum):
 # ============== REQUEST/RESPONSE MODELS ==============
 
 # --- Finance Client ---
+class CustomerSegment(str, Enum):
+    """Segmento comercial do cliente (usado para régua de cobrança e filtros)."""
+    PARTICULAR = "PARTICULAR"
+    EMPRESA = "EMPRESA"
+    FROTA = "FROTA"
+    SEGURADORA = "SEGURADORA"
+    LEASING = "LEASING"
+    CONTA_CORRENTE = "CONTA_CORRENTE"
+    OUTRO = "OUTRO"
+    UNKNOWN = "UNKNOWN"
+
+
 class FinanceClientBase(BaseModel):
     """Base para cliente financeiro"""
     genes_code: str
@@ -156,6 +168,16 @@ class FinanceClientBase(BaseModel):
     mobile: Optional[str] = None
     locality: Optional[str] = None
     region: Optional[str] = None
+    # Segmento comercial (backfilled do módulo Customer via linked_customer_id)
+    customer_segment: CustomerSegment = CustomerSegment.UNKNOWN
+    # Contactos financeiros dedicados (sobrepõem-se aos genéricos para envios do Finance)
+    finance_email: Optional[str] = None
+    finance_phone: Optional[str] = None
+    finance_mobile: Optional[str] = None
+    finance_contact_name: Optional[str] = None
+    # Auditoria da última edição manual de contactos financeiros
+    finance_contacts_updated_at: Optional[str] = None
+    finance_contacts_updated_by: Optional[str] = None
 
 
 class FinanceClientCreate(FinanceClientBase):
@@ -508,6 +530,16 @@ class FinanceSettingsUpdate(BaseModel):
     residual_max_documents: Optional[int] = Field(None, ge=1, le=1000)
     micro_old_days_threshold: Optional[int] = Field(None, ge=30, le=3650)
     show_credit_warning_on_tickets: Optional[bool] = None
+
+
+class FinanceClientContactsUpdate(BaseModel):
+    """Atualização de contactos financeiros + segmento do cliente."""
+    customer_segment: Optional[CustomerSegment] = None
+    finance_email: Optional[str] = Field(None, max_length=200)
+    finance_phone: Optional[str] = Field(None, max_length=40)
+    finance_mobile: Optional[str] = Field(None, max_length=40)
+    finance_contact_name: Optional[str] = Field(None, max_length=200)
+    reason: Optional[str] = Field(None, max_length=500)
 
 
 # --- Email templates (BD-backed) ---

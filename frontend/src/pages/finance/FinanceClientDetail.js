@@ -28,6 +28,7 @@ import {
 } from '../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import QuickCommunicationPanel from './QuickCommunicationPanel';
+import FinanceContactsCard from './FinanceContactsCard';
 import axios from 'axios';
 import {
   ArrowLeft,
@@ -551,6 +552,12 @@ const FinanceClientDetail = () => {
                 </div>
               </CardContent>
             </Card>
+
+            <FinanceContactsCard
+              client={client}
+              getAuthHeaders={getAuthHeaders}
+              onUpdated={fetchData}
+            />
 
             <QuickCommunicationPanel
               client={client}

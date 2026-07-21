@@ -1873,3 +1873,22 @@ async def _deferred_startup():
     except Exception as e:
         logger.error(f"[STARTUP] Finance email templates seed failed: {e}")
 
+    # Finance: backfill customer_segment + contactos financeiros a partir de customers.
+    # Idempotente — só corre uma vez por versão, e mesmo assim o job é seguro (não sobrescreve).
+    try:
+        BACKFILL_KEY = "finance_backfill_customer_link_v1_2026_02"
+        already = await db.finance_recompute_log.find_one({"migration_key": BACKFILL_KEY}, {"_id": 0, "id": 1})
+        if not already:
+            from modules.finance.services.customer_link import backfill_all_finance_clients
+            summary = await backfill_all_finance_clients(force=False)
+            await db.finance_recompute_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "triggered_by": BACKFILL_KEY,
+                "migration_key": BACKFILL_KEY,
+                "executed_at": datetime.now(timezone.utc).isoformat(),
+                "summary": summary,
+            })
+            logger.info(f"[STARTUP] Finance customer_link backfill executed: {summary}")
+    except Exception as e:
+        logger.error(f"[STARTUP] Finance customer_link backfill failed: {e}")
+
