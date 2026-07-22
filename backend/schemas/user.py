@@ -11,6 +11,7 @@ class UserRole(str, Enum):
     SUPERVISOR = "SUPERVISOR"
     AGENT = "AGENT"
     INTERNAL_CREATOR = "INTERNAL_CREATOR"
+    FINANCE_ONLY = "FINANCE_ONLY"  # Utilizador exclusivo do módulo Finance (finance_role=OWNER forçado)
 
 
 class FinanceRole(str, Enum):

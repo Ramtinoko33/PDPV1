@@ -1623,6 +1623,51 @@ except Exception as e:
 
 app.include_router(api_router)
 
+# ============================================================
+# FINANCE_ONLY route gate middleware
+# Users with role=FINANCE_ONLY may only access finance-related endpoints
+# (plus auth/logout/me and static utility endpoints). This is a defense-in-depth
+# layer on top of the frontend routing.
+# ============================================================
+_FINANCE_ONLY_ALLOWED_PREFIXES = (
+    "/api/auth",           # login, logout, register (self), me, refresh
+    "/api/finance",        # todos os endpoints do CRM Finance
+    "/api/clients",        # detalhe/edição de contactos finance passa por aqui
+    "/api/notifications",  # push/notification center
+    "/api/health",
+)
+
+@app.middleware("http")
+async def finance_only_gate(request, call_next):
+    from fastapi.responses import JSONResponse
+    path = request.url.path or ""
+    # Only guard authenticated API calls
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if any(path.startswith(p) for p in _FINANCE_ONLY_ALLOWED_PREFIXES):
+        return await call_next(request)
+
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return await call_next(request)
+
+    token = auth.split(None, 1)[1].strip()
+    try:
+        import jwt as _jwt
+        from core.security import SECRET_KEY as _SEC, ALGORITHM as _ALG
+        payload = _jwt.decode(token, _SEC, algorithms=[_ALG])
+    except Exception:
+        return await call_next(request)  # token inválido — deixar rota tratar
+
+    # Only enforce when user role is FINANCE_ONLY
+    if payload.get("role") != "FINANCE_ONLY":
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={"detail": "Este utilizador só tem acesso ao módulo Finance."},
+    )
+
 # CORS configuration
 # IMPORTANT: When CORS_ORIGINS="*" (wildcard), browsers reject responses that also include
 # `Access-Control-Allow-Credentials: true`. The app uses Bearer tokens in the Authorization

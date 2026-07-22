@@ -64,6 +64,11 @@ const ProtectedRoute = ({ children, allowedRoles, requireFinanceAccess }) => {
     return <Navigate to="/login" replace />;
   }
   
+  // FINANCE_ONLY: só pode aceder a rotas /finance/*
+  if (user.role === 'FINANCE_ONLY' && !window.location.pathname.startsWith('/finance')) {
+    return <Navigate to="/finance" replace />;
+  }
+  
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -81,7 +86,7 @@ function AppRoutes() {
   
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/login" element={user ? <Navigate to={user.role === 'FINANCE_ONLY' ? '/finance' : '/dashboard'} replace /> : <Login />} />
       
       {/* Public route for quote response - NO AUTH */}
       <Route path="/quote/:token" element={<QuoteResponse />} />

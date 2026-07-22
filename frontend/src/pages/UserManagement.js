@@ -193,7 +193,8 @@ const UserManagement = () => {
     { value: 'ADMIN', label: 'Administrador' },
     { value: 'SUPERVISOR', label: 'Supervisor (Telefonista)' },
     { value: 'AGENT', label: 'Agente (Rececionista)' },
-    { value: 'INTERNAL_CREATOR', label: 'Criador Interno' }
+    { value: 'INTERNAL_CREATOR', label: 'Criador Interno' },
+    { value: 'FINANCE_ONLY', label: 'Financeiro (só Finance)' }
   ];
 
   const roleLabels = Object.fromEntries(roleOptions.map(r => [r.value, r.label]));
@@ -203,7 +204,8 @@ const UserManagement = () => {
       ADMIN: 'bg-purple-100 text-purple-800',
       SUPERVISOR: 'bg-blue-100 text-blue-800',
       AGENT: 'bg-emerald-100 text-emerald-800',
-      INTERNAL_CREATOR: 'bg-zinc-100 text-zinc-800'
+      INTERNAL_CREATOR: 'bg-zinc-100 text-zinc-800',
+      FINANCE_ONLY: 'bg-amber-100 text-amber-800'
     };
     return classes[role] || 'bg-zinc-100 text-zinc-800';
   };
@@ -433,7 +435,18 @@ const UserManagement = () => {
               <Label className="font-semibold">Função *</Label>
               <Select 
                 value={formData.role} 
-                onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
+                onValueChange={(value) => setFormData(prev => ({
+                  ...prev,
+                  role: value,
+                  // FINANCE_ONLY força finance_role=OWNER e limpa flags de outros módulos
+                  ...(value === 'FINANCE_ONLY' ? {
+                    finance_role: 'OWNER',
+                    has_alerts_access: false,
+                    can_create_tickets: false,
+                    has_renting_access: false,
+                    has_assistencias_access: false,
+                  } : {})
+                }))}
               >
                 <SelectTrigger className="h-11 border-2" data-testid="user-role-select">
                   <SelectValue />
@@ -444,6 +457,11 @@ const UserManagement = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {formData.role === 'FINANCE_ONLY' && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  ℹ️ Este utilizador só verá o módulo Finance com permissões de <strong>Owner</strong> (acesso total).
+                </p>
+              )}
             </div>
 
             <div className="space-y-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">

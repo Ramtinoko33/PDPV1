@@ -48,6 +48,9 @@ async def create_user(user_data: UserCreate, current_user: dict = Depends(get_cu
         "role": user_data.role.value,
         "created_at": now
     }
+    # FINANCE_ONLY → auto-attribuir finance_role=OWNER
+    if user_data.role == UserRole.FINANCE_ONLY:
+        user_doc["finance_role"] = "OWNER"
     await db.users.insert_one(user_doc)
     return UserResponse(**{k: v for k, v in user_doc.items() if k != "password_hash"})
 
@@ -78,6 +81,9 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user: dict = 
         update_doc["name"] = user_data.name
     if user_data.role:
         update_doc["role"] = user_data.role.value
+        # FINANCE_ONLY → garantir finance_role=OWNER
+        if user_data.role == UserRole.FINANCE_ONLY:
+            update_doc["finance_role"] = "OWNER"
     if user_data.password:
         update_doc["password_hash"] = hash_password(user_data.password)
     if user_data.has_alerts_access is not None:
