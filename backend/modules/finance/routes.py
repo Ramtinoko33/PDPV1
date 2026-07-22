@@ -2455,12 +2455,14 @@ async def get_client_dunning_bucket(
 @router.post("/tasks/reset")
 async def reset_tasks(
     confirm: str = Query(..., description="Escrever exatamente RESET para confirmar"),
+    include_promises: bool = Query(False, description="Se true, apaga também todas as promessas (finance_promises) e ações relacionadas."),
     current_user: dict = Depends(require_finance_owner),
 ):
     """
     RESET COMPLETO do motor de Tarefas + Eficácia.
     - Apaga TODAS as tarefas (`finance_tasks`)
     - Apaga todos os action-logs de feedback de tarefas (`finance_actions` com notas `[Tarefa ...]`)
+    - Se `include_promises=true`: apaga também `finance_promises` + actions `promise_*`.
     Restrito a OWNER. Requer query param `confirm=RESET`.
     """
     if confirm != "RESET":
@@ -2473,15 +2475,29 @@ async def reset_tasks(
         "notes": {"$regex": r"^\[Tarefa "},
     })).deleted_count
 
+    promises_deleted = 0
+    promise_actions_deleted = 0
+    if include_promises:
+        promises_deleted = (await db.finance_promises.delete_many({})).deleted_count
+        promise_actions_deleted = (await db.finance_actions.delete_many({
+            "action_type": {"$in": [
+                ActionType.PROMISE_CREATED.value,
+                ActionType.PROMISE_UPDATED.value,
+            ]},
+        })).deleted_count
+
     logger.warning(
         f"FINANCE TASKS RESET by user {current_user.get('email')} — "
-        f"tasks_deleted={tasks_deleted}, feedback_actions_deleted={feedback_deleted}"
+        f"tasks_deleted={tasks_deleted}, feedback_actions_deleted={feedback_deleted}, "
+        f"promises_deleted={promises_deleted}, promise_actions_deleted={promise_actions_deleted}"
     )
     return {
         "ok": True,
         "tasks_deleted": tasks_deleted,
         "feedback_actions_deleted": feedback_deleted,
-        "message": "Motor de Tarefas e histórico de eficácia limpos.",
+        "promises_deleted": promises_deleted,
+        "promise_actions_deleted": promise_actions_deleted,
+        "message": "Motor de Tarefas, histórico de eficácia" + (" e promessas" if include_promises else "") + " limpos.",
     }
 
 

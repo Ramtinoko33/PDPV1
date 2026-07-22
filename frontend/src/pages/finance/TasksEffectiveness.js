@@ -13,10 +13,16 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '../../components/ui/select';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
+} from '../../components/ui/alert-dialog';
+import { Checkbox } from '../../components/ui/checkbox';
 import axios from 'axios';
+import { toast } from 'sonner';
 import {
   BarChart3, RefreshCw, TrendingUp, TrendingDown, CheckCircle2, XCircle,
-  Clock, Shuffle, Mail, MessageSquare, Phone, Coins, Ban
+  Clock, Shuffle, Mail, MessageSquare, Phone, Coins, Ban, Trash2
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -75,8 +81,10 @@ const daysAgoIso = (n) => {
 };
 
 export default function TasksEffectiveness() {
-  const { getAuthHeaders } = useAuth();
+  const { getAuthHeaders, user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [includePromises, setIncludePromises] = useState(false);
   const [data, setData] = useState(null);
   const [filters, setFilters] = useState({
     date_from: daysAgoIso(30),
@@ -85,6 +93,8 @@ export default function TasksEffectiveness() {
     customer_segment: 'all',
     status: 'all',
   });
+
+  const isOwner = user?.finance_role === 'OWNER' || user?.role === 'ADMIN';
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -109,6 +119,29 @@ export default function TasksEffectiveness() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      const params = new URLSearchParams({ confirm: 'RESET' });
+      if (includePromises) params.append('include_promises', 'true');
+      const res = await axios.post(
+        `${API_URL}/api/finance/tasks/reset?${params}`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      const d = res.data;
+      toast.success(
+        `Reset OK — tarefas: ${d.tasks_deleted}, feedback: ${d.feedback_actions_deleted}` +
+        (includePromises ? `, promessas: ${d.promises_deleted}` : '')
+      );
+      fetchData();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Erro ao fazer reset');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const totals = data?.totals || {};
   const rates = data?.rates || {};
   const today = data?.today_summary || {};
@@ -125,9 +158,51 @@ export default function TasksEffectiveness() {
             Medir se o motor está a recomendar bem — sem IA a decidir sozinha
           </p>
         </div>
-        <Button variant="outline" onClick={fetchData} disabled={loading} data-testid="eff-refresh-btn">
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={fetchData} disabled={loading} data-testid="eff-refresh-btn">
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+          </Button>
+          {isOwner && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" data-testid="eff-reset-btn">
+                  <Trash2 className="h-4 w-4 mr-1" /> Reset
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset do motor de Tarefas</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Vai apagar <strong>TODAS as tarefas</strong> e o histórico de eficácia.
+                    Esta ação é irreversível.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <Checkbox
+                    id="include-promises"
+                    checked={includePromises}
+                    onCheckedChange={setIncludePromises}
+                    data-testid="eff-include-promises"
+                  />
+                  <Label htmlFor="include-promises" className="text-sm cursor-pointer">
+                    Apagar também <strong>todas as promessas</strong> existentes
+                  </Label>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={resetting}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleReset}
+                    disabled={resetting}
+                    className="bg-red-600 hover:bg-red-700"
+                    data-testid="eff-reset-confirm-btn"
+                  >
+                    {resetting ? 'A limpar…' : 'Confirmar reset'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {/* Filtros */}

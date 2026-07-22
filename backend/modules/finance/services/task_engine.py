@@ -95,9 +95,37 @@ def _bucket_of(days: int) -> str:
 
 
 async def _data_health_ok() -> Tuple[bool, Optional[str]]:
-    """Verifica se os mapas críticos estão actualizados. Reflecte /finance/data-health."""
-    async for h in db.finance_data_health.find({"blocking_collections": True}, {"_id": 0, "type": 1, "as_of_date": 1}):
-        return False, f"Dados desatualizados: {h.get('type')} de {h.get('as_of_date') or '—'}. Carregue o mapa GENES antes de cobrar."
+    """
+    Verifica se os mapas críticos estão actualizados.
+    Mesma lógica que /api/finance/data-health: procura a última importação
+    OVERDUE_BALANCES (crítico, daily). Se ausente OU >= 1 dia de atraso,
+    devolve (False, reason).
+    """
+    from modules.finance.models import ImportType
+
+    last = await db.finance_imports.find_one(
+        {
+            "type": ImportType.OVERDUE_BALANCES.value,
+            "status": {"$in": ["imported", "accepted", "accepted_with_warnings"]},
+        },
+        {"_id": 0, "as_of_date": 1, "uploaded_at": 1},
+        sort=[("uploaded_at", -1)],
+    )
+    if not last:
+        return False, "Nenhuma importação de saldos vencidos realizada. Carregue o mapa GENES antes de cobrar."
+
+    as_of_str = last.get("as_of_date") or (last.get("uploaded_at") or "")[:10]
+    if not as_of_str:
+        return False, "Última importação sem data. Reimporte o mapa GENES."
+
+    try:
+        as_of = date.fromisoformat(as_of_str[:10])
+    except Exception:
+        return False, "Data da última importação inválida. Reimporte o mapa GENES."
+
+    days_old = (date.today() - as_of).days
+    if days_old >= 1:
+        return False, f"Dados desatualizados: mapa GENES com {days_old} dia(s) de atraso. Carregue o mapa atualizado antes de cobrar."
     return True, None
 
 
@@ -401,44 +429,13 @@ async def generate_daily_tasks(
     # 1) Guardrail: dados desatualizados?
     ok, reason = await _data_health_ok()
     if not ok:
-        upload_task = {
-            "id": str(uuid.uuid4()),
-            "client_id": None,
-            "client_key": None,
-            "client_name": None,
-            "genes_code": None,
-            "task_type": TaskType.UPLOAD_GENES_MAP.value,
-            "priority_score": 999.0,
-            "priority_reason": reason or "Dados financeiros desatualizados",
-            "suggested_action": SUGGESTED_ACTIONS[TaskType.UPLOAD_GENES_MAP],
-            "bucket": None,
-            "customer_segment": None,
-            "amount_collectable": 0.0,
-            "days_overdue": 0,
-            "status": TaskStatus.OPEN.value,
-            "assigned_to": assigned_to,
-            "created_at": now,
-            "due_date": _today_iso(),
-            "completed_at": None, "outcome": None,
-            "feedback_action": None, "feedback_reason": None, "feedback_note": None,
-            "next_action_date": None, "converted_to_task_id": None,
-            "source": TaskSource.RULE_ENGINE.value,
-            "import_id": None,
-            "generation_id": generation_id,
-        }
-        # arquivar existentes se force
-        archived = 0
-        if force_regenerate:
-            archived = await _archive_open_today(assigned_to)
-        await db.finance_tasks.insert_one(upload_task)
-        return {
-            "generation_id": generation_id,
-            "mode": mode.value,
-            "tasks_created": 1,
-            "tasks_archived": archived,
-            "blocked_reason": reason,
-            "tasks": [upload_task],
-        }
+        # Hard block: não gerar quaisquer tarefas quando os dados estão desatualizados.
+        # Frontend recebe HTTP 409 e mostra toast — utilizador vai a Importações.
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=409,
+            detail=reason or "Dados financeiros desatualizados. Carregue o mapa GENES antes de gerar tarefas.",
+        )
 
     # 2) Se já existem tarefas hoje e não força, não cria duplicados
     archived = 0
