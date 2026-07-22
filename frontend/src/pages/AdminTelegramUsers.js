@@ -28,11 +28,14 @@ const FLOW_OPTIONS = [
 export default function AdminTelegramUsers() {
   const { getAuthHeaders } = useAuth();
   const [users, setUsers] = useState([]);
+  const [systemUsers, setSystemUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [botInfo, setBotInfo] = useState(null);
   const [dialog, setDialog] = useState(false);
+  const [onlyPending, setOnlyPending] = useState(false);
   const [form, setForm] = useState({
     telegram_user_id: '',
+    user_id: '',
     name: '',
     role: 'AGENT',
     allowed_flows: ['pre_ticket', 'renting', 'mech_alert'],
@@ -54,6 +57,13 @@ export default function AdminTelegramUsers() {
     }
   }, [getAuthHeaders]);
 
+  const fetchSystemUsers = useCallback(async () => {
+    try {
+      const r = await axios.get(`${API_URL}/api/users`, { headers: getAuthHeaders() });
+      setSystemUsers(r.data || []);
+    } catch { /* silent — user picker just stays empty */ }
+  }, [getAuthHeaders]);
+
   const fetchBotInfo = useCallback(async () => {
     try {
       const r = await axios.get(`${API_URL}/api/telegram/internal/info`, {
@@ -68,11 +78,13 @@ export default function AdminTelegramUsers() {
   useEffect(() => {
     fetchUsers();
     fetchBotInfo();
-  }, [fetchUsers, fetchBotInfo]);
+    fetchSystemUsers();
+  }, [fetchUsers, fetchBotInfo, fetchSystemUsers]);
 
   const openCreate = () => {
     setForm({
       telegram_user_id: '',
+      user_id: '',
       name: '',
       role: 'AGENT',
       allowed_flows: ['pre_ticket', 'renting', 'mech_alert'],
@@ -85,6 +97,10 @@ export default function AdminTelegramUsers() {
     const tid = parseInt(form.telegram_user_id, 10);
     if (!tid || !form.name.trim()) {
       toast.error('Telegram user ID e nome são obrigatórios');
+      return;
+    }
+    if (!form.user_id) {
+      toast.error('Selecciona a conta de sistema associada (user_id obrigatório)');
       return;
     }
     if (form.allowed_flows.length === 0) {
@@ -176,7 +192,17 @@ export default function AdminTelegramUsers() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Lista ({users.length})</CardTitle>
+          <CardTitle className="text-lg flex items-center justify-between">
+            <span>Lista ({users.length})</span>
+            <label className="text-sm font-normal flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={onlyPending}
+                onCheckedChange={setOnlyPending}
+                data-testid="tg-filter-only-pending"
+              />
+              Só pendentes de migração
+            </label>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -195,6 +221,7 @@ export default function AdminTelegramUsers() {
                 <TableRow>
                   <TableHead>Telegram ID</TableHead>
                   <TableHead>Nome</TableHead>
+                  <TableHead>Conta Sistema</TableHead>
                   <TableHead>Cargo</TableHead>
                   <TableHead>Fluxos Permitidos</TableHead>
                   <TableHead>Estado</TableHead>
@@ -202,10 +229,27 @@ export default function AdminTelegramUsers() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u) => (
+                {users.filter(u => !onlyPending || u.needs_migration).map((u) => {
+                  const linkedSys = systemUsers.find(s => s.id === u.user_id);
+                  return (
                   <TableRow key={u.telegram_user_id} data-testid={`tg-user-row-${u.telegram_user_id}`}>
                     <TableCell className="font-mono">{u.telegram_user_id}</TableCell>
                     <TableCell className="font-medium">{u.name}</TableCell>
+                    <TableCell>
+                      {u.user_id ? (
+                        <span className="text-xs font-mono text-zinc-700">
+                          {linkedSys?.name || u.user_id.slice(0, 8) + '…'}
+                        </span>
+                      ) : (
+                        <span
+                          data-testid={`tg-user-needs-migration-${u.telegram_user_id}`}
+                          className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-800 border border-amber-300 rounded px-2 py-0.5"
+                        >
+                          <AlertCircle className="h-3 w-3" />
+                          Necessita migração
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>{u.role}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
@@ -240,7 +284,8 @@ export default function AdminTelegramUsers() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -277,6 +322,30 @@ export default function AdminTelegramUsers() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 data-testid="tg-user-name-input"
               />
+            </div>
+            <div>
+              <Label>Conta de Sistema *</Label>
+              <Select
+                value={form.user_id}
+                onValueChange={(v) => {
+                  const su = systemUsers.find(s => s.id === v);
+                  setForm({ ...form, user_id: v, name: form.name || (su?.name || '') });
+                }}
+              >
+                <SelectTrigger data-testid="tg-user-system-user-select">
+                  <SelectValue placeholder="Selecciona a conta de sistema" />
+                </SelectTrigger>
+                <SelectContent>
+                  {systemUsers.map(su => (
+                    <SelectItem key={su.id} value={su.id}>
+                      {su.name} ({su.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-zinc-500 mt-1">
+                Cada Telegram user deve estar ligado a uma conta real do sistema.
+              </p>
             </div>
             <div>
               <Label>Cargo</Label>

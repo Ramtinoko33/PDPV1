@@ -180,8 +180,6 @@ async def list_pending_users(current_user: dict = Depends(get_current_user)):
     ]
 
 
-# ============== BOT INFO (admin-only smoke test) ==============
-
 @router.get("/info")
 async def bot_info(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
@@ -189,6 +187,116 @@ async def bot_info(current_user: dict = Depends(get_current_user)):
         return {"configured": False, "reason": "TELEGRAM_INTERNAL_BOT_TOKEN missing"}
     info = await get_me() or {}
     return {"configured": True, "telegram_getMe": info.get("result") or info}
+
+
+# ============== S2-B — OVERVIEW & LOGS (admin) ==============
+
+@router.get("/overview")
+async def bot_overview(current_user: dict = Depends(get_current_user)):
+    """Aggregated snapshot for Administração → Telegram → Visão Geral."""
+    _require_admin(current_user)
+
+    # bot + webhook state
+    from .bot_api import get_webhook_info
+    getme = None
+    webhook = None
+    if is_configured():
+        me = await get_me() or {}
+        getme = me.get("result") if isinstance(me, dict) else None
+        wh = await get_webhook_info() or {}
+        webhook = wh.get("result") if isinstance(wh, dict) else None
+        # Mask URL: keep only host, hide any query with tokens (defensive).
+        if webhook and webhook.get("url"):
+            u = webhook["url"]
+            try:
+                from urllib.parse import urlparse
+                p = urlparse(u)
+                webhook["url_display"] = f"{p.scheme}://{p.netloc}{p.path}"
+            except Exception:
+                webhook["url_display"] = "***"
+            webhook.pop("url", None)  # never expose full url
+
+    # counters
+    users_total = await db.telegram_internal_authorized_users.count_documents({"active": True})
+    users_needs_migration = await db.telegram_internal_authorized_users.count_documents({
+        "$and": [
+            {"active": True},
+            {"$or": [{"user_id": None}, {"user_id": {"$exists": False}}, {"needs_migration": True}]},
+        ]
+    })
+
+    # per-module counters (best-effort; module derived by scanning allowed_flows)
+    module_counts: dict = {"pre_ticket": 0, "renting": 0, "assistencias": 0, "mech_alert": 0}
+    async for d in db.telegram_internal_authorized_users.find(
+        {"active": True}, {"_id": 0, "allowed_flows": 1}
+    ):
+        for m in d.get("allowed_flows") or []:
+            if m in module_counts:
+                module_counts[m] += 1
+
+    # last 5 log events (already stripped of sensitive fields at write-time)
+    recent_logs = await db.telegram_internal_logs.find(
+        {}, {"_id": 0, "update_id": 1, "message_type": 1, "chat_id": 1, "created_at": 1,
+             "error": 1, "module": 1}
+    ).sort("created_at", -1).limit(5).to_list(5)
+
+    return {
+        "bot": {
+            "configured": is_configured(),
+            "username": (getme or {}).get("username"),
+            "first_name": (getme or {}).get("first_name"),
+        },
+        "webhook": webhook,
+        "counters": {
+            "authorized_users": users_total,
+            "needs_migration": users_needs_migration,
+        },
+        "modules": module_counts,
+        "recent_logs": recent_logs,
+    }
+
+
+@router.get("/logs")
+async def list_logs(
+    limit: int = 100,
+    kind: Optional[str] = None,            # "error" | "all"
+    chat_id: Optional[int] = None,
+    module: Optional[str] = None,
+    since: Optional[str] = None,           # ISO date
+    current_user: dict = Depends(get_current_user),
+):
+    """List recent Telegram internal logs with filters.
+
+    Returns only sanitized fields — never tokens, URLs, file_paths or bytes.
+    """
+    _require_admin(current_user)
+    q: dict = {}
+    if chat_id is not None:
+        q["chat_id"] = chat_id
+    if module:
+        q["module"] = module
+    if since:
+        q["created_at"] = {"$gte": since}
+    if kind == "error":
+        q["$or"] = [
+            {"error": {"$ne": None, "$exists": True}},
+            {"message_type": "unauthorized"},
+        ]
+    limit = max(1, min(int(limit or 100), 500))
+    projection = {
+        "_id": 0,
+        "update_id": 1,
+        "message_type": 1,
+        "chat_id": 1,
+        "telegram_user_id": 1,
+        "module": 1,
+        "error": 1,
+        "created_at": 1,
+        "processing_time_ms": 1,
+        "http_status": 1,
+    }
+    rows = await db.telegram_internal_logs.find(q, projection).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"total": len(rows), "logs": rows}
 
 
 class SetWebhookIn(BaseModel):

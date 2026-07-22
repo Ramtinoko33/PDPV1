@@ -184,7 +184,6 @@ const Layout = ({ children }) => {
       badge: 'assistencias',
       children: [
         { path: '/assistencias', label: 'Lista', icon: Truck, roles: ['ADMIN', 'SUPERVISOR', 'AGENT'] },
-        { path: '/admin/assistencias-users', label: 'Bot & Utilizadores', icon: Users, roles: ['ADMIN'] },
       ]
     },
     {
@@ -231,8 +230,16 @@ const Layout = ({ children }) => {
         { path: '/users', label: 'Utilizadores', icon: Users, roles: ['ADMIN'] },
         { path: '/settings', label: 'Configurações Gerais', icon: Settings, roles: ['ADMIN'] },
         { path: '/settings/normalization', label: 'Normalização', icon: Wrench, roles: ['ADMIN', 'SUPERVISOR'] },
-        { path: '/telegram', label: 'Telegram (Bot Principal)', icon: Send, roles: ['ADMIN'] },
-        { path: '/admin/telegram-users', label: 'Telegram (Utilizadores)', icon: Users, roles: ['ADMIN'] },
+      ]
+    },
+    {
+      label: 'Telegram',
+      icon: Send,
+      roles: ['ADMIN'],
+      children: [
+        { path: '/admin/telegram',        label: 'Visão Geral',    icon: BarChart3, roles: ['ADMIN'] },
+        { path: '/admin/telegram/users',  label: 'Utilizadores',   icon: Users,     roles: ['ADMIN'] },
+        { path: '/admin/telegram/logs',   label: 'Logs',           icon: Bell,      roles: ['ADMIN'] },
       ]
     },
   ];

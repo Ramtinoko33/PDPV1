@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "./components/ui/sonner";
+import { toast } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import Login from "./pages/Login";
@@ -16,15 +18,20 @@ import AdminReports from "./pages/AdminReports";
 import QuoteResponse from "./pages/QuoteResponse";
 import TicketReplyPage from "./pages/TicketReplyPage";
 import IntakePage from "./pages/IntakePage";
-import TelegramPage from "./pages/TelegramPage";
+// Sprint 2 / S2-B: TelegramPage and AdminAssistenciasUsers are no longer
+// routed. Files kept on disk for rollback; routes redirect to /admin/telegram.
+// import TelegramPage from "./pages/TelegramPage";
+// import AdminAssistenciasUsers from "./pages/AdminAssistenciasUsers";
 import AlertsPage from "./pages/AlertsPage";
 import RentingPage from "./pages/RentingPage";
 import RentingDetail from "./pages/RentingDetail";
 import AssistenciasPage from "./pages/AssistenciasPage";
 import AssistenciasDetail from "./pages/AssistenciasDetail";
-import AdminAssistenciasUsers from "./pages/AdminAssistenciasUsers";
+// import AdminAssistenciasUsers from "./pages/AdminAssistenciasUsers";  // S2-B: unrouted
 import NormalizationSettings from "./pages/NormalizationSettings";
 import AdminTelegramUsers from "./pages/AdminTelegramUsers";
+import AdminTelegramOverview from "./pages/admin-telegram/Overview";
+import AdminTelegramLogs from "./pages/admin-telegram/Logs";
 import {
   FinanceDashboard,
   CollectionsToday,
@@ -79,6 +86,15 @@ const ProtectedRoute = ({ children, allowedRoles, requireFinanceAccess }) => {
   }
   
   return <Layout>{children}</Layout>;
+};
+
+// Sprint 2 / S2-B — redirect antigas rotas Telegram para o novo grupo Admin
+// com um toast informativo em vez de redirect silencioso.
+const DeprecatedRedirect = ({ to, from }) => {
+  useEffect(() => {
+    toast.info(`A rota ${from} foi movida para Administração → Telegram. Atualiza os teus favoritos.`);
+  }, [from]);
+  return <Navigate to={to} replace />;
 };
 
 function AppRoutes() {
@@ -167,12 +183,30 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       
-      <Route path="/telegram" element={
+      {/* Sprint 2 / S2-B — Admin Telegram (novo) */}
+      <Route path="/admin/telegram" element={
         <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
-          <TelegramPage />
+          <AdminTelegramOverview />
         </ProtectedRoute>
       } />
-      
+
+      <Route path="/admin/telegram/users" element={
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
+          <AdminTelegramUsers />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/telegram/logs" element={
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
+          <AdminTelegramLogs />
+        </ProtectedRoute>
+      } />
+
+      {/* Sprint 2 / S2-B — redirects para rotas antigas com aviso */}
+      <Route path="/telegram" element={<DeprecatedRedirect to="/admin/telegram" from="/telegram" />} />
+      <Route path="/admin/telegram-users" element={<DeprecatedRedirect to="/admin/telegram/users" from="/admin/telegram-users" />} />
+      <Route path="/admin/assistencias-users" element={<DeprecatedRedirect to="/admin/telegram/users" from="/admin/assistencias-users" />} />
+
       <Route path="/alertas" element={
         <ProtectedRoute allowedRoles={ROLES_ALL}>
           <AlertsPage />
@@ -200,18 +234,6 @@ function AppRoutes() {
       <Route path="/assistencias/:id" element={
         <ProtectedRoute allowedRoles={ROLES_ALL}>
           <AssistenciasDetail />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/assistencias-users" element={
-        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
-          <AdminAssistenciasUsers />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/telegram-users" element={
-        <ProtectedRoute allowedRoles={ROLES_ADMIN_ONLY}>
-          <AdminTelegramUsers />
         </ProtectedRoute>
       } />
 
