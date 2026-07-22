@@ -1886,9 +1886,10 @@ async def _deferred_startup():
 
     # Telegram internal bot: indexes + alerts state cache
     try:
-        from modules.telegram_internal.startup import ensure_indexes, prime_alerts_state_cache
+        from modules.telegram_internal.startup import ensure_indexes, prime_alerts_state_cache, prime_renting_state_cache
         await ensure_indexes()
         await prime_alerts_state_cache()
+        await prime_renting_state_cache()
     except Exception as e:
         logger.error(f"[STARTUP] Telegram internal startup failed: {e}")
 

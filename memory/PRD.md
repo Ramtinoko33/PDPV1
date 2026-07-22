@@ -5,39 +5,56 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 
 ## O que está implementado
 - Sistema de Tickets (backoffice + intake público + Telegram router com deduplicação)
-- **CRM Finance completo**: importação em staging, regularizações, micro-saldos, segmentação, comunicação manual (Email via Resend + WhatsApp redirect), export Excel.
-- **Motor de Tarefas de Hoje** baseado em regras (`task_engine.py`).
-- **Dashboard de Eficácia de Tarefas** (`/api/finance/tasks/effectiveness`).
-- **Reset admin** de Tarefas + Eficácia via `POST /api/finance/tasks/reset?confirm=RESET` (OWNER only) — Feb 2026.
+- CRM Finance completo (importação staging, regularizações, micro-saldos, segmentação, comunicação manual)
+- Motor de Tarefas de Hoje baseado em regras + Dashboard de Eficácia
+- Reset admin de Tarefas + Eficácia + Promessas
+- Role `FINANCE_ONLY` (auto-atribui `finance_role=OWNER`, backend com middleware que bloqueia acesso fora de Finance)
+- **Sprint 1 (Feb 2026) — Consolidação Telegram Fase 0 + 0B**: adapter unificado, persistência renting em MongoDB, transições críticas de alerts com await.
 
-## Roles Finance
-- OWNER, FINANCE_REVIEWER, COLLECTIONS_AGENT.
+## Sprint 1 Telegram — detalhe
+- Todas as chamadas outbound Telegram passam por `modules/telegram_internal/bot_api.py` com `TELEGRAM_INTERNAL_BOT_TOKEN`.
+- Tokens legacy (`TELEGRAM_RENTING_BOT_TOKEN`, `TELEGRAM_ALERTS_BOT_TOKEN`, `TELEGRAM_ASSISTENCIAS_BOT_TOKEN`) só existem como placeholders para `git revert`.
+- Nova coleção `renting_bot_state` (transitional; ver docstring). Índices: uniq_chat_id, idx_updated_at, ttl_expires_at_inert (1 ano, inerte).
+- Alerts `_transition` agora `async` com `await _persist_current_state` antes de responder ao utilizador.
+- Adapter tem retry único em 5xx, log estruturado sem tokens/URLs/bytes/file_paths.
+- 18 testes automáticos verdes (3 estáticos + 10 adapter + 2 renting restart + 3 alerts await).
 
 ## Backlog prioritizado
-### P0 — Correções Críticas (Code Review pendente)
-- Remover `eval()` em `modules/assistencias/routes.py:394` → `ast.literal_eval()`.
-- Corrigir dependências de hooks em `QuickCommunicationPanel.js`, `TasksToday.js`, `TasksEffectiveness.js`, `Regularizations.js`.
-- Rever armazenamento de JWT (`AuthContext.js`, `usePushNotifications.js`).
+### P0 — Sprint 1 Telegram, remanescente
+- Checklist E2E manual em Preview (pré-ticket, renting, assistência com PDF, alerta com foto/áudio, restart durante fluxo, 2 utilizadores paralelos).
+- Deploy S1-A + S1-B em conjunto.
 
-### P1 — Security Audit
+### P0 — Correções críticas do Code Review
+- `eval()` em `modules/assistencias/routes.py:394` → `ast.literal_eval()`.
+- Stale closures nos hooks React de `QuickCommunicationPanel`, `TasksToday`, `TasksEffectiveness`, `Regularizations`.
+- JWT storage: `localStorage` → cookies httpOnly.
+
+### Sprint 2 Telegram (aprovado, aguarda Sprint 1 em produção)
+- **Fase 1**: fonte única de utilizadores (`user_id` obrigatório em `telegram_internal_authorized_users`); migração de `assistencias_bot_users`; endpoints `/api/assistencias/bot/*` → 410 Gone.
+- **Fase 2**: menu com 3 sub-páginas em Administração → Telegram (Visão Geral, Utilizadores e Permissões, Logs e Manutenção). Remover `TelegramPage.js` e `AdminAssistenciasUsers.js`.
+- **Fase 3**: legacy webhooks 410 Gone; `setup-webhook` só ADMIN; TTL 30d em `telegram_internal_logs`; nova coleção `telegram_internal_audit` TTL 90d.
+
+### P1 — Security Audit residual
 - SEC-001: bloquear `role=ADMIN` em auto-register.
 - SEC-002: reforçar JWT secret / algoritmo.
 - SEC-004: autenticar webhooks legacy (WhatsApp inbound / Telegram transcribed).
 - SEC-005: proteger endpoint público `/api/seed`.
 
 ### P2 — Refactor / UX
-- Namespace obrigatório de callbacks Telegram (`renting:*`, etc.).
-- Sub-view "por utilizador" no Dashboard de Eficácia.
-- IA explicativa opcional no motor de Tarefas.
+- Namespacing dos callbacks (`renting:*`, `mech:*`, `assist:*`) — sprint dedicado.
 - Refactor de componentes gigantes: `TicketDetail.js` (2200+), `AdminSettings.js` (2000+), `IntakePage.js`, `parse_client_info`.
-- Limpeza `console.log`, index-as-key.
+- Sub-view "por utilizador" no Dashboard de Eficácia.
+- Migração eventual de `renting_bot_state` → `telegram_internal_states` (consolidação de state schema).
 
 ### Futuro
 - Relatórios financeiros semanais via Telegram.
 - Integrações B2B (TecAlliance).
+- IA explicativa opcional no motor de Tarefas.
 
 ## Credenciais de teste
 Ver `/app/memory/test_credentials.md`.
 
-## Última alteração
-- Feb 2026: Adicionado endpoint `POST /api/finance/tasks/reset` (OWNER only, requer `confirm=RESET`). Limpa `finance_tasks` completamente e apaga apenas actions de feedback de tarefas. Validado em Preview.
+## Últimas alterações
+- **Feb 2026 Sprint 1 Telegram Fase 0 + 0B**: consolidação de tokens de saída + persistência renting + await crítico em alerts. 18 testes verdes. Requer redeploy.
+- Feb 2026: Reset expandido de tarefas + bloqueio hard quando dados desatualizados (HTTP 409).
+- Feb 2026: Novo role `FINANCE_ONLY`.

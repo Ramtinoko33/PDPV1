@@ -31,9 +31,13 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ.get("TELEGRAM_RENTING_BOT_TOKEN", "")
+# LEGACY placeholder — kept only to allow `git revert` rollback of Sprint 1.
+# Not read by any function; all outbound Telegram calls now go through the
+# unified adapter at modules.telegram_internal.bot_api which uses only
+# TELEGRAM_INTERNAL_BOT_TOKEN. Do NOT resurrect direct calls with this token.
+BOT_TOKEN = os.environ.get("TELEGRAM_RENTING_BOT_TOKEN", "")  # deprecated
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-TELEGRAM_API = "https://api.telegram.org/bot"
+TELEGRAM_API = "https://api.telegram.org/bot"  # deprecated (kept for legacy routes)
 
 MAX_PHOTO_SIZE_MB = 5
 MAX_AUDIO_DURATION_SEC = 120
@@ -41,67 +45,135 @@ IMAGE_MAX_WIDTH = 1400
 IMAGE_QUALITY = 80
 INACTIVITY_TIMEOUT_SEC = 1800  # 30 minutes — drafts kept for resume
 
-# Per-chat conversation state
-_states = {}
+# Per-chat conversation state.
+#
+# TRANSITIONAL COLLECTION (Sprint 1, phase 0B): `renting_bot_state`.
+# Purpose: persist the Renting flow state machine across backend restarts.
+# Long-term direction: consolidate into `telegram_internal_states` with a
+# schemaless `payload` field. Do NOT rely on this collection name in new
+# features; add new flows to `telegram_internal_states` instead.
+class _MongoBackedRentingStates(dict):
+    """Persistent dict for Renting conversation states.
+
+    - Reads use in-memory copy (lazy loaded once via ensure_loaded()).
+    - Writes mirror to MongoDB (`renting_bot_state`) fire-and-forget.
+    - For critical transitions callers may `await states.flush(chat_id)`.
+    - `watchdog_task` (asyncio.Task) is stripped before persist.
+    """
+
+    _NON_SERIALIZABLE = ("watchdog_task",)
+    _loaded = False
+
+    async def ensure_loaded(self):
+        if self._loaded:
+            return
+        try:
+            async for doc in db.renting_bot_state.find({}):
+                chat_id = doc.get("chat_id")
+                if chat_id is None:
+                    continue
+                state = {
+                    k: v for k, v in doc.items()
+                    if k not in ("_id", "chat_id", "created_at", "updated_at", "expires_at")
+                }
+                # Do not restore a live task reference on load.
+                state["watchdog_task"] = None
+                dict.__setitem__(self, int(chat_id), state)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[RENTING] ensure_loaded failed: %s", e)
+        self._loaded = True
+
+    def _serializable(self, value: dict) -> dict:
+        return {k: v for k, v in value.items() if k not in self._NON_SERIALIZABLE}
+
+    def __setitem__(self, chat_id, value):
+        dict.__setitem__(self, chat_id, value)
+        try:
+            asyncio.get_event_loop().create_task(self._persist(chat_id, value))
+        except RuntimeError:
+            pass  # no running loop (test context)
+
+    def __delitem__(self, chat_id):
+        dict.__delitem__(self, chat_id)
+        try:
+            asyncio.get_event_loop().create_task(self._delete(chat_id))
+        except RuntimeError:
+            pass
+
+    async def _persist(self, chat_id: int, value: dict):
+        try:
+            now = datetime.now(timezone.utc)
+            payload = {
+                **self._serializable(value),
+                "chat_id": int(chat_id),
+                "updated_at": now.isoformat(),
+                "expires_at": (now + _RENTING_EXPIRY).isoformat(),
+            }
+            await db.renting_bot_state.update_one(
+                {"chat_id": int(chat_id)},
+                {"$set": payload, "$setOnInsert": {"created_at": now.isoformat()}},
+                upsert=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[RENTING] persist state failed for %s: %s", chat_id, e)
+
+    async def _delete(self, chat_id: int):
+        try:
+            await db.renting_bot_state.delete_one({"chat_id": int(chat_id)})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[RENTING] delete state failed for %s: %s", chat_id, e)
+
+    async def flush(self, chat_id: int) -> None:
+        """Await persist of the current in-memory state for chat_id."""
+        value = dict.get(self, int(chat_id))
+        if value is None:
+            return
+        await self._persist(int(chat_id), value)
 
 
-# ============== TELEGRAM API ==============
+# Renting drafts kept for resume — 24h horizon for expires_at (TTL activation
+# deferred until real flow-duration is measured; see Sprint 1 plan).
+from datetime import timedelta as _timedelta  # noqa: E402
+_RENTING_EXPIRY = _timedelta(hours=24)
+
+_states = _MongoBackedRentingStates()
+
+
+# ============== TELEGRAM API (delegated to unified adapter) ==============
 async def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
-    if not BOT_TOKEN:
-        logger.error("[RENTING_BOT] TELEGRAM_RENTING_BOT_TOKEN not configured")
-        return False
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(f"{TELEGRAM_API}{BOT_TOKEN}/sendMessage", json=payload)
-            if r.status_code != 200:
-                logger.error(f"[RENTING_BOT] sendMessage failed: {r.text}")
-                return False
-            return True
-    except Exception as e:
-        logger.error(f"[RENTING_BOT] sendMessage error: {e}")
-        return False
+    from modules.telegram_internal import bot_api as _adapter
+    resp = await _adapter.send_message(
+        chat_id=chat_id, text=text, reply_markup=reply_markup, module="renting"
+    )
+    return resp is not None
 
 
 async def download_telegram_photo(file_id: str) -> Optional[bytes]:
-    if not BOT_TOKEN:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(f"{TELEGRAM_API}{BOT_TOKEN}/getFile", params={"file_id": file_id})
-            if r.status_code != 200:
-                return None
-            file_path = r.json().get("result", {}).get("file_path")
-            if not file_path:
-                return None
-            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
-            if r2.status_code == 200:
-                return r2.content
-    except Exception as e:
-        logger.error(f"[RENTING_BOT] download photo error: {e}")
-    return None
+    from modules.telegram_internal import bot_api as _adapter
+    result = await _adapter.download_media(
+        file_id,
+        max_bytes=MAX_PHOTO_SIZE_MB * 1024 * 1024,
+        allowed_mimes={"image/jpeg", "image/png", "image/webp"},
+        module="renting",
+    )
+    return result[0] if result else None
 
 
 async def download_telegram_file(file_id: str) -> Tuple[Optional[bytes], Optional[str]]:
-    if not BOT_TOKEN:
+    from modules.telegram_internal import bot_api as _adapter
+    result = await _adapter.download_media(
+        file_id, max_bytes=MAX_PHOTO_SIZE_MB * 1024 * 1024, module="renting"
+    )
+    if not result:
         return None, None
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(f"{TELEGRAM_API}{BOT_TOKEN}/getFile", params={"file_id": file_id})
-            if r.status_code != 200:
-                return None, None
-            file_path = r.json().get("result", {}).get("file_path")
-            if not file_path:
-                return None, None
-            ext = file_path.split(".")[-1].lower() if "." in file_path else "bin"
-            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
-            if r2.status_code == 200:
-                return r2.content, ext
-    except Exception as e:
-        logger.error(f"[RENTING_BOT] download file error: {e}")
-    return None, None
+    data, mime = result
+    # Legacy signature returns extension, not mime — derive back.
+    ext_map = {
+        "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+        "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
+        "application/pdf": "pdf",
+    }
+    return data, ext_map.get(mime, "bin")
 
 
 # ============== IMAGE PROCESSING ==============
@@ -1650,16 +1722,10 @@ async def get_stats() -> dict:
     return stats
 
 
-# ============== WEBHOOK ==============
+# ============== WEBHOOK (deprecated — bot consolidado em @pdpv_interno_bot) ==============
 async def setup_webhook(webhook_url: str) -> dict:
-    if not BOT_TOKEN:
-        return {"success": False, "error": "TELEGRAM_RENTING_BOT_TOKEN not configured"}
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{TELEGRAM_API}{BOT_TOKEN}/setWebhook",
-                json={"url": webhook_url, "allowed_updates": ["message", "callback_query"]}
-            )
-            return {"success": r.json().get("ok", False), "result": r.json()}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    """Deprecated. Kept for legacy admin routes. Real setup: /api/telegram/internal/webhook/configure."""
+    return {
+        "success": False,
+        "error": "deprecated: use /api/telegram/internal/webhook/configure",
+    }

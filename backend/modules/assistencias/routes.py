@@ -49,8 +49,8 @@ async def telegram_webhook(request: Request):
 @router.post("/webhook/legacy")
 async def telegram_webhook_legacy(request: Request):
     """Receive Telegram updates for the Assistências bot (LEGACY, unrouted)."""
-    # Optional secret check
-    expected_secret = os.environ.get("TELEGRAM_ASSISTENCIAS_WEBHOOK_SECRET")
+    # Optional secret check — legacy placeholder kept for rollback only.
+    expected_secret = bot_api.WEBHOOK_SECRET
     if expected_secret:
         got = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
         if got != expected_secret:
@@ -131,7 +131,7 @@ async def telegram_webhook_legacy(request: Request):
 async def bot_status(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
     if not bot_api.is_configured():
-        return {"configured": False, "reason": "TELEGRAM_ASSISTENCIAS_BOT_TOKEN missing"}
+        return {"configured": False, "reason": "TELEGRAM_INTERNAL_BOT_TOKEN missing"}
     info = await bot_api.get_me() or {}
     return {"configured": True, "telegram_getMe": info.get("result") or info}
 

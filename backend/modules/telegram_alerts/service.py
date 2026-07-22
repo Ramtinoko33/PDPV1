@@ -20,9 +20,11 @@ from .models import AlertStatus
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ.get("TELEGRAM_ALERTS_BOT_TOKEN", "")
+# LEGACY placeholder — kept only for `git revert` rollback of Sprint 1.
+# Not read by any function; outbound calls now go through the unified adapter.
+BOT_TOKEN = os.environ.get("TELEGRAM_ALERTS_BOT_TOKEN", "")  # deprecated
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-TELEGRAM_API = "https://api.telegram.org/bot"
+TELEGRAM_API = "https://api.telegram.org/bot"  # deprecated
 
 BUFFER_TIMEOUT_SECONDS = 4         # how long we wait before turning the first photo/text into an alert
 PHOTO_COLLECTION_TIMEOUT = 60      # inactivity timeout while collecting problem photos
@@ -83,6 +85,12 @@ class _MongoBackedStates(dict):
     MongoDB (`telegram_alerts_states`) so states survive backend restarts.
     Reads still use the in-memory copy for latency (fine for single-worker).
     Loaded lazily on first access via ensure_loaded().
+
+    Sprint 1 / Phase 0B: critical transitions should call
+        `await states.set(chat_id, value)`
+    which awaits the MongoDB write before returning. Non-critical mutations
+    (last_activity refresh, telemetry counters) may keep using the
+    __setitem__ fire-and-forget path.
     """
     _loaded = False
 
@@ -98,9 +106,27 @@ class _MongoBackedStates(dict):
             dict.__setitem__(self, int(chat_id), state)
         self._loaded = True
 
+    async def set(self, chat_id, value):
+        """Critical setter — awaits the MongoDB write BEFORE returning.
+
+        Use for any transition where losing the very last mutation on a
+        restart would corrupt operational state (step progression,
+        assignment, closure).
+        """
+        await self._persist(chat_id, value)
+        dict.__setitem__(self, chat_id, value)
+
+    async def delete(self, chat_id):
+        """Critical delete — awaits the MongoDB delete BEFORE returning."""
+        await self._delete(chat_id)
+        try:
+            dict.__delitem__(self, chat_id)
+        except KeyError:
+            pass
+
     def __setitem__(self, chat_id, value):
         dict.__setitem__(self, chat_id, value)
-        # Fire-and-forget persist (best effort; no await needed at call sites)
+        # Fire-and-forget persist (best effort; use `await set()` for critical).
         try:
             import asyncio
             asyncio.get_event_loop().create_task(self._persist(chat_id, value))
@@ -140,64 +166,41 @@ _conversation_states = _MongoBackedStates()
 _rate_limits = {}
 
 
-# ============== TELEGRAM API HELPERS ==============
+# ============== TELEGRAM API HELPERS (delegated to unified adapter) ==============
 async def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
-    if not BOT_TOKEN:
-        logger.error("[ALERTS_BOT] Bot token not configured")
-        return False
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(f"{TELEGRAM_API}{BOT_TOKEN}/sendMessage", json=payload)
-            if r.status_code != 200:
-                logger.error(f"[ALERTS_BOT] sendMessage failed: {r.text}")
-                return False
-            return True
-    except Exception as e:
-        logger.error(f"[ALERTS_BOT] sendMessage error: {e}")
-        return False
+    from modules.telegram_internal import bot_api as _adapter
+    resp = await _adapter.send_message(
+        chat_id=chat_id, text=text, reply_markup=reply_markup, module="mech_alert"
+    )
+    return resp is not None
 
 
 async def download_telegram_photo(file_id: str) -> Optional[bytes]:
-    if not BOT_TOKEN:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(f"{TELEGRAM_API}{BOT_TOKEN}/getFile", params={"file_id": file_id})
-            if r.status_code != 200:
-                return None
-            file_path = r.json().get("result", {}).get("file_path")
-            if not file_path:
-                return None
-            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
-            if r2.status_code == 200:
-                return r2.content
-    except Exception as e:
-        logger.error(f"[ALERTS_BOT] download photo error: {e}")
-    return None
+    from modules.telegram_internal import bot_api as _adapter
+    result = await _adapter.download_media(
+        file_id,
+        max_bytes=20 * 1024 * 1024,
+        allowed_mimes={"image/jpeg", "image/png", "image/webp"},
+        module="mech_alert",
+    )
+    return result[0] if result else None
 
 
 async def download_telegram_file(file_id: str) -> Tuple[Optional[bytes], Optional[str]]:
-    """Download any Telegram file. Returns (bytes, file_path_extension)."""
-    if not BOT_TOKEN:
+    """Download any Telegram file. Returns (bytes, extension)."""
+    from modules.telegram_internal import bot_api as _adapter
+    result = await _adapter.download_media(
+        file_id, max_bytes=20 * 1024 * 1024, module="mech_alert"
+    )
+    if not result:
         return None, None
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(f"{TELEGRAM_API}{BOT_TOKEN}/getFile", params={"file_id": file_id})
-            if r.status_code != 200:
-                return None, None
-            file_path = r.json().get("result", {}).get("file_path")
-            if not file_path:
-                return None, None
-            ext = file_path.split(".")[-1].lower() if "." in file_path else "bin"
-            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
-            if r2.status_code == 200:
-                return r2.content, ext
-    except Exception as e:
-        logger.error(f"[ALERTS_BOT] download file error: {e}")
-    return None, None
+    data, mime = result
+    ext_map = {
+        "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+        "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
+        "application/pdf": "pdf",
+    }
+    return data, ext_map.get(mime, "bin")
 
 
 async def get_system_users() -> List[dict]:
@@ -494,6 +497,28 @@ def _touch(state: dict):
     state["last_activity"] = datetime.now(timezone.utc).timestamp()
 
 
+async def _persist_current_state(chat_id: int) -> None:
+    """Await the write of the current in-memory state to MongoDB.
+
+    Sprint 1 / Phase 0B — call this before confirming a critical
+    step to the user. Non-critical mutations still rely on the
+    fire-and-forget __setitem__ path.
+    """
+    state = _conversation_states.get(int(chat_id))
+    if state is None:
+        return
+    # Strip transient asyncio.Task references before persist.
+    persistable = {
+        k: v for k, v in state.items()
+        if k not in ("timer_task", "watchdog_task")
+    }
+    await _conversation_states.set(int(chat_id), persistable)
+    # Restore live task refs in the in-memory copy (set() replaced the dict).
+    for k in ("timer_task", "watchdog_task"):
+        if k in state:
+            _conversation_states.get(int(chat_id))[k] = state[k]
+
+
 async def _inactivity_watchdog(chat_id: int):
     """Clear state after INACTIVITY_TIMEOUT_SEC of inactivity (10 minutes)."""
     try:
@@ -540,13 +565,19 @@ async def _log_transition(chat_id: int, previous_state: str, new_state: str, act
         logger.warning(f"[ALERTS_LOG] State log failed: {e}")
 
 
-def _transition(chat_id: int, new_state: str, action: str = None):
-    """Synchronously change state and fire-and-forget log + watchdog re-arm."""
+async def _transition(chat_id: int, new_state: str, action: str = None):
+    """Change state and AWAIT MongoDB persistence before returning.
+
+    Sprint 1 / Phase 0B: this is the only critical-transition entry point
+    for the alerts flow. Callers MUST `await` this before sending any
+    confirmation to the user.
+    """
     state = _get_state(chat_id)
     prev = state.get("state")
     state["state"] = new_state
     _touch(state)
-    asyncio.create_task(_log_transition(chat_id, prev, new_state, action=action))
+    await _persist_current_state(chat_id)
+    asyncio.create_task(_log_transition(chat_id, prev, new_state, action=action))  # non-critical
     _arm_watchdog(chat_id)
 
 
@@ -629,7 +660,7 @@ async def _create_alert_from_buffer(chat_id: int):
         state["problem_images_count"] = 0
         state["initial_buffer"] = None
         _cancel_timer(state)
-        _transition(chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, action="state_set_waiting_problem_photos")
+        await _transition(chat_id, STATE_WAIT_PROBLEM_PHOTO_CONF, action="state_set_waiting_problem_photos")
     except Exception as e:
         logger.error(f"[ALERTS] State transition failed after alert creation: {e}")
         try:
@@ -792,7 +823,7 @@ async def handle_incoming_photo(chat_id: int, user_info: dict, photo: dict, capt
 
     # WAITING_PROBLEM_PHOTO_CONFIRMATION + photo → assume YES + append immediately
     if current == STATE_WAIT_PROBLEM_PHOTO_CONF:
-        _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="auto_yes_via_photo")
+        await _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="auto_yes_via_photo")
         _cancel_timer(state)
         state["timer_task"] = asyncio.create_task(_problem_photos_timer(chat_id))
         await _append_problem_photo(chat_id, photo, silent=True)
@@ -911,7 +942,7 @@ async def _save_mechanic_note(
     )
 
     _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_saved")
+    await _transition(chat_id, STATE_WAIT_ASSIGNEE, action="note_saved")
 
     if comment_type == "audio":
         if transcription_status == "success":
@@ -999,7 +1030,7 @@ async def _end_problem_photos(chat_id: int):
     """Transition to mechanic comment step (Text/Audio/None choice)."""
     state = _get_state(chat_id)
     _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_COMMENT, action="photos_collection_ended")
+    await _transition(chat_id, STATE_WAIT_COMMENT, action="photos_collection_ended")
     await send_message(
         chat_id,
         "Quer adicionar algum comentário para a receção?",
@@ -1024,7 +1055,7 @@ async def _comment_collection_timer(chat_id: int):
     if not state or state.get("state") not in (STATE_COLLECTING_TEXT_COMMENT, STATE_COLLECTING_AUDIO_COMMENT):
         return
     _cancel_timer(state)
-    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_timeout")
+    await _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_timeout")
     await send_message(chat_id, "⏱️ Sem comentário recebido. A prosseguir...")
     await send_assignee_buttons(chat_id)
 
@@ -1041,7 +1072,7 @@ async def handle_photos_callback(chat_id: int, action: str, alert_id: str):
 
     if action == "yes":
         _cancel_timer(state)
-        _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="photos_yes")
+        await _transition(chat_id, STATE_COLLECTING_PROBLEM_IMAGES, action="photos_yes")
         await send_message(
             chat_id,
             f"📸 Envie até {MAX_PROBLEM_PHOTOS} fotos da avaria. Quando terminar, "
@@ -1076,7 +1107,7 @@ async def handle_comment_callback(chat_id: int, action: str, alert_id: str):
 
     if action == "text":
         _cancel_timer(state)
-        _transition(chat_id, STATE_COLLECTING_TEXT_COMMENT, action="comment_choose_text")
+        await _transition(chat_id, STATE_COLLECTING_TEXT_COMMENT, action="comment_choose_text")
         await send_message(
             chat_id,
             f"Envie o comentário em texto. (máx {MAX_NOTE_TEXT_LEN} caracteres)"
@@ -1086,7 +1117,7 @@ async def handle_comment_callback(chat_id: int, action: str, alert_id: str):
 
     if action == "audio":
         _cancel_timer(state)
-        _transition(chat_id, STATE_COLLECTING_AUDIO_COMMENT, action="comment_choose_audio")
+        await _transition(chat_id, STATE_COLLECTING_AUDIO_COMMENT, action="comment_choose_audio")
         await send_message(
             chat_id,
             f"Envie o áudio com a explicação. (máx {MAX_AUDIO_DURATION_SEC}s)"
@@ -1100,7 +1131,7 @@ async def handle_comment_callback(chat_id: int, action: str, alert_id: str):
         {"id": alert_id},
         {"$set": {"mechanic_comment": None, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_none")
+    await _transition(chat_id, STATE_WAIT_ASSIGNEE, action="comment_none")
     await send_assignee_buttons(chat_id)
 
 
@@ -1481,17 +1512,8 @@ async def get_alert_stats() -> dict:
 
 
 async def setup_webhook(webhook_url: str) -> dict:
-    if not BOT_TOKEN:
-        return {"success": False, "error": "Bot token not configured"}
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{TELEGRAM_API}{BOT_TOKEN}/setWebhook",
-                json={"url": webhook_url, "allowed_updates": ["message", "callback_query"]}
-            )
-            data = r.json()
-            logger.info(f"[ALERTS_BOT] setWebhook: {data}")
-            return {"success": data.get("ok", False), "result": data}
-    except Exception as e:
-        logger.error(f"[ALERTS_BOT] setWebhook error: {e}")
-        return {"success": False, "error": str(e)}
+    """Deprecated. Kept for legacy admin routes. Real setup via /api/telegram/internal/webhook/configure."""
+    return {
+        "success": False,
+        "error": "deprecated: use /api/telegram/internal/webhook/configure",
+    }
