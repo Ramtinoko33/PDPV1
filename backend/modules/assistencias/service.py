@@ -191,38 +191,40 @@ async def _reset_state(chat_id: int) -> None:
 async def get_employee_for_chat(telegram_user_id: int) -> Optional[dict]:
     """Look up the linked employee (User) for this Telegram user id.
 
-    Two sources are considered so the flow works whether the user was
-    onboarded via the legacy standalone bot OR through the consolidated
-    internal bot (@pdpv_interno_bot):
-      1) assistencias_bot_users → users (legacy)
-      2) telegram_internal_authorized_users with 'assistencias' in
-         allowed_flows (new consolidated path). A synthetic minimal
-         employee dict is returned in that case.
+    Sprint 2 / S2-A: single source of truth is
+    `telegram_internal_authorized_users`. The user_id field links to
+    `users.id`. Legacy fallback to `assistencias_bot_users` is removed but
+    the collection is preserved on disk (needs_migration path).
     """
-    rec = await db.assistencias_bot_users.find_one(
+    internal_rec = await db.telegram_internal_authorized_users.find_one(
         {"telegram_user_id": telegram_user_id, "active": True}, {"_id": 0}
     )
-    if rec:
-        user = await db.users.find_one({"id": rec.get("user_id")}, {"_id": 0, "password_hash": 0})
+    if not internal_rec:
+        return None
+    if "assistencias" not in (internal_rec.get("allowed_flows") or []):
+        return None
+
+    linked_user_id = internal_rec.get("user_id")
+    if linked_user_id:
+        user = await db.users.find_one(
+            {"id": linked_user_id}, {"_id": 0, "password_hash": 0}
+        )
         if user and (
             user.get("role") in ("ADMIN", "SUPERVISOR")
             or user.get("has_assistencias_access")
         ):
             return user
 
-    # Fallback: internal bot authorization
-    internal_rec = await db.telegram_internal_authorized_users.find_one(
-        {"telegram_user_id": telegram_user_id, "active": True}, {"_id": 0}
-    )
-    if internal_rec and "assistencias" in (internal_rec.get("allowed_flows") or []):
-        return {
-            "id": f"internal-{telegram_user_id}",
-            "name": internal_rec.get("name") or f"Op {telegram_user_id}",
-            "role": internal_rec.get("role") or "AGENT",
-            "email": f"telegram-{telegram_user_id}@pdpv.internal",
-            "has_assistencias_access": True,
-        }
-    return None
+    # Convivência: registo antigo sem user_id. Devolve minimal dict marcado
+    # como needs_migration para que UI/logs possam sinalizar.
+    return {
+        "id": f"internal-{telegram_user_id}",
+        "name": internal_rec.get("name") or f"Op {telegram_user_id}",
+        "role": internal_rec.get("role") or "AGENT",
+        "email": f"telegram-{telegram_user_id}@pdpv.internal",
+        "has_assistencias_access": True,
+        "needs_migration": True,
+    }
 
 
 # ============== Bot flow ==============

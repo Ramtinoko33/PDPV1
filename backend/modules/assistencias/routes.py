@@ -126,14 +126,16 @@ async def telegram_webhook_legacy(request: Request):
     return {"ok": True}
 
 
-# ============== Bot configuration (admin) ==============
+# ============== Bot configuration (admin) — DEPRECATED in Sprint 2 (S2-A) ==============
+# All bot-config endpoints have been consolidated into /api/telegram/internal/*.
+# These endpoints now return HTTP 410 Gone with a clear pointer for callers.
+_GONE_DETAIL = "Endpoint depreciado (Sprint 2 S2-A). Use /api/telegram/internal/authorized-users."
+
+
 @router.get("/bot/status")
 async def bot_status(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
-    if not bot_api.is_configured():
-        return {"configured": False, "reason": "TELEGRAM_INTERNAL_BOT_TOKEN missing"}
-    info = await bot_api.get_me() or {}
-    return {"configured": True, "telegram_getMe": info.get("result") or info}
+    raise HTTPException(status_code=410, detail=_GONE_DETAIL)
 
 
 class WebhookIn(BaseModel):
@@ -143,19 +145,14 @@ class WebhookIn(BaseModel):
 @router.post("/bot/webhook/configure")
 async def configure_webhook(body: WebhookIn, current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
-    if not bot_api.is_configured():
-        raise HTTPException(status_code=503, detail="Bot not configured")
-    res = await bot_api.set_webhook(body.url)
-    if not res or not res.get("ok"):
-        raise HTTPException(status_code=502, detail="Telegram setWebhook failed")
-    return res
+    raise HTTPException(status_code=410, detail=_GONE_DETAIL)
 
 
-# ============== Authorized bot users (admin) ==============
+# ============== Authorized bot users (admin) — DEPRECATED in Sprint 2 (S2-A) ==============
 @router.get("/bot/users")
 async def list_bot_users(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
-    return await service.list_bot_users()
+    raise HTTPException(status_code=410, detail=_GONE_DETAIL)
 
 
 class BotUserIn(BaseModel):
@@ -166,18 +163,13 @@ class BotUserIn(BaseModel):
 @router.post("/bot/users")
 async def add_bot_user(body: BotUserIn, current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
-    try:
-        rec = await service.add_bot_user(body.telegram_user_id, body.user_id, current_user)
-        return rec
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    raise HTTPException(status_code=410, detail=_GONE_DETAIL)
 
 
 @router.delete("/bot/users/{telegram_user_id}")
 async def remove_bot_user(telegram_user_id: int, current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
-    ok = await service.remove_bot_user(telegram_user_id)
-    return {"deleted": ok}
+    raise HTTPException(status_code=410, detail=_GONE_DETAIL)
 
 
 # ============== List / detail / stats ==============

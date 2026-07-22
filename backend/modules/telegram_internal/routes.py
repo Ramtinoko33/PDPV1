@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Header
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
+from db import db
 from . import state as state_mgr
 from . import auth as auth_mgr
 from . import menu as menu_mgr
@@ -106,6 +107,7 @@ async def telegram_webhook(
 
 class AuthorizedUserIn(BaseModel):
     telegram_user_id: int = Field(..., description="Numeric Telegram user id")
+    user_id: str = Field(..., min_length=1, description="UUID of the linked system user (users.id). REQUIRED for new/updated entries.")
     name: str = Field(..., min_length=1)
     role: str = Field("AGENT")
     allowed_flows: List[str] = Field(default_factory=lambda: ["pre_ticket", "renting", "assistencias", "mech_alert"])
@@ -126,8 +128,13 @@ async def list_authorized_users(current_user: dict = Depends(get_current_user)):
 @router.post("/authorized-users")
 async def upsert_authorized_user(body: AuthorizedUserIn, current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
+    # Validate that user_id points to an existing user (defensive).
+    sys_user = await db.users.find_one({"id": body.user_id}, {"_id": 0, "id": 1})
+    if not sys_user:
+        raise HTTPException(status_code=422, detail=f"user_id {body.user_id!r} não existe em users")
     return await auth_mgr.upsert_authorized_user(
         telegram_user_id=body.telegram_user_id,
+        user_id=body.user_id,
         name=body.name,
         role=body.role,
         allowed_flows=body.allowed_flows,
