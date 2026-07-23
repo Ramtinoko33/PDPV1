@@ -178,7 +178,10 @@ const FinanceImports = () => {
       fetchData();
     } catch (err) {
       console.error('Erro ao aprovar:', err);
-      alert('Erro ao aprovar importação');
+      const detail = err?.response?.data?.detail;
+      alert(detail ? `Não foi possível aprovar: ${detail}` : 'Erro ao aprovar importação');
+      // Refresca lista para mostrar novo estado (ex: rejeitado pelo guard)
+      fetchData();
     }
   };
 

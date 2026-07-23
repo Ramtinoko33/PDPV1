@@ -1,0 +1,59 @@
+{
+  "base_url": "https://intake-ai-gateway.preview.emergentagent.com",
+  "checks": [
+    {
+      "name": "login",
+      "ok": true
+    },
+    {
+      "name": "zero_docs_upload_guard",
+      "http_status": 200,
+      "response_status": "rejected",
+      "errors": [
+        "Ficheiro parseado com 0 documentos (5 clientes), mas existem 26 documentos em base. Import rejeitado para evitar reset acidental dos saldos vencidos. Verifique se o ficheiro é do tipo correcto (Saldos Vencidos) e contém as colunas esperadas de documentos."
+      ],
+      "totals": {
+        "clients": 5,
+        "documents": 0,
+        "total_balance": 0.0,
+        "total_overdue": 0.0
+      },
+      "docs_before": 26,
+      "docs_after": 26,
+      "clients_before": 5,
+      "clients_after": 5,
+      "ok": true
+    },
+    {
+      "name": "approve_pending_zero_docs_returns_400",
+      "http_status": 400,
+      "detail": "Ficheiro parseado com 0 documentos (5 clientes), mas existem 26 documentos em base. Import rejeitado para evitar reset acidental dos saldos vencidos. Verifique se o ficheiro é do tipo correcto (Saldos Vencidos) e contém as colunas esperadas de documentos.",
+      "import_after": {
+        "status": "rejected",
+        "errors": [
+          "Ficheiro parseado com 0 documentos (5 clientes), mas existem 26 documentos em base. Import rejeitado para evitar reset acidental dos saldos vencidos. Verifique se o ficheiro é do tipo correcto (Saldos Vencidos) e contém as colunas esperadas de documentos."
+        ]
+      },
+      "docs_before": 26,
+      "docs_after": 26,
+      "clients_before": 5,
+      "clients_after": 5,
+      "ok": true
+    },
+    {
+      "name": "valid_overdue_import_not_rejected",
+      "http_status": 200,
+      "response_status": "pending_approval",
+      "success": false,
+      "totals": {
+        "clients": 1,
+        "documents": 1,
+        "total_balance": 123.45,
+        "total_overdue": 123.45
+      },
+      "errors": [],
+      "ok": true
+    }
+  ],
+  "ok": true
+}

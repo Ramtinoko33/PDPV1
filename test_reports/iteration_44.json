@@ -1,0 +1,43 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "ao carregar em aprovar, da erro, e ainda assim em documentos diz 0 e em clientes 1492,ontem dizia 409 (screenshot mostra pop-up 'Erro ao aprovar importação' em tickets.pneusdpedrov.com/finance/imports, com uma linha 'Saldos Vencidos' 23/07/2026 15:30:13, ficheiro 'Exemplo de mapa_223_07.xlsx', 1492 clientes, 0 documentos, estado 'Aguarda Aprovação')",
+  "summary": "No relevant testing skill found. Focused verification passed: pytest regression suite 8/8 passed; preview API rejects Saldos Vencidos imports parsed as 0 documents when existing finance_documents data exists; approving a corrupt pending import returns HTTP 400 with readable detail and leaves finance_documents/finance_clients unchanged; valid >0-doc overdue import is not rejected by the guard. UI alert also showed backend detail instead of generic 'Erro ao aprovar importação'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_44_overdue_safety_guards.py",
+    "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py",
+    "/app/test_reports/verify_iteration_44_overdue_api.py",
+    "/app/test_reports/iteration_44_api_evidence.json",
+    "/app/test_reports/seed_iteration_44_ui_pending.py",
+    "/app/test_reports/cleanup_iteration_44_ui_pending.py"
+  ],
+  "action_items": [
+    "Deploy the verified fix to production and run the provided cleanup script for any pre-existing corrupt pending 0-document Saldos Vencidos imports if needed."
+  ],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/test_reports/verify_iteration_44_overdue_api.py",
+    "/app/test_reports/iteration_44_api_evidence.json",
+    "/app/test_reports/seed_iteration_44_ui_pending.py",
+    "/app/test_reports/cleanup_iteration_44_ui_pending.py",
+    "/app/test_reports/bug_verification_44.json",
+    "/app/test_reports/iteration_44.json"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 pytest + 3/3 focused API checks)",
+    "frontend": "100% (1/1 focused alert-detail check)"
+  },
+  "seed_data_creation": "Created temporary TSTOVAPI-* and TSTOVUI-* finance import/document seed data only; cleanup verified 0 remaining test imports/docs for those prefixes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use /app/test_reports/iteration_44_api_evidence.json for exact API evidence. Pytest command run: pytest -q backend/tests/test_iteration_44_overdue_safety_guards.py backend/tests/test_iteration_43_open_docs_safety_guards.py -> 8 passed. UI was briefly checked on localhost:3000/finance/imports with an injected pending TSTOVUI import; alert contained 'Não foi possível aprovar: ... 0 documentos ...' and row refreshed to Rejeitado.",
+  "rca_of_the_issue": "The OVERDUE_BALANCES approval path previously allowed a parser-success/0-document import to proceed or fail generically. The fix adds a catastrophic-empty guard that runs even on force_approved=True and maps guard rejection during approve to HTTP 400 with the guard reason."
+}

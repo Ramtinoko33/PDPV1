@@ -213,6 +213,71 @@ async def process_overdue_balances_import(
         now = datetime.now(timezone.utc).isoformat()
         today = date.today().isoformat()
         
+        # -------- Safety guards (Feb 2026 fix) --------
+        # Guard 1: catastrophic empty import — parser succeeded but produced 0
+        # documents while the current DB already has substantial overdue data.
+        # Refuse to wipe existing saldos vencidos even when force_approved=True.
+        parsed_doc_count = parsed['totals'].get('document_count', 0)
+        parsed_client_count = parsed['totals'].get('client_count', 0)
+        existing_doc_count = await db.finance_documents.count_documents({})
+        if parsed_doc_count == 0 and existing_doc_count > 0:
+            reason = (
+                f"Ficheiro parseado com 0 documentos ({parsed_client_count} clientes), "
+                f"mas existem {existing_doc_count} documentos em base. "
+                "Import rejeitado para evitar reset acidental dos saldos vencidos. "
+                "Verifique se o ficheiro é do tipo correcto (Saldos Vencidos) e "
+                "contém as colunas esperadas de documentos."
+            )
+            result['errors'].append(reason)
+            result['status'] = ImportStatus.REJECTED.value
+            result['totals'] = {
+                "clients": parsed_client_count,
+                "documents": parsed_doc_count,
+                "total_balance": parsed['totals'].get('total_balance', 0),
+                "total_overdue": parsed['totals'].get('total_overdue', 0),
+            }
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "errors": result['errors'],
+                    "totals": result['totals'],
+                }}
+            )
+            logger.warning(f"Overdue import {import_id} rejected by safety guard: {reason}")
+            return result
+        # Guard 2: catastrophic shrinkage — new file has < 10% of existing docs
+        # AND drop of > 100 docs. Force manual approval.
+        if (
+            not force_approved
+            and existing_doc_count >= 100
+            and parsed_doc_count < existing_doc_count * 0.10
+            and (existing_doc_count - parsed_doc_count) > 100
+        ):
+            reason = (
+                f"Redução drástica: novo mapa tem {parsed_doc_count} documentos, "
+                f"base anterior tinha {existing_doc_count}. Import marcado para aprovação manual."
+            )
+            result['warnings'].append(reason)
+            result['status'] = ImportStatus.PENDING_APPROVAL.value
+            result['totals'] = {
+                "clients": parsed_client_count,
+                "documents": parsed_doc_count,
+                "total_balance": parsed['totals'].get('total_balance', 0),
+                "total_overdue": parsed['totals'].get('total_overdue', 0),
+            }
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "warnings": result['warnings'],
+                    "totals": result['totals'],
+                    "approval_reason": reason,
+                }}
+            )
+            logger.warning(f"Overdue import {import_id} pending approval by safety guard: {reason}")
+            return result
+        
         # Verificar diferença com última importação
         last_import = await db.finance_imports.find_one(
             {"type": ImportType.OVERDUE_BALANCES.value, "status": ImportStatus.IMPORTED.value},

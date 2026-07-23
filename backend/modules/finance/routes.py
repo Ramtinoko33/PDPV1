@@ -1872,7 +1872,20 @@ async def approve_import(
             force_approved=True
         )
         if not result.get("success"):
-            raise HTTPException(status_code=500, detail=f"Erro ao aplicar importação: {result.get('errors')}")
+            # Se o guard de segurança rejeitou, propaga como 400 (bad request)
+            # em vez de 500 e mostra o motivo real ao utilizador.
+            errors = result.get("errors") or []
+            warnings = result.get("warnings") or []
+            status_returned = result.get("status")
+            if status_returned == ImportStatus.REJECTED.value and errors:
+                detail = "; ".join(errors)
+                raise HTTPException(status_code=400, detail=detail)
+            if status_returned == ImportStatus.PENDING_APPROVAL.value and warnings:
+                detail = "; ".join(warnings)
+                raise HTTPException(status_code=400, detail=detail)
+            detail_parts = errors + warnings
+            detail = "; ".join(detail_parts) if detail_parts else "Falha ao aplicar importação"
+            raise HTTPException(status_code=500, detail=detail)
     else:
         await db.finance_imports.update_one(
             {"id": import_id},
