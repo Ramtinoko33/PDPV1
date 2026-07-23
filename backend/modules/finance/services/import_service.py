@@ -1069,12 +1069,13 @@ async def process_open_documents_import(
             except Exception as drop_err:
                 logger.warning(f"Failed to drop staging collection {staging_collection_name}: {drop_err}")
 
+        # Feb 2026 fix: replace ALL same-day recovery events for this as_of
+        # BEFORE inserting the fresh ones. This runs unconditionally on a
+        # successful import so that re-imports of the same day converge to
+        # the LATEST snapshot (never accumulate false recoveries — even in
+        # the edge case where the new import produces zero recovery events).
+        await db.finance_recovery_events.delete_many({"date": as_of})
         if recovery_events:
-            # Feb 2026 fix: replace same-day recovery events for this as_of.
-            # Multiple imports on the same day would otherwise accumulate
-            # false recoveries — with this cleanup, only the LATEST import
-            # of the day contributes to `recovered_amount` for that date.
-            await db.finance_recovery_events.delete_many({"date": as_of})
             await db.finance_recovery_events.insert_many([dict(e) for e in recovery_events])
         
         recovered_total = round(sum(e['amount'] for e in recovery_events), 2)
