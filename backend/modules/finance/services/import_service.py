@@ -932,6 +932,50 @@ async def process_open_documents_import(
         async for d in db.finance_open_documents.find({}, {"_id": 0}):
             old_docs[d["doc_key"]] = d
         
+        # -------- Safety guards (Feb 2026 fix) --------
+        parsed_doc_count = len(parsed.get('documents') or [])
+        old_count = len(old_docs)
+        # Guard 1: catastrophic empty import — parser succeeded but produced 0
+        # documents while the current DB has substantial data. Refuse to wipe
+        # without an explicit force flag, and DO NOT emit recovery events.
+        if parsed_doc_count == 0 and old_count > 0:
+            reason = (
+                f"Ficheiro parseado com 0 documentos, mas existem {old_count} em base. "
+                "Import rejeitado para evitar reset acidental dos saldos e recuperações falsas."
+            )
+            result['errors'].append(reason)
+            result['status'] = ImportStatus.REJECTED.value
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {"status": result['status'], "errors": result['errors']}}
+            )
+            return result
+        # Guard 2: catastrophic shrinkage — new file has < 10% of existing docs
+        # AND drop of > 100 docs. Very likely wrong file. Mark as
+        # pending_approval so the operator confirms manually.
+        if (
+            old_count >= 100
+            and parsed_doc_count < old_count * 0.10
+            and (old_count - parsed_doc_count) > 100
+        ):
+            reason = (
+                f"Redução drástica: novo mapa tem {parsed_doc_count} documentos, base "
+                f"anterior tinha {old_count}. Import marcado para aprovação manual."
+            )
+            result['warnings'].append(reason)
+            result['status'] = ImportStatus.PENDING_APPROVAL.value
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "warnings": result['warnings'],
+                    "approval_reason": reason,
+                }}
+            )
+            # Return early — do NOT touch open_documents nor emit recovery
+            # events until the operator explicitly approves.
+            return result
+        
         new_keys = set()
         docs_to_insert = []
         recovery_events = []
@@ -1026,6 +1070,11 @@ async def process_open_documents_import(
                 logger.warning(f"Failed to drop staging collection {staging_collection_name}: {drop_err}")
 
         if recovery_events:
+            # Feb 2026 fix: replace same-day recovery events for this as_of.
+            # Multiple imports on the same day would otherwise accumulate
+            # false recoveries — with this cleanup, only the LATEST import
+            # of the day contributes to `recovered_amount` for that date.
+            await db.finance_recovery_events.delete_many({"date": as_of})
             await db.finance_recovery_events.insert_many([dict(e) for e in recovery_events])
         
         recovered_total = round(sum(e['amount'] for e in recovery_events), 2)

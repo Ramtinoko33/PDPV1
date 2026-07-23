@@ -372,10 +372,10 @@ const FinanceImports = () => {
                       </Badge>
                     </td>
                     <td className="p-3 text-center text-sm">
-                      {imp.totals?.clients || '-'}
+                      {imp.totals?.clients ?? '-'}
                     </td>
                     <td className="p-3 text-center text-sm">
-                      {imp.totals?.documents || '-'}
+                      {imp.totals?.documents ?? '-'}
                     </td>
                     <td className="p-3 text-center">
                       <StatusBadge status={imp.status} />

@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 43 — Safety guards + frontend '0' rendering fix for open_documents import (user bug: 'clientes/documentos = -' and 'Recuperado Hoje = 772.931€' from empty/wrong 'Documentos Aberto' xlsx). 5/5 new backend pytest PASSED covering: (a) valid import path still succeeds, (b) Guard 1 catastrophic empty rejects when parser produces 0 docs and DB has docs — status=rejected, errors filled, finance_open_documents untouched, ZERO new recovery events, (c) Guard 2 catastrophic shrinkage (old>=100, new<10%, delta>100) marks status=pending_approval WITHOUT mutating anything, (d) Same-day re-import replaces prior recovery events for the as_of date (no accumulation), (e) Dashboard recovered_today stays sane after a rejected empty import. Frontend '?? vs ||' fix verified live in /finance/imports: rows where backend totals.documents=0 correctly render '0' (evoluçaocredito3em3meses.xlsx, infocliente.xlsx). Regression: 14 test_finance_phase2 + 5 test_s2b + 3 test_s2a + 16 test_s2c = 38 tests PASSED when run in isolation (matches Sprint 1 + Sprint 2 A/B/C green expectation).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/finance/imports/open_documents",
+        "issue": "Same-day re-import cleanup only runs when the new import produced recovery_events (`if recovery_events:` gate on L1072 of import_service.py). Edge case: if today's 1st import produced recovery_events and today's 2nd import legitimately produces 0 (e.g. identical dataset), the 1st import's events for `date=as_of` remain in finance_recovery_events and continue to be counted by the dashboard. The reported user bug is fully mitigated because the empty/wrong file now hits Guard 1 (rejected), but for full symmetry consider running `db.finance_recovery_events.delete_many({date: as_of, import_id: {$ne: current_import_id}})` unconditionally when status becomes IMPORTED. Not a blocker; flagged for consideration."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/finance/imports (FinanceImports.js — <tbody>/<tr> loop)",
+        "issues": ["Pre-existing React hydration warning: '<span> cannot be a child of <tbody>' and '<tr> cannot be a child of <span>' caused by the tooling <span data-ve-dynamic> wrapper. Same warning reported in iteration_41 and iteration_42. Not introduced by this fix."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py",
+    "/app/test_reports/pytest/iteration_43.xml"
+  ],
+  "action_items": [
+    "(Optional / non-blocking) Consider making the same-day recovery_events cleanup unconditional (see backend minor issue above) — protect against edge case where the 2nd import of the day legitimately produces zero events but the 1st import's events should still be superseded.",
+    "(Pre-existing, still open from iter 41/42) The <span data-ve-dynamic> tooling wrapper produces <tbody>/<tr> hydration warnings on Finance list pages. Cosmetic only."
+  ],
+  "critical_code_review_comments": [
+    "import_service.py L1072 `if recovery_events:` — the delete_many({date: as_of}) is guarded on non-empty new events; makes same-day 're-import identical file' scenario keep stale events. Consider moving delete_many unconditionally right before insert (or immediately after the swap) whenever the import status is IMPORTED.",
+    "import_service.py L941-952 (Guard 1): the record is left with `success=False` in the returned dict but `totals={}`. The frontend already handles `imp.totals?.documents ?? '-'` correctly (renders '-'), but consider explicitly setting `totals={'clients': 0, 'documents': 0}` on rejected records for uniform UI ('0' vs '-' discrimination becomes source of truth). Currently mixed: some rejected records get `totals` set at insertion (import_doc default) and some don't.",
+    "import_service.py L956-977 (Guard 2): threshold constants (`>=100`, `<10%`, `>100`) are hardcoded. Consider extracting into finance_settings for tuning without code deploy.",
+    "documents_parser.py L143: header detection accepts either 'CodPersona' OR 'Cliente' — this makes an empty file with just a 'Cliente' column reach the safety guard. Fine, but could tighten to require a mandatory subset of columns to fail earlier (before hitting guard).",
+    "documents_parser.py: parse_open_documents catches all exceptions on file load into `errors` (L262-264) — good defense; but no MIME check, and openpyxl will happily open non-xlsx BytesIO with an obscure error. Not a bug but a hardening opportunity.",
+    "FinanceImports.js L155: `alert(...)` is used for both success and error toasts. Replace with the existing shadcn toast component for consistency with the rest of the app and to surface Guard 1 rejection cleanly (currently shows 'Erros: ...' via alert)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py (new — 5 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 new pytest; 38/38 Sprint 1+2 regression tests when run in isolation)",
+    "frontend": "100% (?? fix verified live — 2 rows with backend totals.documents=0 render as '0' in the Histórico de Importações table)"
+  },
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (OWNER) — validated",
+  "seed_data_creation": "Tests seed data into finance_open_documents with genes_codes TST93/TST94/TST95/TSTB000..TSTB149 and finance_imports with filenames prefixed 'TSTGUARD-'. All seed data is snapshotted at module setup and restored at module teardown; test import files are deleted from /uploads/finance_imports/. Zero residual pollution verified via API check post-tests (with_zero_clients=0 rejected samples visible in UI).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run new tests: `cd /app/backend && python -m pytest tests/test_iteration_43_open_docs_safety_guards.py -v`. Regression sets are known to have a pre-existing test-suite-isolation issue when test_finance_phase2.py runs in the SAME pytest session with test_s2a_single_user_source.py or test_s2c_callbacks_and_logs.py (they use `from db import db` which requires cwd=/app/backend; also asyncio session-scope loop conflicts). Individually all pass. Run each file separately for clean regression. The user-reported catastrophic scenario is now fully mitigated by 3 layered defenses: (1) Guard 1 rejects empty/wrong file; (2) Guard 2 rejects catastrophic shrinkage; (3) even if a legit re-import overwrites, same-day recovery_events cleanup prevents accumulation.",
+  "rca of the issue": "Root cause was 3-fold: (a) `parse_open_documents` accepts a file with a valid header row and zero data rows without error → returns `documents=[]`; (b) `process_open_documents_import` then does `delete_many({})` on finance_open_documents and treats ALL previously-existing docs (~1447) as `probable_payment` recovery events summed for today's date → dashboard's `recovered_today` = ~772.931€; (c) frontend used `imp.totals?.clients || '-'` (short-circuit on falsy) → 0 rendered as '-'. Reproduction (verified by test_empty_import_rejected_and_no_mutation): seed N docs, POST an xlsx with only the header row → BEFORE FIX: status=imported, finance_open_documents wiped, N probable_payment events on today's date. AFTER FIX: status=rejected, errors=['Ficheiro parseado com 0 documentos, mas existem N em base. Import rejeitado...'], finance_open_documents unchanged, ZERO recovery events created. Mitigation delivered by main agent's 3 changes (frontend ?? + backend guard1 + backend guard2 + same-day recovery cleanup) — all confirmed working end-to-end."
+}
