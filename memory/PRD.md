@@ -55,6 +55,8 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 Ver `/app/memory/test_credentials.md`.
 
 ## Últimas alterações
+- **Feb 2026 (iter 44) — Safety guard OVERDUE_BALANCES**: `process_overdue_balances_import` agora rejeita imports com 0 documentos parseados quando a BD já tem `finance_documents` (guard corre mesmo com `force_approved=True`, portanto o botão "Aprovar" também é bloqueado). Endpoint `POST /api/finance/imports/{id}/approve` devolve HTTP 400 com detalhe legível (antes: HTTP 500 genérico). Frontend `FinanceImports.js` mostra o `detail` do backend no alert. Script utilitário `backend/scripts/cleanup_corrupt_overdue_pending.py` (dry-run/--confirm) para marcar como `rejected` imports pendentes com 0 documentos em produção. Testes novos: `tests/test_iteration_44_overdue_safety_guards.py` (3/3 verdes). Regressão iteração 43: 5/5 verdes. Validado end-to-end pelo bug_testing_agent.
+- **Feb 2026 (iter 43) — Safety guards OPEN_DOCUMENTS + fix wipe catastrófico**.
 - **Feb 2026 Sprint 1 Telegram Fase 0 + 0B**: consolidação de tokens de saída + persistência renting + await crítico em alerts. 18 testes verdes. Requer redeploy.
 - Feb 2026: Reset expandido de tarefas + bloqueio hard quando dados desatualizados (HTTP 409).
 - Feb 2026: Novo role `FINANCE_ONLY`.
