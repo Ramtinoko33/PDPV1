@@ -21,6 +21,7 @@ from . import menu as menu_mgr
 from .bot_api import send_message, answer_callback_query, set_webhook, get_me, is_configured
 from .flows import REGISTRY as FLOW_REGISTRY
 from .logs import log_event
+from .callback_router import parse_callback_data
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,10 @@ async def list_logs(
         "chat_id": 1,
         "telegram_user_id": 1,
         "module": 1,
+        "callback_action": 1,
+        "internal_user_id": 1,
         "error": 1,
+        "error_id": 1,
         "created_at": 1,
         "processing_time_ms": 1,
         "http_status": 1,
@@ -569,6 +573,12 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
     data = cb.get("data") or ""
     callback_query_id = cb.get("id")
 
+    # S2-C — parse the callback data. Accepts BOTH new namespaced format and
+    # legacy strings. Legacy behaviour below is entirely preserved: parsed
+    # info is only used for logging/routing hints, never for routing changes.
+    parsed = parse_callback_data(data)
+    internal_uid = (user_auth or {}).get("user_id")
+
     # Always answer the callback so the spinner clears
     if callback_query_id:
         await answer_callback_query(callback_query_id)
@@ -592,6 +602,8 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
                     [f"• {flow_labels.get(f, f)}" for f in allowed] + \
                     ["", "<b>Comandos:</b> /menu · /cancel · /help"]
             await send_message(chat_id, "\n".join(lines))
+        await log_event(user_id, chat_id, "callback", module="admin",
+                        callback_action=action, internal_user_id=internal_uid, success=True)
         return
 
     # Main menu entries
@@ -664,7 +676,10 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
                 await flow_mod.handle_callback(chat_id, user_id, data, user_auth, state)
                 await log_event(user_id, chat_id, "callback",
                                 active_flow=flow_key,
-                                current_step=state.get("current_step"), success=True)
+                                current_step=state.get("current_step"),
+                                callback_action=parsed.action or None,
+                                internal_user_id=internal_uid,
+                                success=True)
             except Exception as exc:
                 import uuid as _uuid
                 error_id = _uuid.uuid4().hex[:12]
@@ -673,8 +688,19 @@ async def _handle_callback(cb: dict, user_auth: dict) -> None:
                 await log_event(user_id, chat_id, "callback_error",
                                 active_flow=flow_key,
                                 current_step=state.get("current_step"),
+                                callback_action=parsed.action or None,
+                                internal_user_id=internal_uid,
                                 success=False,
-                                error=f"{error_id}: {type(exc).__name__}")
+                                error_id=error_id,
+                                error=type(exc).__name__)
                 await send_message(chat_id,
                     f"⚠️ Esta ação não foi processada. Referência: <code>{error_id}</code>\n"
                     "Volta ao menu com /menu.")
+        return
+
+    # No active flow but got a callback — log with module derived from parse.
+    await log_event(user_id, chat_id, "callback_stale",
+                    module=parsed.module,
+                    callback_action=parsed.action or None,
+                    internal_user_id=internal_uid,
+                    success=False, error="no active flow")

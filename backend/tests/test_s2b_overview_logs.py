@@ -78,7 +78,8 @@ async def test_logs_admin_ok_and_no_sensitive_fields():
     assert "logs" in data
     allowed = {
         "update_id", "message_type", "chat_id", "telegram_user_id",
-        "module", "error", "created_at", "processing_time_ms", "http_status",
+        "module", "callback_action", "internal_user_id",
+        "error", "error_id", "created_at", "processing_time_ms", "http_status",
     }
     for row in data["logs"]:
         # No key outside the allowlist is ever returned.

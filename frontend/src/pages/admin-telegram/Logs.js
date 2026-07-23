@@ -127,8 +127,10 @@ export default function AdminTelegramLogs() {
                 <TableHead>Timestamp</TableHead>
                 <TableHead>Módulo</TableHead>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Ação</TableHead>
                 <TableHead>Chat</TableHead>
-                <TableHead>User</TableHead>
+                <TableHead>User (TG)</TableHead>
+                <TableHead>User Sistema</TableHead>
                 <TableHead>HTTP</TableHead>
                 <TableHead>ms</TableHead>
                 <TableHead>Erro</TableHead>
@@ -146,16 +148,21 @@ export default function AdminTelegramLogs() {
                     </span>
                   </TableCell>
                   <TableCell className="text-xs">{l.message_type || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono">{l.callback_action || '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{l.chat_id ?? '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{l.telegram_user_id ?? '—'}</TableCell>
+                  <TableCell className="font-mono text-xs">{l.internal_user_id ? String(l.internal_user_id).slice(0, 8) + '…' : '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{l.http_status ?? '—'}</TableCell>
                   <TableCell className="font-mono text-xs">{l.processing_time_ms ?? '—'}</TableCell>
-                  <TableCell className="text-red-600 text-xs max-w-xs truncate">{l.error || ''}</TableCell>
+                  <TableCell className="text-red-600 text-xs max-w-xs truncate">
+                    {l.error_id ? <span className="font-mono">{l.error_id} </span> : ''}
+                    {l.error || ''}
+                  </TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-zinc-500">
+                  <TableCell colSpan={10} className="text-center py-8 text-zinc-500">
                     Sem eventos.
                   </TableCell>
                 </TableRow>
