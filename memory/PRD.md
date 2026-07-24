@@ -55,10 +55,19 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 Ver `/app/memory/test_credentials.md`.
 
 ## Últimas alterações
-- **Feb 2026 (iter 47) — Dashboard de Anomalias no CRM Finance**: nova página `/finance/anomalies` (link no sidebar sob Financeiro) que compara imports consecutivos por tipo e sinaliza variações críticas/warning entre `total_overdue`/`clients`/`documents`. Thresholds: total_overdue Δ>20%=critical, clientes/documentos Δ>10%=warning; noise floors 500€ e 10 docs. Cálculo on-the-fly (nenhuma anomalia persistida) — só as validações vão para a colecção nova `finance_anomaly_validations` com snapshot completo + comentário obrigatório. RBAC: OWNER/FINANCE_REVIEWER podem validar; COLLECTIONS_AGENT pode ver mas o botão "Validar" não aparece; outros roles Finance sem acesso. Badge dinâmico no header do dashboard `/finance` (`data-testid="finance-anomalies-badge"`) mostra contagem quando há anomalias activas com link direto. Endpoints: `GET /api/finance/anomalies?status=&severity=`, `GET /api/finance/anomalies/count`, `POST /api/finance/anomalies/{id}/validate`. Testes novos: `test_iteration_47_anomalies.py` (6/6 verdes). Testing agent: 100% backend (23/23 pytest com regressão 43+44+46) + 100% frontend live.
-- **Feb 2026 (iter 46) — Import UX Hardening**: cleanup script auditável + modal pré-aprovação + detecção automática de tipo de ficheiro.
-- **Feb 2026 (iter 45) — Frontend Hardening**: stale-closure em `QuickCommunicationPanel.js` corrigido.
-- **Feb 2026 (iter 44) — Safety guard OVERDUE_BALANCES**: rejeita imports com 0 documentos parseados quando a BD já tem docs. Endpoint approve devolve HTTP 400 com detalhe legível.
+- **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix (bug produção)**:
+  - **Fix parsers**: `client_info_parser.py` e `evolution_parser.py` agora reconhecem `Conta` como coluna de código de cliente (era `CodCliente`/`CODCLIENTE` apenas → ficheiros reais GENES não passavam). Bug produção: ficheiros infocliente_24_07 (28.641 linhas) e evolucaocredito3em3meses_24_07 (580 linhas) mostravam 0/0 em Importado (import silencioso).
+  - **Guard silent-zero**: `process_client_info_import` e `process_credit_evolution_import` rejeitam com status='rejected' se >10 linhas processadas resultarem em 0 clientes. Mensagem clara "Nenhum cliente encontrado."
+  - **Enriquecimento completo InfoClientes**: `saldo_conta`, `saldo_efec`, `saldo_desc`, `saldo_dev`, `carteira`, `domiciliacoes`, `risco_raw`, `risco_validado`, `risco_placeholder` (detecta >1M€), `albaranado`, `forma_pagamento`, `eventos_raw`, `last_infoclientes_import_id`.
+  - **Persistência Evolução**: coleção `finance_credit_evolution` com formato `{genes_code, client_name, periods:{03-2025:..., ..., 06-2026:...}, last_import_id, updated_at}`.
+  - **Novo endpoint** `GET /api/finance/clients/{id}/credit-evolution` → devolve series ordenada, peak, quarter_diff_abs/pct, trend (up/down/stable).
+  - **Card na ficha do cliente**: "Evolução Crédito (trimestral)" com mini-gráfico Recharts 6 pontos, 4 métricas (Último, Δ abs, Δ pct, Maior exposição) e badge de tendência.
+  - **Counters detalhados no histórico**: `rows_processed`, `clients_found`, `clients_matched`, `clients_updated`, `clients_ignored`, `documents_created`, `periods`. `ImportTotals` Pydantic com `extra='allow'` para serializar tudo. Frontend `FinanceImports.js` mostra `clients_updated` (não 0).
+  - Testes: `test_iteration_48_infoclientes_evolucao.py` (7/7 verdes com ficheiros REAIS). Regressão iter 43+44+46+47: 30/30. Bug_testing_agent: 100% backend + 100% frontend após 2 iterações.
+- **Feb 2026 (iter 47) — Dashboard de Anomalias**: página + badge + validação com comentário.
+- **Feb 2026 (iter 46) — Import UX Hardening**: cleanup + modal pré-aprovação + detecção de tipo.
+- **Feb 2026 (iter 45) — Frontend Hardening**: stale-closure em `QuickCommunicationPanel.js`.
+- **Feb 2026 (iter 44) — Safety guard OVERDUE_BALANCES**.
 - **Feb 2026 (iter 43) — Safety guards OPEN_DOCUMENTS + fix wipe catastrófico**.
 - **Feb 2026 Sprint 1 Telegram Fase 0 + 0B**: consolidação de tokens de saída + persistência renting + await crítico em alerts. 18 testes verdes. Requer redeploy.
 - Feb 2026: Reset expandido de tarefas + bloqueio hard quando dados desatualizados (HTTP 409).
