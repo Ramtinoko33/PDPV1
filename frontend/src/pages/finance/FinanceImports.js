@@ -661,6 +661,11 @@ const FinanceImports = () => {
                 approveDialog.loading
                 || approveDialog.submitting
                 || (approveDialog.preview?.guard_warnings?.length > 0)
+                || (
+                  approveDialog.preview?.is_critical
+                  && (approveDialog.preview?.guard_warnings?.length || 0) === 0
+                  && approveDialog.confirmText.trim().toUpperCase() !== 'APROVAR'
+                )
               }
               data-testid="approve-dialog-confirm-btn"
               className={approveDialog.preview?.is_critical ? 'bg-red-600 hover:bg-red-700' : ''}
