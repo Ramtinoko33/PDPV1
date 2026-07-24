@@ -1735,6 +1735,36 @@ async def cleanup_import_files(
     }
 
 
+@router.post("/imports/detect-type")
+async def detect_import_type(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_finance_access)
+):
+    """
+    Detecção heurística do tipo de ficheiro Finance a partir dos headers
+    do xlsx. Usada pelo frontend antes do upload para avisar o utilizador
+    quando o tipo seleccionado no dropdown não corresponde à estrutura
+    do ficheiro (previne o cenário do bug 1492 clientes / 0 documentos).
+
+    Devolve:
+      - detected: chave do tipo (overdue_balances | open_documents |
+                                 client_info | credit_evolution) ou null
+      - confidence: high | medium | low | unknown
+      - scores: breakdown por tipo (required_hits, strong_hits)
+    """
+    from .parsers.file_type_detector import detect_file_type
+
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="Formato de ficheiro inválido. Use .xlsx ou .xls")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Ficheiro vazio")
+
+    result = detect_file_type(content)
+    return result
+
+
 @router.post("/imports/{import_type}")
 async def upload_import(
     import_type: ImportType,
@@ -1839,6 +1869,143 @@ async def upload_import(
             }}
         )
         raise HTTPException(status_code=500, detail=f"Erro ao processar ficheiro: {str(e)}")
+
+
+@router.get("/imports/{import_id}/preview")
+async def preview_import_impact(
+    import_id: str,
+    current_user: dict = Depends(require_finance_reviewer)
+):
+    """
+    Prévia do impacto de aprovar uma importação de Saldos Vencidos.
+
+    Reparseia o ficheiro em memória (SEM tocar a BD) e devolve os
+    números-chave que o utilizador vê antes de confirmar 'Aprovar':
+
+      - clients_current / clients_new / clients_added / clients_removed
+      - documents_current / documents_new / documents_added / documents_removed
+      - total_overdue_current / total_overdue_new / diff / diff_pct
+      - guard_warnings: lista de motivos pelos quais o guard bloqueia
+        (se algum, o approve vai falhar com HTTP 400)
+      - is_critical: true se o diff supera 30% ou se houver guard_warnings
+
+    Só suporta OVERDUE_BALANCES nesta iteração (o tipo em que o wipe
+    catastrófico foi observado). Para outros tipos, devolve preview vazio.
+    """
+    from pathlib import Path
+    from .parsers import parse_overdue_balances
+
+    import_doc = await db.finance_imports.find_one({"id": import_id}, {"_id": 0})
+    if not import_doc:
+        raise HTTPException(status_code=404, detail="Importação não encontrada")
+
+    import_type = import_doc.get("type")
+
+    # Estado actual da BD para comparação
+    current_client_count = await db.finance_clients.count_documents({})
+    current_doc_count = await db.finance_documents.count_documents({})
+    current_total_pipeline = await db.finance_clients.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$overdue_balance_collectable"}}}
+    ]).to_list(1)
+    current_total_overdue = (current_total_pipeline[0]["total"]
+                             if current_total_pipeline else 0.0)
+
+    preview: Dict[str, Any] = {
+        "import_id": import_id,
+        "import_type": import_type,
+        "filename": import_doc.get("filename"),
+        "current": {
+            "clients": current_client_count,
+            "documents": current_doc_count,
+            "total_overdue": round(current_total_overdue, 2),
+        },
+        "new": None,
+        "delta": None,
+        "guard_warnings": [],
+        "is_critical": False,
+        "supported": False,
+    }
+
+    if import_type != ImportType.OVERDUE_BALANCES.value:
+        preview["message"] = (
+            "Prévia detalhada só disponível para Saldos Vencidos. "
+            "Para os outros tipos, use os avisos já mostrados na tabela."
+        )
+        return preview
+
+    preview["supported"] = True
+
+    file_path = import_doc.get("original_file_path")
+    if not file_path or not Path(file_path).exists():
+        preview["guard_warnings"].append(
+            "Ficheiro original não disponível para reprocessamento."
+        )
+        preview["is_critical"] = True
+        return preview
+
+    try:
+        content = Path(file_path).read_bytes()
+        parsed = parse_overdue_balances(content)
+    except Exception as e:
+        preview["guard_warnings"].append(f"Erro ao reparsear ficheiro: {e}")
+        preview["is_critical"] = True
+        return preview
+
+    parsed_clients = parsed["totals"].get("client_count", 0)
+    parsed_docs = parsed["totals"].get("document_count", 0)
+    parsed_total_overdue = parsed["totals"].get("total_overdue", 0.0)
+
+    # Clientes novos / removidos por genes_code
+    parsed_genes = {c.get("genes_code") for c in parsed["clients"] if c.get("genes_code")}
+    existing_genes = set()
+    async for c in db.finance_clients.find({}, {"_id": 0, "genes_code": 1}):
+        gc = c.get("genes_code")
+        if gc:
+            existing_genes.add(gc)
+    clients_added = len(parsed_genes - existing_genes)
+    clients_removed = len(existing_genes - parsed_genes)
+
+    diff_overdue = parsed_total_overdue - current_total_overdue
+    diff_pct = (
+        abs(diff_overdue) / current_total_overdue * 100
+        if current_total_overdue > 0 else (100.0 if parsed_total_overdue > 0 else 0.0)
+    )
+
+    preview["new"] = {
+        "clients": parsed_clients,
+        "documents": parsed_docs,
+        "total_overdue": round(parsed_total_overdue, 2),
+    }
+    preview["delta"] = {
+        "clients_added": clients_added,
+        "clients_removed": clients_removed,
+        "documents_delta": parsed_docs - current_doc_count,
+        "total_overdue_delta": round(diff_overdue, 2),
+        "total_overdue_diff_pct": round(diff_pct, 2),
+    }
+
+    # Guard warnings — replicam os guards do process_overdue_balances_import
+    if parsed_docs == 0 and current_doc_count > 0:
+        preview["guard_warnings"].append(
+            f"Ficheiro parseado com 0 documentos, mas existem {current_doc_count} "
+            "em base. Aprovar seria rejeitado automaticamente pelo safety guard "
+            "para evitar wipe dos saldos vencidos."
+        )
+        preview["is_critical"] = True
+    if (
+        current_doc_count >= 100
+        and parsed_docs < current_doc_count * 0.10
+        and (current_doc_count - parsed_docs) > 100
+    ):
+        preview["guard_warnings"].append(
+            f"Redução drástica ({current_doc_count} → {parsed_docs} documentos). "
+            "Verifique se é o ficheiro correcto."
+        )
+        preview["is_critical"] = True
+    if diff_pct > 30 and not preview["is_critical"]:
+        preview["is_critical"] = True
+
+    return preview
 
 
 @router.post("/imports/{import_id}/approve")

@@ -1,0 +1,61 @@
+{
+  "summary": "Iteration 46 — Finance Imports (cleanup audit, pre-approval modal, file-type auto-detection). Full pytest suite (iter 43 + 44 + 46 preview + 46b detect-type) = 17/17 PASSED. Frontend end-to-end validated live on preview URL: (1) Approve dialog opens on Aprovar click, loading state renders, then 3 preview cards (Actual/Novo/Δ) populate with real backend numbers (current 5cli/20docs/23670€ vs new 3cli/0docs/0€ for zero-docs; new 1doc/98.94% diff for the valid one). (2) Guard warnings red box shows the correct message and the Confirm button IS disabled (matches spec). (3) Cancel closes the dialog cleanly. (4) window.confirm mismatch dialog fires with correct Portuguese message when uploading an overdue-headed file while 'Documentos Aberto' is selected in dropdown; dismissing prevents the upload. (5) When dropdown matches file type, no mismatch confirm fires. Backend safety guard from iter 44 continues to reject 0-doc uploads properly at parse-time. One minor UX deviation from the review spec: the Confirmar aprovação button for is_critical=true & guard_warnings=[] is NOT disabled visually — the 'APROVAR' text check is enforced via a runtime window.alert on click instead of via the button's disabled prop. The safeguard is still functional (approve won't run without typing APROVAR) but the spec text ('antes de habilitar o botão') suggests the button should be visibly disabled.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "FinanceImports — Approve Dialog",
+        "issue": "For is_critical=true AND guard_warnings=[], the 'Confirmar aprovação' button (data-testid='approve-dialog-confirm-btn') is NOT disabled while approve-dialog-confirm-input value !== 'APROVAR'. Instead the check runs on click via window.alert. Review spec explicitly says 'que exige escrever APROVAR antes de habilitar o botão'. Functionally safe (alert prevents approve), but UX is misleading.",
+        "selector": "[data-testid='approve-dialog-confirm-btn']",
+        "priority": "LOW",
+        "fix_suggestion": "In FinanceImports.js line ~658-666, add to the disabled prop: `|| (approveDialog.preview?.is_critical && approveDialog.preview?.guard_warnings?.length === 0 && approveDialog.confirmText.trim().toUpperCase() !== 'APROVAR')`"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Finance pages — table rows",
+        "issues": [
+          "Pre-existing (reported since iter41) React hydration warning: '<span data-ve-dynamic> cannot be a child of <tbody>' + '<tr> cannot be a child of <span>'. Cosmetic only, not introduced by iter46."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_46_import_preview.py",
+    "/app/backend/tests/test_iteration_46b_detect_type.py",
+    "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py",
+    "/app/backend/tests/test_iteration_44_overdue_safety_guards.py",
+    "/app/test_reports/pytest/iteration_46.xml",
+    "/app/test_reports/seed_iteration_46_ui.py"
+  ],
+  "action_items": [
+    "(LOW/optional) Make Confirmar aprovação button visually disabled until user types APROVAR in the critical-no-guard case, to align UX with the review-request wording ('antes de habilitar o botão'). Suggested one-line disabled-prop addition documented in frontend_issues.ui_bugs[0].fix_suggestion. Runtime safety is already in place."
+  ],
+  "critical_code_review_comments": [
+    "Backend GET /imports/{id}/preview: robust — 404 on missing id, computes current/new/delta from finance_documents + parsed file, exposes guard_warnings and is_critical so the frontend can decide UX without duplicating server logic. Good separation of concerns.",
+    "Backend POST /imports/detect-type: route correctly registered BEFORE POST /imports/{import_type} to avoid path shadowing. Signature-based scoring (required_hits*10 + strong_hits) with confidence tiers is deterministic and predictable. Distinguishes overdue vs open_documents even with only headers (see TestDetectMismatch).",
+    "Frontend handleFileSelect: detect-type call is wrapped in try/catch and does NOT block the upload if the detection endpoint itself fails — good defensive pattern (fail-open). Confirmation only surfaces for confidence 'high' or 'medium', so noisy false positives are suppressed.",
+    "Frontend openApproveDialog: single fetch on click, state is fully reset on close (confirmText='', preview=null, error=null). No stale-state risk across successive approve clicks on different imports.",
+    "MINOR — FinanceImports.js line 658-670: Confirm button disabled prop only checks guard_warnings, not the APROVAR-input text. See UI bug above.",
+    "Cleanup script /app/backend/scripts/cleanup_corrupt_overdue_pending.py writes a timestamped JSON audit dump to /tmp/finance_cleanup_backup_<ts>.json before mutating — good audit trail. Script was not exercised end-to-end here (no corrupt overdue pending imports in current DB); trust pytest coverage from iter 44/45."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_46.json",
+    "/app/test_reports/pytest/iteration_46.xml",
+    "/app/test_reports/seed_iteration_46_ui.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 pytest across test_iteration_43_open_docs_safety_guards.py, test_iteration_44_overdue_safety_guards.py, test_iteration_46_import_preview.py, test_iteration_46b_detect_type.py)",
+    "frontend": "95% (4/4 core scenarios pass; 1 minor UX deviation on the APROVAR-critical button disabled state)"
+  },
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (used, validated)",
+  "seed_data_creation": "Seeded 2 pending_approval overdue_balances imports (UITST46-zero and UITST46-valid) via /app/test_reports/seed_iteration_46_ui.py for the UI tests, plus a stray overdue_test.xlsx upload rejected by the iter 44 guard. All 3 finance_imports docs + files were CLEANED UP at end of the run — DB left in original state (see script and cleanup snippet in iteration_46.json test_report_links).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Approve dialog testids to reuse: approve-import-btn-{id}, approve-import-dialog, approve-dialog-loading, approve-dialog-guard-warnings, approve-dialog-confirm-input, approve-dialog-confirm-btn, approve-dialog-cancel-btn, preview-current-{clients|docs|total}, preview-new-{clients|docs|total}, preview-diff-pct. Detect-type endpoint POST /api/finance/imports/detect-type (multipart file); returns {detected, confidence, scores, filename}. To seed a pending overdue import quickly, reuse /app/test_reports/seed_iteration_46_ui.py — it writes files to /app/backend/uploads/finance/{id}.xlsx and inserts a doc with status=pending_approval. The React route is /finance/imports (with 's'), sidebar link label 'Importações'. When testing dropdown selection, use [role='option'] inside the open combobox — do NOT rely on get_by_text without filtering, because 'Saldos Vencidos' also appears as a Badge label on multiple table rows.",
+  "rca_of_the_issue": "N/A — this iteration is defensive-layer feature work, not a bug hunt. The minor UX gap on the APROVAR-critical Confirm button is documented above with a one-line fix suggestion."
+}

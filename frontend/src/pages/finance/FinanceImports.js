@@ -11,6 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '../../components/ui/dialog';
 import axios from 'axios';
 import {
   Upload,
@@ -29,6 +37,9 @@ const formatDateTime = (dateStr) => {
   if (!dateStr) return '-';
   return new Date(dateStr).toLocaleString('pt-PT');
 };
+
+const formatCurrency = (v) =>
+  new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0);
 
 const StatusBadge = ({ status }) => {
   const styles = {
@@ -129,9 +140,50 @@ const FinanceImports = () => {
     // Validate file type
     if (!file.name.match(/\.(xlsx|xls)$/i)) {
       alert('Por favor selecione um ficheiro Excel (.xlsx ou .xls)');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
-    
+
+    // 1) Detecção heurística de tipo — avisa antes do upload se o
+    //    tipo seleccionado no dropdown não corresponde ao conteúdo do
+    //    ficheiro (previne o cenário 1492/0 do bug de Feb 2026).
+    try {
+      const detectForm = new FormData();
+      detectForm.append('file', file);
+      const detectRes = await axios.post(
+        `${API_URL}/api/finance/imports/detect-type`,
+        detectForm,
+        { headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' } }
+      );
+      const detected = detectRes.data?.detected;
+      const confidence = detectRes.data?.confidence;
+      if (
+        detected
+        && detected !== selectedType
+        && (confidence === 'high' || confidence === 'medium')
+      ) {
+        const labels = {
+          overdue_balances: 'Saldos Vencidos',
+          open_documents: 'Documentos Aberto',
+          client_info: 'Info Clientes',
+          credit_evolution: 'Evolução Crédito',
+        };
+        const ok = window.confirm(
+          `⚠️ O ficheiro parece ser do tipo "${labels[detected] || detected}" `
+          + `(confiança ${confidence}), mas seleccionou "${labels[selectedType] || selectedType}" no dropdown.\n\n`
+          + `Deseja mesmo assim continuar com "${labels[selectedType] || selectedType}"?\n\n`
+          + `Recomendado: cancelar e escolher "${labels[detected] || detected}" no dropdown.`
+        );
+        if (!ok) {
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+      }
+    } catch (err) {
+      // Se a detecção falhar não bloqueia o upload — apenas regista.
+      console.warn('Detecção de tipo falhou (continuando com upload):', err);
+    }
+
     setUploading(true);
     
     try {
@@ -168,21 +220,78 @@ const FinanceImports = () => {
     }
   };
 
-  const handleApprove = async (importId) => {
+  const [approveDialog, setApproveDialog] = useState({
+    open: false,
+    importId: null,
+    filename: null,
+    loading: false,
+    preview: null,
+    error: null,
+    submitting: false,
+    confirmText: '',
+  });
+
+  const openApproveDialog = async (imp) => {
+    setApproveDialog({
+      open: true,
+      importId: imp.id,
+      filename: imp.filename,
+      loading: true,
+      preview: null,
+      error: null,
+      submitting: false,
+      confirmText: '',
+    });
+    try {
+      const res = await axios.get(
+        `${API_URL}/api/finance/imports/${imp.id}/preview`,
+        { headers: getAuthHeaders() }
+      );
+      setApproveDialog((s) => ({ ...s, loading: false, preview: res.data }));
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Erro ao carregar prévia da importação';
+      setApproveDialog((s) => ({ ...s, loading: false, error: detail }));
+    }
+  };
+
+  const confirmApprove = async () => {
+    const { importId, preview, confirmText } = approveDialog;
+    if (!importId) return;
+    if (preview?.is_critical && confirmText.trim().toUpperCase() !== 'APROVAR') {
+      alert('Escreva APROVAR para confirmar esta importação crítica.');
+      return;
+    }
+    setApproveDialog((s) => ({ ...s, submitting: true }));
     try {
       await axios.post(
         `${API_URL}/api/finance/imports/${importId}/approve`,
         {},
         { headers: getAuthHeaders() }
       );
+      setApproveDialog({
+        open: false, importId: null, filename: null, loading: false,
+        preview: null, error: null, submitting: false, confirmText: '',
+      });
       fetchData();
     } catch (err) {
       console.error('Erro ao aprovar:', err);
       const detail = err?.response?.data?.detail;
-      alert(detail ? `Não foi possível aprovar: ${detail}` : 'Erro ao aprovar importação');
-      // Refresca lista para mostrar novo estado (ex: rejeitado pelo guard)
+      setApproveDialog((s) => ({
+        ...s,
+        submitting: false,
+        error: detail || 'Erro ao aprovar importação',
+      }));
+      // Refresca lista em background para mostrar novo estado (ex: rejected pelo guard)
       fetchData();
     }
+  };
+
+  const closeApproveDialog = () => {
+    if (approveDialog.submitting) return;
+    setApproveDialog({
+      open: false, importId: null, filename: null, loading: false,
+      preview: null, error: null, submitting: false, confirmText: '',
+    });
   };
 
   const typeLabels = {
@@ -387,7 +496,8 @@ const FinanceImports = () => {
                       {imp.status === 'pending_approval' && canApprove && (
                         <Button 
                           size="sm" 
-                          onClick={() => handleApprove(imp.id)}
+                          onClick={() => openApproveDialog(imp)}
+                          data-testid={`approve-import-btn-${imp.id}`}
                         >
                           Aprovar
                         </Button>
@@ -428,6 +538,138 @@ const FinanceImports = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Pré-Aprovação — mostra impacto antes de aplicar dados */}
+      <Dialog
+        open={approveDialog.open}
+        onOpenChange={(open) => { if (!open) closeApproveDialog(); }}
+      >
+        <DialogContent
+          className="max-w-2xl"
+          data-testid="approve-import-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className={`h-5 w-5 ${approveDialog.preview?.is_critical ? 'text-red-600' : 'text-amber-600'}`} />
+              Confirmar aprovação de importação
+            </DialogTitle>
+            <DialogDescription>
+              Ficheiro: <strong>{approveDialog.filename}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          {approveDialog.loading && (
+            <div className="p-6 text-center text-sm text-slate-500" data-testid="approve-dialog-loading">
+              A calcular impacto…
+            </div>
+          )}
+
+          {!approveDialog.loading && approveDialog.error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-800" data-testid="approve-dialog-error">
+              {approveDialog.error}
+            </div>
+          )}
+
+          {!approveDialog.loading && approveDialog.preview && (
+            <div className="space-y-4">
+              {/* Guard warnings — bloqueio crítico */}
+              {approveDialog.preview.guard_warnings?.length > 0 && (
+                <div className="p-3 bg-red-50 border-2 border-red-300 rounded" data-testid="approve-dialog-guard-warnings">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-semibold text-red-800">
+                        Safety guard activo — aprovação será rejeitada
+                      </div>
+                      <ul className="text-sm text-red-700 mt-1 space-y-1 list-disc list-inside">
+                        {approveDialog.preview.guard_warnings.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!approveDialog.preview.supported && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                  {approveDialog.preview.message || 'Prévia detalhada não disponível para este tipo de importação.'}
+                </div>
+              )}
+
+              {approveDialog.preview.supported && approveDialog.preview.new && (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 bg-slate-50 border rounded">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Actual</div>
+                      <div className="text-sm">Clientes: <strong data-testid="preview-current-clients">{approveDialog.preview.current.clients}</strong></div>
+                      <div className="text-sm">Docs: <strong data-testid="preview-current-docs">{approveDialog.preview.current.documents}</strong></div>
+                      <div className="text-sm">Vencido: <strong data-testid="preview-current-total">{formatCurrency(approveDialog.preview.current.total_overdue)}</strong></div>
+                    </div>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                      <div className="text-xs text-blue-700 uppercase mb-1">Novo</div>
+                      <div className="text-sm">Clientes: <strong data-testid="preview-new-clients">{approveDialog.preview.new.clients}</strong></div>
+                      <div className="text-sm">Docs: <strong data-testid="preview-new-docs">{approveDialog.preview.new.documents}</strong></div>
+                      <div className="text-sm">Vencido: <strong data-testid="preview-new-total">{formatCurrency(approveDialog.preview.new.total_overdue)}</strong></div>
+                    </div>
+                    <div className={`p-3 border rounded ${approveDialog.preview.is_critical ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className={`text-xs uppercase mb-1 ${approveDialog.preview.is_critical ? 'text-red-700' : 'text-amber-700'}`}>Δ Diferença</div>
+                      <div className="text-sm">+{approveDialog.preview.delta.clients_added} novos cli</div>
+                      <div className="text-sm">−{approveDialog.preview.delta.clients_removed} cli fora</div>
+                      <div className="text-sm">
+                        Vencido: <strong data-testid="preview-diff-pct">{approveDialog.preview.delta.total_overdue_diff_pct}%</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {approveDialog.preview.is_critical && approveDialog.preview.guard_warnings.length === 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                      <strong>Diferença anormal.</strong> Reveja com atenção antes de aprovar.
+                    </div>
+                  )}
+                </>
+              )}
+
+              {approveDialog.preview.is_critical && approveDialog.preview.guard_warnings.length === 0 && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Alteração crítica — escreva <code className="px-1 bg-slate-100 rounded">APROVAR</code> para confirmar:
+                  </label>
+                  <Input
+                    value={approveDialog.confirmText}
+                    onChange={(e) => setApproveDialog((s) => ({ ...s, confirmText: e.target.value }))}
+                    placeholder="APROVAR"
+                    data-testid="approve-dialog-confirm-input"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeApproveDialog}
+              disabled={approveDialog.submitting}
+              data-testid="approve-dialog-cancel-btn"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmApprove}
+              disabled={
+                approveDialog.loading
+                || approveDialog.submitting
+                || (approveDialog.preview?.guard_warnings?.length > 0)
+              }
+              data-testid="approve-dialog-confirm-btn"
+              className={approveDialog.preview?.is_critical ? 'bg-red-600 hover:bg-red-700' : ''}
+            >
+              {approveDialog.submitting ? 'A aprovar…' : 'Confirmar aprovação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
