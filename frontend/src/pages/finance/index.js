@@ -6,6 +6,7 @@ export { default as TasksEffectiveness } from './TasksEffectiveness';
 export { default as FinanceClients } from './FinanceClients';
 export { default as FinanceClientDetail } from './FinanceClientDetail';
 export { default as FinanceImports } from './FinanceImports';
+export { default as FinanceAnomalies } from './FinanceAnomalies';
 export { default as FinancePromises } from './FinancePromises';
 export { default as Regularizations } from './Regularizations';
 export { default as BlockRequests } from './BlockRequests';

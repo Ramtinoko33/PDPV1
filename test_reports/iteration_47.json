@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 47 — Dashboard de Anomalias entre imports Finance. Full backend pytest 23/23 PASSED (test_iteration_47_anomalies.py 6/6 + regressão 43+44+46+46b 17/17). Backend endpoints exercised live: GET /api/finance/anomalies returns {anomalies, count} with correct schema (id/import_type/severity/triggers/current/previous/delta/status/validation), status=invalid → 400, severity=invalid → 400, GET /api/finance/anomalies/count returns {active_total, critical, warning}, POST /api/finance/anomalies/{id}/validate: OWNER with comment → 200 (validation doc created in finance_anomaly_validations with snapshot), empty/whitespace comment → 400, duplicate validation → 400, COLLECTIONS_AGENT GET → 200, POST → 403. Detecção matemática validada nos 3 cenários: critical Δ 10k→15k=+50% (assertion delta.total_overdue_abs==5000 & pct==50), warning clientes 100→130=+30%, noise floor 1000→1300€ (300€ < 500€) NÃO gera anomalia. Frontend end-to-end verificado live no preview URL: (1) badge 'finance-anomalies-badge' aparece no /finance dashboard header com o texto '2 anomalias activas' quando há 2 activas (link para /finance/anomalies funcional); (2) sidebar tem novo link 'Anomalias' sob Finance (visível para OWNER e COLLECTIONS_AGENT); (3) página /finance/anomalies renderiza com data-testid='finance-anomalies-page', 2 cartões seeded aparecem com 3 painéis Anterior/Actual/Δ, valores formatados corretamente (10.000€ vs 20.000€ vs +10.000€ 100%), badge CRÍTICO vermelho; (4) clique em 'Validar' abre Dialog data-testid='anomaly-validate-dialog', botão submit corretamente disabled quando comentário vazio, ao preencher comentário submit fecha o diálogo e a lista actualiza; (5) filtro Estado=Validadas mostra o cartão validado com badge verde 'Validada', comentário exibido no data-testid='anomaly-validation-comment-{id}' e assinatura 'Validada por Administrador — data'; (6) filtro Severidade=Warning esconde as críticas (0 cards). RBAC UI: COLLECTIONS_AGENT (cobranca.teste@pdpv.pt) vê 1 anomalia mas 0 botões 'Validar' — botão apenas renderiza quando canValidate=OWNER/FINANCE_REVIEWER. Sem regressões nas iters 43/44/46/46b.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_47_anomalies.py",
+    "/app/test_reports/pytest/iteration_47.xml",
+    "/app/test_reports/seed_iteration_47_ui.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend anomalies_service.compute_anomalies: cálculo on-the-fly a partir de finance_imports com status in ('imported','accepted_with_warnings'), agrupado por type, comparando pares consecutivos. IDs deterministicos via sha256(type|current_id|previous_id)[:16] garantem estabilidade entre chamadas sem persistir a anomalia — apenas as validations ficam guardadas em finance_anomaly_validations. Arquitectura clean.",
+    "Backend routes.py 1738-1795: 400 explícito para status/severity inválidos, RBAC diferenciado (require_finance_access para GET, require_finance_reviewer para POST /validate), ValueError do serviço mapeado para HTTP 400 — bom padrão. Comentário obrigatório validado no serviço (não só no frontend).",
+    "Frontend FinanceAnomalies.js: canValidate = ['OWNER','FINANCE_REVIEWER'].includes(user?.finance_role) — enforcement UI simétrico ao backend RBAC. Submit button correctly disabled quando !comment.trim() OU submitting. Dialog state totalmente resetado no close. Nenhum stale state entre validações consecutivas.",
+    "Frontend Layout.js: link 'Anomalias' visível para todos os finance_role (OWNER, FINANCE_REVIEWER, COLLECTIONS_AGENT), o que é correcto porque a rota é read-only para COLLECTIONS_AGENT.",
+    "Frontend FinanceDashboard header badge: aparece condicionalmente quando active_total > 0 com contagem correcta e link href='/finance/anomalies'. Testado com 2→1 anomalias e o texto atualiza para singular/plural.",
+    "OBS/POSITIVO: noise floor de 500€ e 10 docs bem implementado — evita ruído em pequenas variações que satisfazem o pct mas são irrelevantes absolutas (test_noise_floor_ignores_small_diffs valida)."
+  ],
+  "updated_files": [
+    "/app/test_reports/seed_iteration_47_ui.py",
+    "/app/test_reports/iteration_47.json",
+    "/app/test_reports/pytest/iteration_47.xml"
+  ],
+  "success_rate": {"backend": "100% (23/23 pytest — 6/6 novos + 17/17 regressão)", "frontend": "100% (todos os fluxos e testids validados live)"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (OWNER) + cobranca.teste@pdpv.pt / TesteFin2026! (COLLECTIONS_AGENT) — ambos validados",
+  "seed_data_creation": "Seeded 2 finance_imports com prefixo TSTANOMUI (ui-prev 10k/100cli/300doc + ui-cur 20k/105cli/305doc) via /app/test_reports/seed_iteration_47_ui.py. TODOS os imports e validações UITESTE47 foram limpos ao fim do run (`python seed_iteration_47_ui.py cleanup`). DB deixado no estado original.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 47 concluída sem issues. Testids importantes para futuras iterações: finance-anomalies-page, finance-anomalies-badge, anomalies-status-filter, anomalies-severity-filter, anomaly-card-{id}, anomaly-severity-{id}, anomaly-validate-btn-{id}, anomaly-validate-dialog, anomaly-validate-comment-input, anomaly-validate-submit-btn, anomaly-validate-cancel-btn, anomaly-validate-error, anomaly-current-total-{id}, anomaly-validation-comment-{id}. Anomaly IDs são determinísticos sha256(type|current_id|previous_id)[:16] — se voltares a seedar com os mesmos import_ids, obtens o mesmo anomaly_id. Colecção nova a monitorizar em cleanups: finance_anomaly_validations. Rota React: /finance/anomalies (sidebar 'Anomalias' sob Finance). Nota: warning WebSocket + Recharts width(-1) aparecem no console mas são pré-existentes e não relacionados com iter 47.",
+  "rca_of_the_issue": "N/A — feature nova sem bugs identificados."
+}

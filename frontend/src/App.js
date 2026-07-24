@@ -40,6 +40,7 @@ import {
   FinanceClients,
   FinanceClientDetail,
   FinanceImports,
+  FinanceAnomalies,
   FinancePromises,
   Regularizations,
   BlockRequests,
@@ -271,6 +272,11 @@ function AppRoutes() {
       <Route path="/finance/imports" element={
         <ProtectedRoute requireFinanceAccess>
           <FinanceImports />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/anomalies" element={
+        <ProtectedRoute requireFinanceAccess>
+          <FinanceAnomalies />
         </ProtectedRoute>
       } />
       <Route path="/finance/promises" element={

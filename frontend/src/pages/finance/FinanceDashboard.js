@@ -122,18 +122,22 @@ const FinanceDashboard = () => {
   const { getAuthHeaders } = useAuth();
   const [dashboard, setDashboard] = useState(null);
   const [dataHealth, setDataHealth] = useState(null);
+  const [anomaliesCount, setAnomaliesCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [dashRes, healthRes] = await Promise.all([
+      const [dashRes, healthRes, anomRes] = await Promise.all([
         axios.get(`${API_URL}/api/finance/dashboard`, { headers: getAuthHeaders() }),
-        axios.get(`${API_URL}/api/finance/data-health`, { headers: getAuthHeaders() })
+        axios.get(`${API_URL}/api/finance/data-health`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/finance/anomalies/count`, { headers: getAuthHeaders() })
+          .catch(() => ({ data: { active_total: 0, critical: 0, warning: 0 } }))
       ]);
       setDashboard(dashRes.data);
       setDataHealth(healthRes.data);
+      setAnomaliesCount(anomRes.data);
       setError(null);
     } catch (err) {
       setError('Erro ao carregar dados financeiros');
@@ -169,9 +173,27 @@ const FinanceDashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">CRM Finance</h1>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             <p className="text-slate-500 text-sm">Dashboard financeiro</p>
             <FreshnessBadge items={dataHealth?.items} />
+            {anomaliesCount?.active_total > 0 && (
+              <Link
+                to="/finance/anomalies"
+                className={
+                  'inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium '
+                  + (anomaliesCount.critical > 0
+                      ? 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200'
+                      : 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200')
+                }
+                data-testid="finance-anomalies-badge"
+                title={`${anomaliesCount.critical} crítica(s), ${anomaliesCount.warning} warning(s)`}
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>
+                  {anomaliesCount.active_total} anomalia{anomaliesCount.active_total === 1 ? '' : 's'} activa{anomaliesCount.active_total === 1 ? '' : 's'}
+                </span>
+              </Link>
+            )}
           </div>
         </div>
         <div className="flex gap-2">

@@ -1735,6 +1735,67 @@ async def cleanup_import_files(
     }
 
 
+# ============== ANOMALIES DASHBOARD (iter 47) ==============
+
+class ValidateAnomalyRequest(BaseModel):
+    comment: str
+
+
+@router.get("/anomalies")
+async def get_anomalies(
+    status: str = "active",
+    severity: Optional[str] = None,
+    current_user: dict = Depends(require_finance_access),
+):
+    """
+    Lista anomalias detectadas entre imports Finance consecutivos.
+
+    Query params:
+      - status: active | validated | all (default: active)
+      - severity: warning | critical (default: todas)
+
+    Só imports com estado 'imported' ou 'accepted_with_warnings' são
+    considerados (nunca compara contra rejected/pending). Cálculo
+    on-the-fly (sem persistência das anomalias) — validações ficam em
+    finance_anomaly_validations.
+    """
+    from .services.anomalies_service import compute_anomalies
+    if status not in ("active", "validated", "all"):
+        raise HTTPException(status_code=400, detail="status inválido")
+    if severity and severity not in ("warning", "critical"):
+        raise HTTPException(status_code=400, detail="severity inválido")
+    anomalies = await compute_anomalies(status_filter=status, severity_filter=severity)
+    return {"anomalies": anomalies, "count": len(anomalies)}
+
+
+@router.get("/anomalies/count")
+async def get_anomalies_count(
+    current_user: dict = Depends(require_finance_access),
+):
+    """Contagem para o badge no dashboard principal."""
+    from .services.anomalies_service import count_active_anomalies
+    return await count_active_anomalies()
+
+
+@router.post("/anomalies/{anomaly_id}/validate")
+async def validate_anomaly_endpoint(
+    anomaly_id: str,
+    payload: ValidateAnomalyRequest,
+    current_user: dict = Depends(require_finance_reviewer),
+):
+    """
+    Marca uma anomalia como validada. Requer OWNER ou FINANCE_REVIEWER
+    (COLLECTIONS_AGENT pode ver mas não validar).
+    Comentário obrigatório (não vazio).
+    """
+    from .services.anomalies_service import validate_anomaly
+    try:
+        result = await validate_anomaly(anomaly_id, current_user, payload.comment)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
 @router.post("/imports/detect-type")
 async def detect_import_type(
     file: UploadFile = File(...),
