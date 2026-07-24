@@ -4,7 +4,13 @@ Motor clients bind to the event loop they were created on; use a session
 scoped loop so all async tests share the same loop.
 """
 import os
+import sys
 import pytest
+
+# Ensure /app/backend is on sys.path for `from modules...` imports in tests.
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
 
 
 def pytest_configure(config):

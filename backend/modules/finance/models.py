@@ -264,13 +264,22 @@ class FinanceDocumentResponse(BaseModel):
 
 # --- Finance Import ---
 class ImportTotals(BaseModel):
-    """Totais agregados de importação"""
+    """Totais agregados de importação (aceita campos extra da iter 48)."""
+    model_config = {"extra": "allow"}
     clients: int = 0
     documents: int = 0
     total_balance: float = 0.0
     total_overdue: float = 0.0
     total_collectable: float = 0.0
     total_residual: float = 0.0
+    # Iter 48 — counters detalhados
+    rows_processed: Optional[int] = None
+    clients_found: Optional[int] = None
+    clients_matched: Optional[int] = None
+    clients_updated: Optional[int] = None
+    clients_ignored: Optional[int] = None
+    documents_created: Optional[int] = None
+    periods: Optional[int] = None
 
 
 class FinanceImportResponse(BaseModel):
