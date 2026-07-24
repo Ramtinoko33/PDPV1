@@ -81,17 +81,37 @@ export default function QuickCommunicationPanel({ client, getAuthHeaders, onComm
   const [emailSubject, setEmailSubject] = useState('');
   const [messageBody, setMessageBody] = useState('');
 
-  const defaultNumber = useMemo(() => pickWhatsAppNumber(client), [client]);
-  const defaultEmail = useMemo(() => pickEmail(client), [client]);
+  // Deps específicas em vez de `client` completo — impede re-render espúrio
+  // que apagava as edições do utilizador quando o parent refaz fetch (e
+  // devolve nova referência de client com o mesmo id/campos relevantes).
+  const clientId = client?.id;
+  const clientFinanceMobile = client?.finance_mobile;
+  const clientMobile = client?.mobile;
+  const clientPhone = client?.phone;
+  const clientFinanceEmail = client?.finance_email;
+  const clientEmail = client?.email;
+
+  const defaultNumber = useMemo(
+    () => pickWhatsAppNumber({
+      finance_mobile: clientFinanceMobile,
+      mobile: clientMobile,
+      phone: clientPhone,
+    }),
+    [clientFinanceMobile, clientMobile, clientPhone]
+  );
+  const defaultEmail = useMemo(
+    () => pickEmail({ finance_email: clientFinanceEmail, email: clientEmail }),
+    [clientFinanceEmail, clientEmail]
+  );
 
   // Carregar templates + bucket
   useEffect(() => {
-    if (!client?.id) return;
+    if (!clientId) return;
     (async () => {
       try {
         const [tRes, bRes] = await Promise.all([
           axios.get(`${API_URL}/api/finance/email-templates?active_only=true`, { headers: getAuthHeaders() }),
-          axios.get(`${API_URL}/api/finance/clients/${client.id}/dunning-bucket`, { headers: getAuthHeaders() }),
+          axios.get(`${API_URL}/api/finance/clients/${clientId}/dunning-bucket`, { headers: getAuthHeaders() }),
         ]);
         const allTemplates = tRes.data.templates || [];
         setTemplates(allTemplates);
@@ -107,23 +127,37 @@ export default function QuickCommunicationPanel({ client, getAuthHeaders, onComm
         console.error('Erro a carregar templates/bucket:', err);
       }
     })();
-  }, [client?.id, getAuthHeaders]);
+  }, [clientId, getAuthHeaders]);
 
-  // Actualizar corpo/subject quando muda template ou canal
+  // Actualizar corpo/subject quando muda template ou canal.
+  // Dependência em campos primitivos evita reset por nova referência do
+  // objecto client vinda do parent após fetches externos.
+  const clientName = client?.name;
+  const clientOverdue = client?.overdue_balance_collectable;
+  const clientDays = client?.oldest_overdue_days;
   useEffect(() => {
     const t = templates.find((x) => x.key === templateKey);
     if (!t) return;
-    setEmailSubject(interpolate(t.subject, client));
+    const clientForInterp = {
+      name: clientName,
+      overdue_balance_collectable: clientOverdue,
+      oldest_overdue_days: clientDays,
+    };
+    setEmailSubject(interpolate(t.subject, clientForInterp));
     setMessageBody(interpolate(
       channel === 'whatsapp' ? (t.whatsapp_body || t.body) : t.body,
-      client
+      clientForInterp
     ));
-  }, [templateKey, channel, templates, client]);
+  }, [templateKey, channel, templates, clientName, clientOverdue, clientDays]);
 
+  // Prefill do phoneNumber/emailTo APENAS quando o diálogo abre — nunca
+  // durante edição do utilizador. Antes, o efeito disparava a cada render
+  // do parent com nova referência de client, apagando o input em curso.
   useEffect(() => {
+    if (!dialogOpen) return;
     setPhoneNumber(defaultNumber);
     setEmailTo(defaultEmail);
-  }, [defaultNumber, defaultEmail]);
+  }, [dialogOpen, defaultNumber, defaultEmail]);
 
   const logAction = async (actionType, notes) => {
     try {

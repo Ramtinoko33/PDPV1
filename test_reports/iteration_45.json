@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 45 — Frontend Hardening (stale-closure fix in QuickCommunicationPanel + regression check on TasksToday/TasksEffectiveness/Regularizations + backend regression from iter 43/44). All targeted scenarios PASS. QuickCommunicationPanel bug fix verified end-to-end: custom edits in Telefone/Email inputs are NOT overwritten by parent re-renders (waited 6s and also triggered template change to force useEffect re-run — phone value stayed as '999999999'; email stayed as 'custom-edit@iter45.test'). On dialog reopen, defaults are correctly restored (custom edit discarded). Fetch-loop instrumentation on the 3 other pages showed no runaway refetches: idle-6s API count = 0 on all three (TasksToday /finance/tasks-today, TasksEffectiveness /finance/tasks-effectiveness, Regularizations /finance/regularizations). Filter/mode/sort interactions trigger exactly the expected number of refetches. Backend regression pytest (iter43+iter44 safety-guard suites): 8/8 PASSED. NOTE: the problem-statement URLs were slightly wrong — the actual React routes are '/finance/tasks-today' and '/finance/tasks-effectiveness' (hyphens, not slashes) — I corrected during testing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "FinanceClientDetail — Documentos tab table",
+        "issues": [
+          "Pre-existing (reported in iter41/42/43) React hydration warning: '<span data-ve-dynamic> cannot be a child of <tbody>' and '<tr> cannot be a child of <span>'. Not introduced by iter45; cosmetic only."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_44_overdue_safety_guards.py",
+    "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py",
+    "/app/test_reports/pytest/iteration_45.xml"
+  ],
+  "action_items": [
+    "None blocking. Doc-level suggestion: update the review_request routing paths from '/finance/tasks/today' → '/finance/tasks-today' and '/finance/tasks/effectiveness' → '/finance/tasks-effectiveness' to match App.js routes (avoids confusion for future testing sessions).",
+    "(Pre-existing, unresolved from iter41+) tbody/span/tr hydration warning coming from the <span data-ve-dynamic> tooling wrapper. Cosmetic only, not blocking."
+  ],
+  "critical_code_review_comments": [
+    "QuickCommunicationPanel.js: the fix is correct and minimal. Deps for defaultNumber/defaultEmail are primitive fields; interpolation useEffect depends only on primitive client fields + templateKey/channel/templates; prefill useEffect fires only when dialogOpen transitions to true. This is the canonical React pattern for isolating a controlled input from parent-driven re-renders.",
+    "QuickCommunicationPanel.js L156-160: the prefill useEffect depends on [dialogOpen, defaultNumber, defaultEmail]. Because defaultNumber/defaultEmail are memoised on primitive deps, changing them mid-open (e.g. if parent updates client.finance_mobile while dialog is open) will still overwrite the user's edit. This edge case is exceedingly rare (would require the client contact to be edited by another user during the dialog's lifetime) and probably intentional. If ever a bug, gate the prefill on `if (!dialogOpen) return;` AND on a ref that tracks 'was previously closed'.",
+    "TasksToday.js/TasksEffectiveness.js/Regularizations.js: already follow the correct pattern (useCallback + fetcher in deps of useEffect). No changes needed. AuthContext.js exposes getAuthHeaders via useCallback, making it stable and safe as a hook dep.",
+    "Double initial fetch on all 3 list pages (2 calls instead of 1) is React 18 StrictMode dev-only double invocation and NOT a bug. In production build, only 1 call would fire."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_45.json",
+    "/app/test_reports/pytest/iteration_45.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 pytest regression from iter43+iter44 safety-guards)",
+    "frontend": "100% (QuickCommunicationPanel bug fix verified in 4/4 scenarios; TasksToday/Effectiveness/Regularizations verified 0 fetch loops in 3/3 pages)"
+  },
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (used, validated)",
+  "seed_data_creation": "Set finance_mobile=912345678, finance_email=test.iter45@example.com, finance_contact_name='Test Iter45' on client 39c37f4e-f2ee-4c01-abd5-376cb2f66d9f (cliente d) via PATCH /api/finance/clients/{id}/contacts. This was necessary because none of the 5 seeded clients had a finance contact and QuickComm buttons are disabled without one. Contacts are preserved in DB post-test (small, isolated to cliente d, safe to leave or clean up manually).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The route paths in the frontend are /finance/tasks-today and /finance/tasks-effectiveness (with hyphens), NOT /finance/tasks/today. The QuickCommunicationPanel is embedded inside the FinanceClientDetail 'Informação' tab, so you must click that tab before the data-testid='quick-communication-panel' becomes visible. Seed client used: 39c37f4e-f2ee-4c01-abd5-376cb2f66d9f. Bug fix in QuickCommunicationPanel.js is stable and correct — verified by editing the phone/email input, waiting 5-6s, changing template, then confirming input values are preserved.",
+  "rca_of_the_issue": "Root cause (already fixed by main agent E1 in iter45): the previous QuickCommunicationPanel had a useEffect that (a) recomputed defaultNumber/defaultEmail whenever the entire `client` object identity changed (new reference on every parent fetch), and (b) inside a separate useEffect, reset setPhoneNumber(defaultNumber) & setEmailTo(defaultEmail) unconditionally on those recomputed values. Every time the parent's fetchData() completed (~ every 5-10s in the client detail screen, or on any child-triggered re-fetch), the client object reference changed → defaultNumber recomputed to the same string but with new identity via useMemo which itself depended on `client` → the reset useEffect fired → user's in-progress edit was wiped. Fix: (1) defaultNumber/defaultEmail now depend on primitive fields (finance_mobile, mobile, phone / finance_email, email) so identity is stable when values are stable; (2) the reset useEffect now depends on [dialogOpen, defaultNumber, defaultEmail] but only takes action when `if (!dialogOpen) return;` guards the initial mount path — since defaults are stable and dialogOpen only flips true→false→true, the effect body only meaningfully runs on the true transition. Verified in browser: after typing '999999999' into the phone input and waiting 6 seconds plus a template change, the value remained '999999999'. On dialog close+reopen, the default '351912345678' correctly reappeared, confirming the reset-on-open behaviour is preserved."
+}
