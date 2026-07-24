@@ -622,6 +622,9 @@ async def process_client_info_import(
 ) -> Dict[str, Any]:
     """
     Processa importação de InfoClientes (enriquecimento semanal).
+    Iter 48: expande enriquecimento com saldo_efec/desc/dev, forma_pagamento,
+    eventos e risco (raw + validated + placeholder detection). Adiciona guard
+    contra imports silenciosos com 0 clientes.
     """
     result = {
         'success': False,
@@ -650,6 +653,42 @@ async def process_client_info_import(
         now = datetime.now(timezone.utc).isoformat()
         today = date.today().isoformat()
         
+        rows_processed = parsed['totals'].get('rows_processed', 0)
+        clients_found = parsed['totals']['client_count']
+        
+        # Guard iter 48: se o ficheiro tem >10 linhas úteis mas 0 clientes
+        # foram extraídos, é um import silencioso — provavelmente coluna de
+        # código do cliente com nome inesperado. Rejeitar em vez de aceitar
+        # como "importado com 0 clientes" (que era o bug reportado).
+        if rows_processed > 10 and clients_found == 0:
+            reason = (
+                f"Nenhum cliente encontrado ({rows_processed} linhas processadas). "
+                "Verificar coluna de código do cliente (esperado 'CodCliente', "
+                "'Conta' ou 'CodPersona')."
+            )
+            result['errors'].append(reason)
+            result['status'] = ImportStatus.REJECTED.value
+            result['totals'] = {
+                "clients": 0,
+                "rows_processed": rows_processed,
+                "clients_found": 0,
+                "clients_matched": 0,
+                "clients_updated": 0,
+                "clients_ignored": rows_processed,
+                "documents_created": 0,
+            }
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "errors": result['errors'],
+                    "totals": result['totals'],
+                }}
+            )
+            logger.warning(f"Client info import {import_id} rejected by silent-zero guard: {reason}")
+            return result
+        
+        clients_matched = 0
         clients_updated = 0
         clients_not_found = 0
         
@@ -662,21 +701,34 @@ async def process_client_info_import(
             if not existing:
                 clients_not_found += 1
                 continue
+            clients_matched += 1
             
-            # Atualizar dados de enriquecimento
+            # Enriquecimento completo (iter 48). Campos legados mantêm-se
+            # também para não partir queries antigas.
             update_data = {
+                "saldo_conta": client_data.get('saldo_conta'),
+                "saldo_efec": client_data.get('saldo_efec'),
+                "saldo_desc": client_data.get('saldo_desc'),
+                "saldo_dev": client_data.get('saldo_dev'),
+                "carteira": client_data.get('portfolio'),
+                "domiciliacoes": client_data.get('domiciliations'),
+                "risco_raw": client_data.get('risk_raw'),
+                "risco_validado": client_data.get('risk_validated'),
+                "risco_placeholder": client_data.get('risk_placeholder'),
+                "albaranado": client_data.get('pending_delivery'),
+                "forma_pagamento": client_data.get('payment_method'),
+                "eventos_raw": client_data.get('events_raw'),
+                "last_infoclientes_import_id": import_id,
+                # Campos legados (retro-compatibilidade)
                 "genes_account": client_data.get('account'),
-                "credit_limit": client_data.get('credit_limit'),  # Pode não existir
-                "risk_value": client_data.get('risk_value'),
+                "risk_value": client_data.get('risk_validated'),
                 "insured_risk_value": client_data.get('insured_risk_value'),
                 "risk_percentage": client_data.get('risk_percentage'),
-                "annual_revenue": client_data.get('annual_revenue'),
                 "portfolio": client_data.get('portfolio'),
                 "pending_delivery": client_data.get('pending_delivery'),
-                "updated_at": now
+                "updated_at": now,
             }
-            
-            # Remover None values
+            # Remover None (mantém False e 0.0)
             update_data = {k: v for k, v in update_data.items() if v is not None}
             
             await db.finance_clients.update_one(
@@ -686,12 +738,18 @@ async def process_client_info_import(
             clients_updated += 1
         
         if clients_not_found > 0:
-            result['warnings'].append(f"{clients_not_found} clientes não encontrados (ainda não importados via saldos vencidos)")
+            result['warnings'].append(
+                f"{clients_not_found} clientes não encontrados (ainda não importados via saldos vencidos)"
+            )
         
         result['totals'] = {
-            "clients": parsed['totals']['client_count'],
+            "clients": clients_found,
+            "rows_processed": rows_processed,
+            "clients_found": clients_found,
+            "clients_matched": clients_matched,
             "clients_updated": clients_updated,
-            "clients_not_found": clients_not_found,
+            "clients_ignored": clients_not_found,
+            "documents_created": 0,
             "total_balance": parsed['totals']['total_balance'],
             "total_annual_revenue": parsed['totals']['total_annual_revenue'],
         }
@@ -777,6 +835,37 @@ async def process_credit_evolution_import(
         now = datetime.now(timezone.utc).isoformat()
         today = date.today().isoformat()
         
+        rows_processed = parsed['totals'].get('rows_processed', 0)
+        clients_found = parsed['totals']['client_count']
+        
+        # Guard iter 48: import silencioso.
+        if rows_processed > 10 and clients_found == 0:
+            reason = (
+                f"Nenhum cliente encontrado ({rows_processed} linhas processadas). "
+                "Verificar coluna de código do cliente (esperado 'CODCLIENTE' ou 'Conta')."
+            )
+            result['errors'].append(reason)
+            result['status'] = ImportStatus.REJECTED.value
+            result['totals'] = {
+                "clients": 0,
+                "rows_processed": rows_processed,
+                "clients_found": 0,
+                "clients_matched": 0,
+                "clients_updated": 0,
+                "clients_ignored": rows_processed,
+                "documents_created": 0,
+            }
+            await db.finance_imports.update_one(
+                {"id": import_id},
+                {"$set": {
+                    "status": result['status'],
+                    "errors": result['errors'],
+                    "totals": result['totals'],
+                }}
+            )
+            logger.warning(f"Credit evolution import {import_id} rejected by silent-zero guard: {reason}")
+            return result
+        
         clients_saved = 0
         clients_enriched = 0
         
@@ -788,11 +877,14 @@ async def process_credit_evolution_import(
                 {"$set": {
                     "genes_code": genes_code,
                     "account": client_data.get('account'),
-                    "name": client_data.get('name'),
-                    "evolution": client_data.get('evolution', {}),
+                    "client_name": client_data.get('name'),
+                    "name": client_data.get('name'),  # legacy
+                    "periods": client_data.get('evolution', {}),
+                    "evolution": client_data.get('evolution', {}),  # legacy
                     "trend_percentage": client_data.get('trend_percentage'),
                     "trend_absolute": client_data.get('trend_absolute'),
-                    "source_import_id": import_id,
+                    "last_import_id": import_id,
+                    "source_import_id": import_id,  # legacy
                     "updated_at": now
                 }},
                 upsert=True
@@ -815,8 +907,13 @@ async def process_credit_evolution_import(
             result['warnings'].append(f"{not_found} clientes não encontrados (ainda não importados via saldos vencidos)")
         
         result['totals'] = {
-            "clients": parsed['totals']['client_count'],
-            "clients_updated": clients_enriched,
+            "clients": clients_found,
+            "rows_processed": rows_processed,
+            "clients_found": clients_found,
+            "clients_matched": clients_enriched,
+            "clients_updated": clients_saved,
+            "clients_ignored": not_found,
+            "documents_created": 0,
             "periods": len(parsed.get('periods', [])),
         }
         

@@ -483,11 +483,13 @@ const FinanceImports = () => {
                         {imp.source_method === 'rpa_folder' ? 'RPA' : 'Manual'}
                       </Badge>
                     </td>
-                    <td className="p-3 text-center text-sm">
-                      {imp.totals?.clients ?? '-'}
+                    <td className="p-3 text-center text-sm" data-testid={`import-clients-cell-${imp.id}`}>
+                      {/* iter 48: mostra clients_updated preferencialmente,
+                          já que reflete o que ficou realmente aplicado. */}
+                      {imp.totals?.clients_updated ?? imp.totals?.clients_found ?? imp.totals?.clients ?? '-'}
                     </td>
-                    <td className="p-3 text-center text-sm">
-                      {imp.totals?.documents ?? '-'}
+                    <td className="p-3 text-center text-sm" data-testid={`import-docs-cell-${imp.id}`}>
+                      {imp.totals?.documents_created ?? imp.totals?.documents ?? '-'}
                     </td>
                     <td className="p-3 text-center">
                       <StatusBadge status={imp.status} />

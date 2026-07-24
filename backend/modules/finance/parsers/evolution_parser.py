@@ -49,6 +49,7 @@ def parse_credit_evolution(file_content: bytes) -> Dict[str, Any]:
         'periods': [],
         'totals': {
             'client_count': 0,
+            'rows_processed': 0,
         },
         'warnings': [],
         'errors': []
@@ -101,6 +102,8 @@ def parse_credit_evolution(file_content: bytes) -> Dict[str, Any]:
             if not any(c for c in row_list if c is not None and str(c).strip()):
                 continue
             
+            result['totals']['rows_processed'] += 1
+            
             # Extrair valores usando mapeamento de colunas
             def get_val(col_names: List[str]) -> Any:
                 for col_name in col_names:
@@ -111,7 +114,7 @@ def parse_credit_evolution(file_content: bytes) -> Dict[str, Any]:
                             return val
                 return None
             
-            genes_code = str(get_val(['CODCLIENTE', 'CodCliente', 'Cod Cliente']) or '').strip()
+            genes_code = str(get_val(['CODCLIENTE', 'CodCliente', 'Cod Cliente', 'Conta', 'CONTA']) or '').strip()
             if not genes_code:
                 continue
             

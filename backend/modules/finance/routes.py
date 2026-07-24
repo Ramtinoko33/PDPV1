@@ -884,6 +884,78 @@ async def get_client_history(
     return {"actions": [FinanceActionResponse(**a) for a in actions]}
 
 
+@router.get("/clients/{client_id}/credit-evolution")
+async def get_client_credit_evolution(
+    client_id: str,
+    current_user: dict = Depends(require_finance_access)
+):
+    """
+    Evolução trimestral de crédito de um cliente (iter 48).
+    
+    Devolve os 6+ snapshots trimestrais em ordem cronológica, o maior
+    saldo registado (peak), a variação face ao trimestre anterior
+    e a tendência (up/stable/down) — usado no card da ficha do cliente.
+    """
+    client = await db.finance_clients.find_one({"id": client_id}, {"_id": 0, "genes_code": 1})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    
+    genes_code = client.get("genes_code")
+    if not genes_code:
+        return {"available": False, "reason": "Cliente sem código GENES"}
+    
+    doc = await db.finance_credit_evolution.find_one({"genes_code": genes_code}, {"_id": 0})
+    if not doc:
+        return {"available": False, "reason": "Ainda não existe evolução importada para este cliente"}
+    
+    periods_map = doc.get("periods") or doc.get("evolution") or {}
+    # Ordena cronologicamente (formato MM-YYYY → converter para (YYYY, MM))
+    def _period_key(p):
+        try:
+            mm, yy = p.split('-')
+            return (int(yy), int(mm))
+        except Exception:
+            return (0, 0)
+    
+    sorted_periods = sorted(periods_map.keys(), key=_period_key)
+    series = [{"period": p, "value": float(periods_map[p] or 0)} for p in sorted_periods]
+    
+    peak = max((s["value"] for s in series), default=0.0)
+    last_val = series[-1]["value"] if series else 0.0
+    prev_val = series[-2]["value"] if len(series) >= 2 else 0.0
+    
+    q_diff_abs = last_val - prev_val
+    q_diff_pct = (
+        (q_diff_abs / prev_val * 100) if prev_val > 0
+        else (100.0 if last_val > 0 else 0.0)
+    )
+    
+    # Tendência: comparação primeiro vs último (não trimestral)
+    first_val = series[0]["value"] if series else 0.0
+    if abs(last_val - first_val) < max(500.0, first_val * 0.05):
+        trend = "stable"
+    elif last_val > first_val:
+        trend = "up"
+    else:
+        trend = "down"
+    
+    return {
+        "available": True,
+        "genes_code": genes_code,
+        "series": series,
+        "peak": round(peak, 2),
+        "last": round(last_val, 2),
+        "previous": round(prev_val, 2),
+        "quarter_diff_abs": round(q_diff_abs, 2),
+        "quarter_diff_pct": round(q_diff_pct, 2),
+        "trend": trend,
+        "trend_percentage": doc.get("trend_percentage"),
+        "trend_absolute": doc.get("trend_absolute"),
+        "last_import_id": doc.get("last_import_id") or doc.get("source_import_id"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
 # ============== ACTIONS ==============
 
 @router.post("/clients/{client_id}/actions", response_model=FinanceActionResponse)

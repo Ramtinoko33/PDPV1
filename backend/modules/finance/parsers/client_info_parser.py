@@ -46,6 +46,7 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
         'clients': [],
         'totals': {
             'client_count': 0,
+            'rows_processed': 0,
             'total_balance': 0.0,
             'total_annual_revenue': 0.0,
             'total_pending_delivery': 0.0,
@@ -89,6 +90,8 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
             if not any(c for c in row_list if c is not None and str(c).strip()):
                 continue
             
+            result['totals']['rows_processed'] += 1
+            
             # Extrair valores usando mapeamento de colunas
             def get_val(col_names: List[str]) -> Any:
                 for col_name in col_names:
@@ -99,7 +102,7 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
                             return val
                 return None
             
-            genes_code = str(get_val(['CodCliente', 'Cod Cliente', 'CodPersona']) or '').strip()
+            genes_code = str(get_val(['CodCliente', 'Cod Cliente', 'CodPersona', 'Conta']) or '').strip()
             if not genes_code:
                 continue
             
@@ -112,33 +115,37 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
             annual_revenue = parse_float(get_val(['Fat. Ano', 'Fat Ano', 'Faturação Ano']))
             pending_delivery = parse_float(get_val(['Albaranado']))
             
+            # Risco: guarda sempre o valor raw. Detecta placeholder (>1M€) —
+            # ficheiro GENES por vezes traz limites 999.999.999€ = "sem limite
+            # atribuído", que não deve entrar no semáforo automaticamente.
+            risk_raw = parse_float(get_val(['Risco']))
+            risk_placeholder = abs(risk_raw) > 1_000_000
+            risk_validated = 0.0 if risk_placeholder else risk_raw
+            
             client = {
                 'genes_code': genes_code,
                 'warehouse': str(get_val(['Alm.', 'Alm', 'Armazém']) or '').strip(),
                 'account': str(get_val(['Conta']) or '').strip(),
                 'name': name,
-                'total_balance': balance,
+                'saldo_conta': balance,
+                'saldo_efec': parse_float(get_val(['Saldo Efec.', 'Saldo Efec'])),
+                'saldo_desc': parse_float(get_val(['Saldo Desc.', 'Saldo Desc'])),
+                'saldo_dev': parse_float(get_val(['Saldo Dev.', 'Saldo Dev'])),
                 'portfolio': parse_float(get_val(['Carteira'])),
-                'annual_revenue': annual_revenue,
-                'domiciliations': parse_float(get_val(['Domiciliações'])),
-                'risk_value': parse_float(get_val(['Risco'])),
+                'domiciliations': parse_float(get_val(['Domiciliações', 'Domiciliacoes'])),
+                'risk_raw': risk_raw,
+                'risk_validated': risk_validated,
+                'risk_placeholder': risk_placeholder,
                 'insured_risk_value': parse_float(get_val(['Risco Seg.', 'Risco Seg'])),
                 'risk_percentage': parse_float(get_val(['% Risco Seg.', '% Risco Seg', 'Risco %'])),
                 'pending_delivery': pending_delivery,
+                'payment_method': str(get_val(['Forma Pagamento', 'Forma de Pagamento']) or '').strip(),
+                'events_raw': str(get_val(['Eventos']) or '').strip(),
+                # Legacy fields kept para retro-compatibilidade
+                'total_balance': balance,
+                'annual_revenue': annual_revenue,
+                'risk_value': risk_validated,
             }
-            
-            # Campos adicionais se existirem
-            saldo_efec = get_val(['Saldo Efec.', 'Saldo Efec'])
-            if saldo_efec is not None:
-                client['effective_balance'] = parse_float(saldo_efec)
-            
-            saldo_desc = get_val(['Saldo Desc.', 'Saldo Desc'])
-            if saldo_desc is not None:
-                client['discount_balance'] = parse_float(saldo_desc)
-            
-            saldo_dev = get_val(['Saldo Dev.', 'Saldo Dev'])
-            if saldo_dev is not None:
-                client['return_balance'] = parse_float(saldo_dev)
             
             result['clients'].append(client)
             result['totals']['client_count'] += 1

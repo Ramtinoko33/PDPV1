@@ -138,18 +138,22 @@ const FinanceClientDetail = () => {
   const [promiseNotes, setPromiseNotes] = useState('');
   const [blockReason, setBlockReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [creditEvolution, setCreditEvolution] = useState(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [clientRes, docsRes, historyRes] = await Promise.all([
+      const [clientRes, docsRes, historyRes, evoRes] = await Promise.all([
         axios.get(`${API_URL}/api/finance/clients/${clientId}`, { headers: getAuthHeaders() }),
         axios.get(`${API_URL}/api/finance/clients/${clientId}/documents`, { headers: getAuthHeaders() }),
-        axios.get(`${API_URL}/api/finance/clients/${clientId}/history`, { headers: getAuthHeaders() })
+        axios.get(`${API_URL}/api/finance/clients/${clientId}/history`, { headers: getAuthHeaders() }),
+        axios.get(`${API_URL}/api/finance/clients/${clientId}/credit-evolution`, { headers: getAuthHeaders() })
+          .catch(() => ({ data: { available: false } }))
       ]);
       setClient(clientRes.data);
       setDocuments(docsRes.data.documents || []);
       setHistory(historyRes.data.actions || []);
+      setCreditEvolution(evoRes.data);
     } catch (err) {
       console.error('Erro ao carregar cliente:', err);
     } finally {
@@ -593,28 +597,32 @@ const FinanceClientDetail = () => {
               </CardContent>
             </Card>
             
-            {client.credit_evolution && Object.keys(client.credit_evolution).length > 0 && (
+            {creditEvolution?.available && creditEvolution.series?.length > 0 && (
               <Card className="md:col-span-2" data-testid="credit-evolution-card">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center justify-between">
                     <span>Evolução Crédito (trimestral)</span>
-                    {client.credit_trend_percentage != null && (
-                      <span className={`text-sm font-semibold ${client.credit_trend_percentage > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {client.credit_trend_percentage > 0 ? '▲' : '▼'} {Math.abs(client.credit_trend_percentage).toFixed(1)}%
-                      </span>
-                    )}
+                    <span
+                      className={
+                        'text-xs px-2 py-0.5 rounded-full font-semibold ' +
+                        (creditEvolution.trend === 'up'
+                          ? 'bg-red-100 text-red-700'
+                          : creditEvolution.trend === 'down'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-slate-100 text-slate-600')
+                      }
+                      data-testid="credit-evolution-trend"
+                    >
+                      {creditEvolution.trend === 'up' && '▲ A subir'}
+                      {creditEvolution.trend === 'down' && '▼ A descer'}
+                      {creditEvolution.trend === 'stable' && '● Estável'}
+                    </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <ResponsiveContainer width="100%" height={180}>
                     <LineChart
-                      data={Object.entries(client.credit_evolution)
-                        .sort((a, b) => {
-                          const [ma, ya] = a[0].split('-');
-                          const [mb, yb] = b[0].split('-');
-                          return (ya + ma).localeCompare(yb + mb);
-                        })
-                        .map(([period, value]) => ({ period, value }))}
+                      data={creditEvolution.series}
                       margin={HIST_CHART_MARGIN}
                     >
                       <XAxis dataKey="period" tick={HIST_TICK_STYLE} />
@@ -624,6 +632,32 @@ const FinanceClientDetail = () => {
                       <Line type="monotone" dataKey="value" stroke="#ea580c" strokeWidth={2} dot={HIST_DOT_STYLE} />
                     </LineChart>
                   </ResponsiveContainer>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    <div className="p-2 bg-slate-50 rounded">
+                      <div className="text-xs text-slate-500">Último trimestre</div>
+                      <div className="font-semibold" data-testid="credit-evolution-last">{formatCurrency(creditEvolution.last)}</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded">
+                      <div className="text-xs text-slate-500">Δ absoluta</div>
+                      <div className={`font-semibold ${creditEvolution.quarter_diff_abs > 0 ? 'text-red-600' : creditEvolution.quarter_diff_abs < 0 ? 'text-emerald-600' : ''}`}
+                        data-testid="credit-evolution-diff-abs">
+                        {creditEvolution.quarter_diff_abs > 0 ? '+' : ''}{formatCurrency(creditEvolution.quarter_diff_abs)}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded">
+                      <div className="text-xs text-slate-500">Δ percentual</div>
+                      <div className={`font-semibold ${creditEvolution.quarter_diff_pct > 0 ? 'text-red-600' : creditEvolution.quarter_diff_pct < 0 ? 'text-emerald-600' : ''}`}
+                        data-testid="credit-evolution-diff-pct">
+                        {creditEvolution.quarter_diff_pct > 0 ? '+' : ''}{creditEvolution.quarter_diff_pct.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="p-2 bg-amber-50 rounded">
+                      <div className="text-xs text-amber-700">Maior exposição</div>
+                      <div className="font-semibold text-amber-800" data-testid="credit-evolution-peak">
+                        {formatCurrency(creditEvolution.peak)}
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}
