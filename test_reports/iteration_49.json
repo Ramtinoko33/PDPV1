@@ -1,15 +1,9 @@
 {
-  "verdict": "not_fixed",
+  "verdict": "fixed",
   "user_reported_bug": "nao me deixa importar de novo os ficheiros porque ja foram carregados",
-  "summary": "No relevant testing skill found. Backend-only retest confirmed the main bypass case now works: a file hash with only an old imported silent-zero record is accepted and applies data (HTTP 200). Regression pytest suite passed 34/34. However, a real API edge case remains: after the allowed reimport creates a useful imported record with the same hash, uploading the same file again still returns HTTP 200 instead of blocking because duplicate detection uses an arbitrary find_one by file_hash and can keep seeing the older silent-zero record. This means the hash-check fix is incomplete for the reimport flow once multiple records share the hash.",
+  "summary": "No relevant testing skill found. Backend-only retest against the live API and MongoDB confirmed the finance import duplicate-hash flow is fixed: old silent-zero same-hash imports no longer block re-upload (HTTP 200 with applied totals), useful same-hash imports still block (HTTP 400 'já foi importado'), and the simultaneous silent-zero + useful edge case blocks deterministically. Cleanup script dry-run/--confirm behavior was verified, and requested pytest regression passed 35/35. No APIs were MOCKED.",
   "backend_issues": {
-    "critical": [
-      {
-        "endpoint": "POST /api/finance/imports/{import_type}",
-        "issue": "Duplicate hash blocking is incomplete when both an old silent-zero import and a newer useful import share the same file_hash. Reproduction via /app/test_reports/iter49_api_edge_test.py: seed old status=imported/totals=0 client_info import, first upload returns 200 and applies clients_updated=1, second upload of the same file also returns 200 instead of HTTP 400. The same_hash_imports output shows three imported records with the same hash.",
-        "priority": "HIGH"
-      }
-    ],
+    "critical": [],
     "minor": []
   },
   "frontend_issues": {
@@ -18,7 +12,10 @@
     "design_issues": []
   },
   "test_report_links": [
-    "/app/test_reports/iter49_api_edge_test.py",
+    "/app/test_reports/iter49_duplicate_hash_api_retest.py",
+    "/app/test_reports/iter49_duplicate_hash_api_retest.log",
+    "/app/test_reports/pytest/iter49_hash_bypass_retest.log",
+    "/app/test_reports/pytest/iter43_49_regression_retest.log",
     "/app/backend/tests/test_iteration_49_hash_bypass.py",
     "/app/backend/tests/test_iteration_43_open_docs_safety_guards.py",
     "/app/backend/tests/test_iteration_44_overdue_safety_guards.py",
@@ -28,25 +25,28 @@
     "/app/backend/tests/test_iteration_48_infoclientes_evolucao.py"
   ],
   "action_items": [
-    "In upload_import duplicate detection, search for any useful prior import for the same file_hash (status imported/accepted_with_warnings plus applied counters >0) before allowing bypass; do not rely on an unsorted find_one that may return an old silent-zero record.",
-    "Add a regression test for the exact sequence: old silent-zero same hash -> first reimport accepted/applies data -> immediate second upload of same file blocked with HTTP 400 'já foi importado'."
+    "No action required for the tested duplicate-hash import bug."
   ],
   "critical_code_review_comments": [
-    "/app/backend/modules/finance/routes.py lines 1925-1956 uses db.finance_imports.find_one({'file_hash': file_hash}) with no sort and no useful-status/applied filter. Since file_hash is not unique, once a silent-zero record and a useful reimport both exist, Mongo may return the silent-zero record and permanently bypass duplicate blocking for that hash.",
-    "Script dry-run was executed and created /tmp/finance_silent_zero_backup_20260725T113404Z.json without DB changes; current DB had 0 matching silent-zero candidates at that moment. Existing pytest covers --confirm preservation behavior. No APIs were MOCKED."
+    "/app/backend/modules/finance/routes.py now searches for a useful same-hash import with status imported/accepted_with_warnings plus applied counters directly in Mongo, so it no longer depends on an arbitrary file_hash find_one result.",
+    "Cleanup script /app/backend/scripts/mark_silent_zero_imports.py dry-run left DB unchanged; --confirm marked the seeded silent-zero import as rejected_silent_zero while preserving file_hash/original_file_path/totals and leaving guard finance_clients/finance_documents rows unchanged.",
+    "Working tree still contains main-agent product changes in backend/modules/finance/routes.py and backend/tests/test_iteration_49_hash_bypass.py plus unrelated untracked yarn/upload artifacts; only test/report files were added by this QA retest."
   ],
   "updated_files": [
-    "/app/test_reports/iter49_api_edge_test.py",
+    "/app/test_reports/iter49_duplicate_hash_api_retest.py",
+    "/app/test_reports/iter49_duplicate_hash_api_retest.log",
+    "/app/test_reports/pytest/iter49_hash_bypass_retest.log",
+    "/app/test_reports/pytest/iter43_49_regression_retest.log",
     "/app/test_reports/bug_verification_49.json",
     "/app/test_reports/iteration_49.json"
   ],
   "success_rate": {
-    "backend": "85%",
+    "backend": "100%",
     "frontend": "not tested (backend-only request)"
   },
-  "seed_data_creation": "Created temporary BUG49QA finance_client and old silent-zero finance_import directly in Mongo for API reproduction; script cleaned up BUG49QA imports/files/client afterward. Regression pytest created/cleaned its own TSTHB49 data.",
-  "retest_needed": true,
-  "should_main_agent_self_test": true,
-  "context_for_next_testing_agent": "Mandatory skill search used query 'reimportar ficheiros import hash upload financeiro'; no relevant testing skill found. Services were running. git status showed modified backend/modules/finance/routes.py and new backend/scripts/mark_silent_zero_imports.py and backend/tests/test_iteration_49_hash_bypass.py. Confirmed finance_imports indexes only _id_. Pytest command `python -m pytest tests/test_iteration_43_open_docs_safety_guards.py tests/test_iteration_44_overdue_safety_guards.py tests/test_iteration_46_import_preview.py tests/test_iteration_46b_detect_type.py tests/test_iteration_47_anomalies.py tests/test_iteration_48_infoclientes_evolucao.py tests/test_iteration_49_hash_bypass.py -q` passed 34/34. Direct API evidence: first upload after silent-zero returned 200 with clients_updated=1; second same-hash upload also returned 200, which is the remaining failure.",
-  "rca_of_the_issue": "The surgical bypass correctly distinguishes a single old silent-zero record from a useful import, but it only evaluates one arbitrary finance_imports document for the hash. With no unique index on file_hash, successful reimport creates a second same-hash record. Future duplicate checks can still read the older silent-zero record and allow unlimited reimports, instead of blocking because a useful imported record now exists."
+  "seed_data_creation": "Created temporary QA49R finance_imports/finance_clients/finance_documents data directly in Mongo and uploaded generated overdue-balances XLSX files via POST /api/finance/imports/overdue_balances. Test cleanup verified final QA49R imports/clients/documents counts were 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mandatory skill search used query 'ficheiros importar finance imports upload duplicate hash'; no relevant testing skill found. Inspected /app/memory/test_credentials.md, git status/log, /app/backend/modules/finance/routes.py lines 1901-1961, /app/backend/scripts/mark_silent_zero_imports.py, and /app/backend/tests/test_iteration_49_hash_bypass.py. Direct API evidence in /app/test_reports/iter49_duplicate_hash_api_retest.log: hash_bypass=200 with clients=1/documents=2, hash_sequential_second_reimport=400, hash_block=400, hash_edge_silent_plus_useful=400, cleanup_script confirm_status=rejected_silent_zero. Pytest evidence: iter49 5/5 passed and regression iter43-49 35/35 passed.",
+  "rca_of_the_issue": "Previous failure was caused by duplicate detection evaluating an arbitrary same-hash finance_imports document, allowing an old silent-zero record to mask a newer useful import. The current fix filters for useful same-hash records directly by status and applied counters, which matches the user-visible contract: re-upload is allowed only when previous imports for that file hash applied no clients/documents, and blocked once any useful import exists."
 }

@@ -190,6 +190,51 @@ class TestHashBypass:
         assert r.status_code == 400, r.text
         assert 'já foi importado' in r.json()['detail']
 
+    def test_second_reimport_blocked_when_first_reimport_was_useful(self, cleanup_test_imports):
+        """Regression para edge case bug_verification_49: silent-zero existe
+        E reimport bem-sucedido existe → segundo reimport deve ser bloqueado
+        (não pode olhar apenas para um doc arbitrário)."""
+        marker = uuid.uuid4().hex[:8]
+        content = _make_overdue_xlsx(marker, docs=2)
+        file_hash = hashlib.sha256(content).hexdigest()
+
+        # Seed 2 imports com mesmo hash: um silent-zero + um útil
+        async def _seed():
+            db = await _db()
+            base = {
+                'type': 'overdue_balances',
+                'source_method': 'manual_upload',
+                'file_hash': file_hash,
+                'uploaded_by': 'test',
+                'uploaded_at': datetime.now(timezone.utc).isoformat(),
+                'warnings': [], 'errors': [],
+            }
+            await db.finance_imports.insert_one({
+                **base,
+                'id': f'silent-{marker}',
+                'filename': f'{TEST_PREFIX}-silent-{marker}.xlsx',
+                'status': 'imported',
+                'totals': {'clients': 0, 'clients_updated': 0,
+                           'documents_created': 0, 'rows_processed': 3,
+                           'total_balance': 0, 'total_overdue': 0},
+            })
+            await db.finance_imports.insert_one({
+                **base,
+                'id': f'useful2-{marker}',
+                'filename': f'{TEST_PREFIX}-useful2-{marker}.xlsx',
+                'status': 'imported',
+                'totals': {'clients': 3, 'clients_updated': 3,
+                           'documents_created': 5, 'documents': 5,
+                           'rows_processed': 5, 'total_balance': 300,
+                           'total_overdue': 300},
+            })
+        asyncio.run(_seed())
+
+        # Upload mesmo hash → HTTP 400 (por causa do útil2)
+        r = _upload(content, 'overdue_balances', f'{TEST_PREFIX}-2nd-{marker}.xlsx')
+        assert r.status_code == 400, r.text
+        assert 'já foi importado' in r.json()['detail']
+
 
 # ============ CLEANUP SCRIPT ============
 

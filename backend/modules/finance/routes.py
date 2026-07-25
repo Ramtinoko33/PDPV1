@@ -1919,40 +1919,45 @@ async def upload_import(
     # Calcular hash
     file_hash = hashlib.sha256(content).hexdigest()
     
-    # Verificar duplicado — iter 49: só bloqueia se o import anterior foi
-    # realmente útil. Imports antigos com 0 clientes aplicados (bug silencioso
-    # da iter 48 e anteriores) NÃO devem bloquear uma nova tentativa.
-    existing = await db.finance_imports.find_one(
-        {"file_hash": file_hash},
-        {"_id": 0, "id": 1, "status": 1, "totals": 1, "type": 1, "uploaded_at": 1}
-    )
-    if existing:
-        _useful_status = existing.get("status") in (
+    # Verificar duplicado — iter 49: só bloqueia se EXISTIR já um import
+    # anterior com o mesmo hash QUE FOI ÚTIL (status imported/accepted +
+    # aplicou clientes ou documentos). Imports silenciosos (status util
+    # mas 0 clientes/docs aplicados) e imports rejected NÃO bloqueiam.
+    # A query filtra directamente por status + counters em vez de olhar
+    # para um doc arbitrário, para funcionar com múltiplos docs por hash.
+    _useful_query = {
+        "file_hash": file_hash,
+        "status": {"$in": [
             ImportStatus.IMPORTED.value,
             ImportStatus.ACCEPTED_WITH_WARNINGS.value,
-        )
-        _totals = existing.get("totals") or {}
-        # Considera "útil" se houver clientes actualizados / encontrados
-        # ou documentos criados. Compatível com todos os tipos.
-        _applied_any = (
-            (_totals.get("clients_updated") or 0) > 0
-            or (_totals.get("clients_found") or 0) > 0
-            or (_totals.get("documents_created") or 0) > 0
-            or (_totals.get("documents") or 0) > 0
-            or (_totals.get("clients") or 0) > 0
-        )
-        if _useful_status and _applied_any:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Este ficheiro já foi importado anteriormente "
-                    f"(id={existing.get('id')}, {existing.get('uploaded_at')})."
-                )
+        ]},
+        "$or": [
+            {"totals.clients_updated": {"$gt": 0}},
+            {"totals.clients_found": {"$gt": 0}},
+            {"totals.clients": {"$gt": 0}},
+            {"totals.documents_created": {"$gt": 0}},
+            {"totals.documents": {"$gt": 0}},
+        ],
+    }
+    existing_useful = await db.finance_imports.find_one(
+        _useful_query,
+        {"_id": 0, "id": 1, "uploaded_at": 1},
+        sort=[("uploaded_at", -1)],
+    )
+    if existing_useful:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Este ficheiro já foi importado anteriormente "
+                f"(id={existing_useful.get('id')}, {existing_useful.get('uploaded_at')})."
             )
-        # Caso contrário — import anterior ficou vazio/rejected — permite avançar.
+        )
+    # Log info se havia registos anteriores mas nenhum útil (para audit)
+    any_existing_count = await db.finance_imports.count_documents({"file_hash": file_hash})
+    if any_existing_count:
         logger.info(
-            f"Reimport do file_hash {file_hash[:12]}… permitido (import anterior "
-            f"{existing.get('id')} status={existing.get('status')} sem dados úteis)."
+            f"Reimport do file_hash {file_hash[:12]}… permitido "
+            f"({any_existing_count} registo(s) anterior(es), todos silenciosos/rejected)."
         )
     
     now = datetime.now(timezone.utc).isoformat()
