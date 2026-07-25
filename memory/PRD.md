@@ -55,15 +55,12 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 Ver `/app/memory/test_credentials.md`.
 
 ## Últimas alterações
-- **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix (bug produção)**:
-  - **Fix parsers**: `client_info_parser.py` e `evolution_parser.py` agora reconhecem `Conta` como coluna de código de cliente (era `CodCliente`/`CODCLIENTE` apenas → ficheiros reais GENES não passavam). Bug produção: ficheiros infocliente_24_07 (28.641 linhas) e evolucaocredito3em3meses_24_07 (580 linhas) mostravam 0/0 em Importado (import silencioso).
-  - **Guard silent-zero**: `process_client_info_import` e `process_credit_evolution_import` rejeitam com status='rejected' se >10 linhas processadas resultarem em 0 clientes. Mensagem clara "Nenhum cliente encontrado."
-  - **Enriquecimento completo InfoClientes**: `saldo_conta`, `saldo_efec`, `saldo_desc`, `saldo_dev`, `carteira`, `domiciliacoes`, `risco_raw`, `risco_validado`, `risco_placeholder` (detecta >1M€), `albaranado`, `forma_pagamento`, `eventos_raw`, `last_infoclientes_import_id`.
-  - **Persistência Evolução**: coleção `finance_credit_evolution` com formato `{genes_code, client_name, periods:{03-2025:..., ..., 06-2026:...}, last_import_id, updated_at}`.
-  - **Novo endpoint** `GET /api/finance/clients/{id}/credit-evolution` → devolve series ordenada, peak, quarter_diff_abs/pct, trend (up/down/stable).
-  - **Card na ficha do cliente**: "Evolução Crédito (trimestral)" com mini-gráfico Recharts 6 pontos, 4 métricas (Último, Δ abs, Δ pct, Maior exposição) e badge de tendência.
-  - **Counters detalhados no histórico**: `rows_processed`, `clients_found`, `clients_matched`, `clients_updated`, `clients_ignored`, `documents_created`, `periods`. `ImportTotals` Pydantic com `extra='allow'` para serializar tudo. Frontend `FinanceImports.js` mostra `clients_updated` (não 0).
-  - Testes: `test_iteration_48_infoclientes_evolucao.py` (7/7 verdes com ficheiros REAIS). Regressão iter 43+44+46+47: 30/30. Bug_testing_agent: 100% backend + 100% frontend após 2 iterações.
+- **Feb 2026 (iter 49) — Hash bypass para reimport + cleanup silent-zero**:
+  - **Fix cirúrgico do duplicate-check**: `POST /api/finance/imports/{type}` refactoriza a verificação de hash. Antes bloqueava qualquer duplicado; agora só bloqueia se existir um import prévio ÚTIL (status IN {imported, accepted_with_warnings} E `clients_updated>0` OU `clients_found>0` OU `clients>0` OU `documents_created>0` OU `documents>0`). Imports silenciosos antigos (bug iter 48 com 0/0) deixam de bloquear reimports legítimos. Query directa em Mongo com filtro composto (não dependente de find_one arbitrário) — resolveu edge case identificado no primeiro retest onde silent-zero + útil coexistiam.
+  - **Script cleanup produção**: `backend/scripts/mark_silent_zero_imports.py` (dry-run/--confirm). Marca imports com rows_processed>10 + clients_updated=0 + documents_created=0 como `status='rejected_silent_zero'` preservando file_hash, original_file_path, totals, warnings. Dump JSON audit sempre em `/tmp/finance_silent_zero_backup_<ts>.json`. Nunca toca `finance_clients`/`finance_documents`/`finance_credit_evolution`.
+  - Confirmado que NÃO existe unique index em `file_hash` — só check aplicacional (sem risco de colisão técnica ao reimportar).
+  - Testes: `test_iteration_49_hash_bypass.py` (5/5 verdes: bypass, block, edge case, dry-run, confirm). Regressão total: **35/35 verdes**. Bug_testing_agent 2 iterações: 1ª detectou edge case, 2ª verdict `fixed` 100%.
+- **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix (bug produção)**: parsers reconhecem `Conta`, guard silent-zero, enriquecimento de 13 campos incluindo `risco_placeholder`, persistência em `finance_credit_evolution`, card na ficha do cliente, counters detalhados.
 - **Feb 2026 (iter 47) — Dashboard de Anomalias**: página + badge + validação com comentário.
 - **Feb 2026 (iter 46) — Import UX Hardening**: cleanup + modal pré-aprovação + detecção de tipo.
 - **Feb 2026 (iter 45) — Frontend Hardening**: stale-closure em `QuickCommunicationPanel.js`.
