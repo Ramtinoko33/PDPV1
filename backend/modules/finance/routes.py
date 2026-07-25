@@ -1919,10 +1919,41 @@ async def upload_import(
     # Calcular hash
     file_hash = hashlib.sha256(content).hexdigest()
     
-    # Verificar duplicado
-    existing = await db.finance_imports.find_one({"file_hash": file_hash}, {"_id": 0, "id": 1})
+    # Verificar duplicado — iter 49: só bloqueia se o import anterior foi
+    # realmente útil. Imports antigos com 0 clientes aplicados (bug silencioso
+    # da iter 48 e anteriores) NÃO devem bloquear uma nova tentativa.
+    existing = await db.finance_imports.find_one(
+        {"file_hash": file_hash},
+        {"_id": 0, "id": 1, "status": 1, "totals": 1, "type": 1, "uploaded_at": 1}
+    )
     if existing:
-        raise HTTPException(status_code=400, detail="Este ficheiro já foi importado anteriormente")
+        _useful_status = existing.get("status") in (
+            ImportStatus.IMPORTED.value,
+            ImportStatus.ACCEPTED_WITH_WARNINGS.value,
+        )
+        _totals = existing.get("totals") or {}
+        # Considera "útil" se houver clientes actualizados / encontrados
+        # ou documentos criados. Compatível com todos os tipos.
+        _applied_any = (
+            (_totals.get("clients_updated") or 0) > 0
+            or (_totals.get("clients_found") or 0) > 0
+            or (_totals.get("documents_created") or 0) > 0
+            or (_totals.get("documents") or 0) > 0
+            or (_totals.get("clients") or 0) > 0
+        )
+        if _useful_status and _applied_any:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Este ficheiro já foi importado anteriormente "
+                    f"(id={existing.get('id')}, {existing.get('uploaded_at')})."
+                )
+            )
+        # Caso contrário — import anterior ficou vazio/rejected — permite avançar.
+        logger.info(
+            f"Reimport do file_hash {file_hash[:12]}… permitido (import anterior "
+            f"{existing.get('id')} status={existing.get('status')} sem dados úteis)."
+        )
     
     now = datetime.now(timezone.utc).isoformat()
     import_id = str(uuid.uuid4())

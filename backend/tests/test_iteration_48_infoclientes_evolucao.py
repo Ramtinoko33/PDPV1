@@ -57,6 +57,26 @@ DB_NAME = os.environ['DB_NAME']
 INFOCLIENTE_FILE = Path('/tmp/infocliente.xlsx')
 EVOLUCAO_FILE = Path('/tmp/evolucao.xlsx')
 
+INFOCLIENTE_URL = 'https://customer-assets-4nw71qhi.emergentagent.net/job_9a8fb2b3-6c4b-425c-8e6e-1e9af4e65d07/artifacts/dygn8abl_infocliente_24_07.xlsx'
+EVOLUCAO_URL = 'https://customer-assets-4nw71qhi.emergentagent.net/job_9a8fb2b3-6c4b-425c-8e6e-1e9af4e65d07/artifacts/7omvqrke_evolu%C3%A7aocredito3em3meses_24_07.xlsx'
+
+
+def _ensure_files():
+    """Download real fixtures se não existirem em /tmp (container restart)."""
+    if not INFOCLIENTE_FILE.exists():
+        r = requests.get(INFOCLIENTE_URL, timeout=60)
+        r.raise_for_status()
+        INFOCLIENTE_FILE.write_bytes(r.content)
+    if not EVOLUCAO_FILE.exists():
+        r = requests.get(EVOLUCAO_URL, timeout=60)
+        r.raise_for_status()
+        EVOLUCAO_FILE.write_bytes(r.content)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _ensure_real_files():
+    _ensure_files()
+
 session = requests.Session()
 session.headers.update({'Content-Type': 'application/json'})
 
@@ -214,9 +234,12 @@ class TestSilentZeroGuard:
 
 @pytest.fixture
 def seed_matching_client():
-    """Cria um finance_clients com o genes_code do primeiro cliente do ficheiro real."""
+    """Cria um finance_clients com o genes_code do primeiro cliente do ficheiro real.
+    Garante limpeza prévia para evitar colisão com clientes de outros testes."""
     async def _go():
         db = await _db()
+        # Remove qualquer cliente residual com este genes_code de runs anteriores.
+        await db.finance_clients.delete_many({'genes_code': '2111102130'})
         cid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         await db.finance_clients.insert_one({
@@ -236,7 +259,7 @@ def seed_matching_client():
     yield cid
     async def _cleanup():
         db = await _db()
-        await db.finance_clients.delete_one({'id': cid})
+        await db.finance_clients.delete_many({'genes_code': '2111102130'})
     asyncio.run(_cleanup())
 
 
