@@ -55,7 +55,20 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 Ver `/app/memory/test_credentials.md`.
 
 ## Últimas alterações
-- **Feb 2026 (iter 50) — Code review hardening leve (surgical)**:
+- **Feb 2026 (iter 51) — CodPersona banido + merge de duplicados**:
+  - **Bug reportado**: PROEF Eurico Ferreira aparecia como 3 clientes distintos (`163` correcto com docs, `2111100163` errado com Carteira/Evolução, `120` errado do CodPersona) porque parsers usavam CodPersona ou Conta inteira como `genes_code`.
+  - **Fix parsers**: novo `parsers/account_normalizer.py` com regex `^21111(\d+)$` + lstrip('0'). `documents_parser.py` deixa de usar CodPersona; `client_info_parser.py` e `evolution_parser.py` só aceitam Conta normalizada ou CodCliente explícito (que não começa por 21111). CodPersona banido de fallback.
+  - **Filtro `GET /clients`**: exclui `is_merged_duplicate=True`.
+  - **Script `merge_duplicate_finance_clients.py`**: dry-run/--confirm + backup JSON em `/tmp/finance_merge_backup_<ts>.json`. Detecta duplicados por (a) `genes_code` padrão 21111NNN, (b) fallback via `account`/`genes_account`/`conta` do doc (cobre o caso PROEF `genes_code='120'` + `account='2111100163'` → master `163`). Migra 7 colecções (`finance_credit_evolution`, `finance_documents`, `finance_actions`, `finance_promises`, `finance_regularizations`, `finance_tasks`, `finance_block_requests`), preserva valores do master em conflitos, colapsa evoluções duplicadas mantendo a mais recente. Marca duplicados com `is_merged_duplicate=True` + `merged_into` + `merged_at` + `merge_conflicts` (nunca apaga).
+  - **Testes**: `test_iteration_51_conta_merge.py` (7/7 verdes incl. cenário PROEF exacto). Iters 43+48 actualizados para o novo formato numérico. Regressão total: **43/43**. Bug_testing_agent 2 iterações: 1ª detectou 3 gaps, 2ª verdict `fixed` 100% backend.
+- **Feb 2026 (iter 50) — Code Review Hardening Leve**.
+- **Feb 2026 (iter 49) — Hash bypass reimport + cleanup silent-zero**.
+- **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix**.
+- **Feb 2026 (iter 47) — Dashboard de Anomalias**.
+- **Feb 2026 (iter 46) — Import UX Hardening**.
+- **Feb 2026 (iter 45) — Frontend Hardening**.
+- **Feb 2026 (iter 44) — Safety guard OVERDUE_BALANCES**.
+- **Feb 2026 (iter 43) — Safety guards OPEN_DOCUMENTS + fix wipe catastrófico**.
   - **`eval()` confirmado falso positivo**: grep em `assistencias/routes.py` mostra 0 ocorrências (linha 386 é apenas o header do endpoint `/records/{id}/photo/{kind}`). CI guard `test_no_dangerous_eval.py` continua verde. Nenhuma alteração runtime.
   - **Hooks stale closures**: revisão de `TasksEffectiveness.js`, `Regularizations.js`, `NotificationContext.js` — todos com `useCallback`/`useEffect`/`useMemo` correctos. Avisos originais eram falsos positivos do linter (deps estáticas como `axios`/`API_URL`/`URLSearchParams` que são constantes de módulo). ESLint limpo. Nenhuma alteração.
   - **Empty catch em `FinanceClients.js:262`**: substituído por `console.warn` + `toast.error` amigável no fluxo de exportação Excel. Import `toast` de sonner adicionado.
