@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -259,7 +260,10 @@ const FinanceClients = () => {
                 a.download = `clientes_finance_${new Date().toISOString().slice(0,10)}.xlsx`;
                 a.click();
                 URL.revokeObjectURL(url);
-              } catch { /* silencioso */ }
+              } catch (err) {
+                console.warn('Falha na exportação Excel:', err);
+                toast.error('Não foi possível exportar o ficheiro');
+              }
             }}
             data-testid="clients-export-btn"
           >

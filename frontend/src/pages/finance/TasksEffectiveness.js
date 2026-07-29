@@ -474,7 +474,7 @@ function ReasonList({ title, items, testid, raw = false }) {
         ) : (
           <div className="space-y-2">
             {items.map((r, i) => (
-              <div key={i} className="flex items-center justify-between text-sm">
+              <div key={r.reason || `item-${i}`} className="flex items-center justify-between text-sm">
                 <span className="text-slate-700">{raw ? r.reason : (REASON_LABELS[r.reason] || r.reason)}</span>
                 <Badge className="bg-slate-100 text-slate-700">{r.count}</Badge>
               </div>

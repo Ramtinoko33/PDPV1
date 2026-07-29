@@ -55,7 +55,21 @@ Plataforma interna full-stack para gestão de tickets de assistência e CRM Fina
 Ver `/app/memory/test_credentials.md`.
 
 ## Últimas alterações
-- **Feb 2026 (iter 49) — Hash bypass para reimport + cleanup silent-zero**:
+- **Feb 2026 (iter 50) — Code review hardening leve (surgical)**:
+  - **`eval()` confirmado falso positivo**: grep em `assistencias/routes.py` mostra 0 ocorrências (linha 386 é apenas o header do endpoint `/records/{id}/photo/{kind}`). CI guard `test_no_dangerous_eval.py` continua verde. Nenhuma alteração runtime.
+  - **Hooks stale closures**: revisão de `TasksEffectiveness.js`, `Regularizations.js`, `NotificationContext.js` — todos com `useCallback`/`useEffect`/`useMemo` correctos. Avisos originais eram falsos positivos do linter (deps estáticas como `axios`/`API_URL`/`URLSearchParams` que são constantes de módulo). ESLint limpo. Nenhuma alteração.
+  - **Empty catch em `FinanceClients.js:262`**: substituído por `console.warn` + `toast.error` amigável no fluxo de exportação Excel. Import `toast` de sonner adicionado.
+  - **Array-index key em `TasksEffectiveness.js:477`**: substituído `key={i}` por `key={r.reason || 'item-${i}'}` no `ReasonList` (id natural do próprio motivo). Outros sítios apontados são casos legítimos (listas append-only de formulário com `eslint-disable` documentado ou display read-only) — não alterados.
+  - **Nested ternaries críticos em `TicketDetail.js`**: user pediu para NÃO fazer refactor do TicketDetail (fica para sprint técnico separado). Nested ternaries não afectam funcionalidade — apenas legibilidade. Adiado.
+  - **Rejeitado explicitamente pelo user**: split de AdminSettings/TicketDetail/IntakePage/Layout/NotificationContext, refactor de `parse_client_info()` (acabou de ser tocado na iter 48), migração localStorage→httpOnly cookies (breaking auth), alteração de credenciais de teste (preview-only, sem risco).
+  - Testes regressão iter 43+44+49+eval CI: **14/14 verdes**. Frontend HTTP 200. Nenhuma alteração funcional.
+- **Feb 2026 (iter 49) — Hash bypass reimport + cleanup silent-zero**.
+- **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix**.
+- **Feb 2026 (iter 47) — Dashboard de Anomalias**.
+- **Feb 2026 (iter 46) — Import UX Hardening**.
+- **Feb 2026 (iter 45) — Frontend Hardening**.
+- **Feb 2026 (iter 44) — Safety guard OVERDUE_BALANCES**.
+- **Feb 2026 (iter 43) — Safety guards OPEN_DOCUMENTS + fix wipe catastrófico**.
   - **Fix cirúrgico do duplicate-check**: `POST /api/finance/imports/{type}` refactoriza a verificação de hash. Antes bloqueava qualquer duplicado; agora só bloqueia se existir um import prévio ÚTIL (status IN {imported, accepted_with_warnings} E `clients_updated>0` OU `clients_found>0` OU `clients>0` OU `documents_created>0` OU `documents>0`). Imports silenciosos antigos (bug iter 48 com 0/0) deixam de bloquear reimports legítimos. Query directa em Mongo com filtro composto (não dependente de find_one arbitrário) — resolveu edge case identificado no primeiro retest onde silent-zero + útil coexistiam.
   - **Script cleanup produção**: `backend/scripts/mark_silent_zero_imports.py` (dry-run/--confirm). Marca imports com rows_processed>10 + clients_updated=0 + documents_created=0 como `status='rejected_silent_zero'` preservando file_hash, original_file_path, totals, warnings. Dump JSON audit sempre em `/tmp/finance_silent_zero_backup_<ts>.json`. Nunca toca `finance_clients`/`finance_documents`/`finance_credit_evolution`.
   - Confirmado que NÃO existe unique index em `file_hash` — só check aplicacional (sem risco de colisão técnica ao reimportar).
