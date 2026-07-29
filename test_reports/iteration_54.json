@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 54 — Frontend UI /finance/merge-duplicates end-to-end validated as OWNER (admin@pdpv.pt). Seeded a master (genes_code=95401) + duplicate (genes_code=DUP95401, account=21111 95401 zfilled) with a linked finance_open_document, then exercised the full human flow via UI: navigate → dry-run → detail tiles/TTL/status → search filter → open confirm dialog → APROVAR gating → apply → applied summary → status transitions → DB proof.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/seed_iter54_merge.py",
+    "/app/test_reports/screenshots/iter54b_01_detail.jpeg",
+    "/app/test_reports/screenshots/iter54b_02_dialog.jpeg",
+    "/app/test_reports/screenshots/iter54b_03_applied.jpeg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MergeDuplicates.js (~628 lines) is at the upper end of maintainable size; consider extracting GroupCard/DupRow/StatusBadge/TTLCountdown into /components/finance/merge/*.jsx.",
+    "canView check uses `user?.finance_role === 'OWNER' || user?.role === 'ADMIN'`; note that a user with finance_role='FINANCE_REVIEWER' correctly gets read-only but the isOwner flag is derived only from OWNER|ADMIN — this is fine, but pointing out that ADMIN role is being treated as OWNER on the frontend; verify backend still enforces OWNER-only for POSTs (backend tests already cover this).",
+    "The TTL countdown re-renders every 1s via setInterval and setNow — inexpensive but consider stopping when status !== 'pending'."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not tested this iter — iter 53 backend already 8/8 green)", "frontend": "100%"},
+  "test_credentials": "admin@pdpv.pt / HCNMEnKMLq (OWNER)",
+  "seed_data_creation": "Seeded via /app/test_reports/seed_iter54_merge.py: finance_clients {id=iter54-master-*, genes_code=95401} + {id=iter54-dup-*, genes_code=DUP95401, account=2111195401} and finance_open_documents {genes_code=DUP95401, doc_key=DUP95401_95401/1}. Post-merge cleanup executed (0 residuals).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The UI /finance/merge-duplicates is fully functional. Dry-run detection requires the DUPLICATE to have either genes_code or account matching the pattern 21111\\d+ (numeric suffix only) — the initial seed with suffix 'TSTU1' produced 0 duplicates because `normalize_account_to_client_code` requires digits. Use numeric suffix like '95401' to seed test data. All data-testid selectors are stable and correctly named.",
+  "verified_behaviours": {
+    "navigation_to_/finance/merge-duplicates": "OK (data-testid=merge-duplicates-page)",
+    "warning_banner_present": "OK (merge-warning)",
+    "generate_dryrun_btn_click_creates_report_and_auto_opens_detail": "OK",
+    "success_toast_shown_on_dryrun": "OK ('Dry-run gerado — 1 duplicado(s), 1 conflito(s) preservado(s).')",
+    "detail_summary_tiles_all_4_present": "OK (masters=1, duplicados=1, conflitos-preservados=1, grupos-com-merge=1)",
+    "TTL_countdown_visible_pending": "OK (data-testid=merge-ttl)",
+    "status_pending_badge": "OK (merge-status-pending)",
+    "seeded_group_appears": "OK (merge-group-<master_id>, merge-dup-<dup_id>)",
+    "search_input_filters_groups_by_genes_code": "OK ('95401' → 1, garbage → 0)",
+    "open_confirm_btn_visible_when_pending+TTL+dup>0": "OK",
+    "confirm_dialog_opens": "OK (merge-confirm-dialog)",
+    "apply_btn_disabled_when_empty": "TRUE",
+    "apply_btn_disabled_for_'aprovar'_lowercase": "TRUE",
+    "apply_btn_disabled_for_'APROVA'_partial": "TRUE",
+    "apply_btn_enabled_for_exact_'APROVAR'": "TRUE",
+    "apply_click_calls_confirm_endpoint_and_shows_applied_summary": "OK",
+    "status_transitions_to_applied": "OK (2 merge-status-applied badges — detail + list row)",
+    "open_confirm_btn_disappears_after_apply": "OK (cannot re-apply)",
+    "reports_list_row_shows_applied_masters_dup_conflicts_and_applied_by": "OK",
+    "mongo_persistence_proof_dup.is_merged_duplicate": "TRUE",
+    "mongo_persistence_proof_dup.merged_into": "= master_id",
+    "mongo_persistence_proof_open_documents_remapped_to_master_genes_code": "OK (1 doc under genes_code=95401, 0 orphans under DUP95401)",
+    "mongo_persistence_proof_doc_key_rebuilt": "OK (95401_95401/1 — no DUP prefix)"
+  },
+  "rca of the issue": "n/a — no bugs found."
+}

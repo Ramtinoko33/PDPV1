@@ -11,3 +11,4 @@ export { default as FinancePromises } from './FinancePromises';
 export { default as Regularizations } from './Regularizations';
 export { default as BlockRequests } from './BlockRequests';
 export { default as FinanceSettings } from './FinanceSettings';
+export { default as MergeDuplicates } from './MergeDuplicates';

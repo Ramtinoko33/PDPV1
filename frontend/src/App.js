@@ -44,7 +44,8 @@ import {
   FinancePromises,
   Regularizations,
   BlockRequests,
-  FinanceSettings
+  FinanceSettings,
+  MergeDuplicates
 } from "./pages/finance";
 import Layout from "./components/Layout";
 
@@ -297,6 +298,11 @@ function AppRoutes() {
       <Route path="/finance/settings" element={
         <ProtectedRoute requireFinanceAccess>
           <FinanceSettings />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/merge-duplicates" element={
+        <ProtectedRoute requireFinanceAccess>
+          <MergeDuplicates />
         </ProtectedRoute>
       } />
       

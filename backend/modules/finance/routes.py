@@ -3461,6 +3461,7 @@ async def merge_duplicates_dry_run(
         'status': 'pending',   # pending | applied | expired
         'ttl_minutes': MERGE_REPORT_TTL_MIN,
         'expires_at': (now + timedelta(minutes=MERGE_REPORT_TTL_MIN)).isoformat(),
+        'plan_summary': plan['summary'],   # copiado para listagem sem carregar `plan`
         'plan': plan,
     }
     await db.finance_merge_reports.insert_one(dict(report))
@@ -3485,9 +3486,9 @@ async def merge_duplicates_dry_run(
 @router.get("/merge-duplicates/reports/{report_id}")
 async def get_merge_report(
     report_id: str,
-    current_user: dict = Depends(require_finance_owner),
+    current_user: dict = Depends(require_finance_reviewer),
 ):
-    """OWNER-only. Consulta um relatório de merge anterior."""
+    """OWNER + FINANCE_REVIEWER podem consultar um relatório anterior."""
     report = await db.finance_merge_reports.find_one({'id': report_id}, {'_id': 0})
     if not report:
         raise HTTPException(404, 'Relatório não encontrado')
@@ -3497,9 +3498,9 @@ async def get_merge_report(
 @router.get("/merge-duplicates/reports")
 async def list_merge_reports(
     limit: int = Query(20, ge=1, le=100),
-    current_user: dict = Depends(require_finance_owner),
+    current_user: dict = Depends(require_finance_reviewer),
 ):
-    """OWNER-only. Lista os últimos relatórios de merge."""
+    """OWNER + FINANCE_REVIEWER podem listar relatórios (sem payload grande)."""
     cursor = db.finance_merge_reports.find(
         {}, {'_id': 0, 'plan': 0}   # esconde o payload grande na listagem
     ).sort('created_at', -1).limit(limit)

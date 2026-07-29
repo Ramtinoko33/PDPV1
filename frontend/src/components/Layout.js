@@ -33,6 +33,7 @@ import {
   Coins,
   Ban,
   SlidersHorizontal,
+  GitMerge,
   Sparkles,
   AlertTriangle
 } from 'lucide-react';
@@ -222,6 +223,7 @@ const Layout = ({ children }) => {
         { path: '/finance/imports', label: 'Importações', icon: FileSpreadsheet, roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCE_ONLY'] },
         { path: '/finance/anomalies', label: 'Anomalias', icon: AlertTriangle, roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCE_ONLY'] },
         { path: '/finance/settings', label: 'Configurações', icon: SlidersHorizontal, roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCE_ONLY'], financeRoles: ['OWNER'] },
+        { path: '/finance/merge-duplicates', label: 'Merge Duplicados', icon: GitMerge, roles: ['ADMIN', 'SUPERVISOR', 'AGENT', 'FINANCE_ONLY'], financeRoles: ['OWNER', 'FINANCE_REVIEWER'] },
       ]
     },
     {
