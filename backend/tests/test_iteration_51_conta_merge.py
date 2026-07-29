@@ -308,7 +308,10 @@ class TestMergeScript:
             assert dup['merged_into'] == master_id
             assert dup['merged_into_genes_code'] == '9163'
             assert 'merged_at' in dup and dup['merged_by'] == 'merge_script_iter51'
-            assert any('finance_email' in c for c in dup.get('merge_conflicts', []))
+            assert any(
+                isinstance(c, dict) and c.get('field') == 'finance_email'
+                for c in dup.get('merge_conflicts', [])
+            )
 
             # Evolution migrada
             assert evo is not None

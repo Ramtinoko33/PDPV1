@@ -77,6 +77,13 @@ Ver `/app/memory/test_credentials.md`.
   - **Rejeitado explicitamente pelo user**: split de AdminSettings/TicketDetail/IntakePage/Layout/NotificationContext, refactor de `parse_client_info()` (acabou de ser tocado na iter 48), migração localStorage→httpOnly cookies (breaking auth), alteração de credenciais de teste (preview-only, sem risco).
   - Testes regressão iter 43+44+49+eval CI: **14/14 verdes**. Frontend HTTP 200. Nenhuma alteração funcional.
 - **Feb 2026 (iter 49) — Hash bypass reimport + cleanup silent-zero**.
+- **Feb 2026 (iter 52) — Merge Script P0 hardening (pré-deploy PROD)**.
+  - `backend/scripts/merge_duplicate_finance_clients.py` agora inclui `finance_open_documents` no remapeamento por `genes_code` **e reconstrói `doc_key = "<genes_code>_<document_number>"`** com o code do master, garantindo consistência para importações posteriores.
+  - Precedência do master é ABSOLUTA em todos os campos sensíveis (saldo_conta/efec/desc/dev, carteira, domiciliações, risco_raw/validado/placeholder, albaranado, forma_pagamento, eventos_raw, finance_email/mobile/phone/contact_*, customer_segment, portfolio, risk_*, credit_trend_*, annual_revenue, insured_risk_value, risk_percentage, genes_account, last_infoclientes_import_id): master vazio + dup preenchido → migra; master preenchido + dup diferente → preserva master + regista conflict; master preenchido + dup vazio → não mexe.
+  - Conflitos são estruturados como `{field, master_value, duplicate_value, action:'preserved_master', reason}` e ficam no `merge_conflicts` do duplicado, no relatório stdout (`MIGRATE→MASTER` + `CONFLICT`) e no dump JSON de auditoria (`/tmp/finance_merge_backup_<ts>.json` com `summary/conflicts/groups`).
+  - Contador `remap_stats` no final do `--confirm` reporta quantos docs foram remapeados por colecção+chave.
+  - Testes: `test_iteration_52_merge_open_docs_and_master_precedence.py` (6/6 verdes: docs+doc_key, precedência+conflicts estruturados, credit_evolution migrada, dup escondido em `/api/finance/clients`, backup JSON auditável, master intocado quando dup vazio) + regressão iter 51 (7/7). Soft-merge preservado.
+
 - **Feb 2026 (iter 48) — InfoClientes + Evolução Crédito Fix**.
 - **Feb 2026 (iter 47) — Dashboard de Anomalias**.
 - **Feb 2026 (iter 46) — Import UX Hardening**.
