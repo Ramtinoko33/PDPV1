@@ -104,8 +104,9 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
                 return None
             
             # Iter 51: NUNCA usar CodPersona/Conta inteira. Extrair código
-            # do cliente do sufixo da Conta (21111NNN → NNN).
-            raw_code = str(get_val(['CodCliente', 'Cod Cliente', 'CodPersona']) or '').strip()
+            # do cliente do sufixo da Conta (21111NNN → NNN). Só aceitamos
+            # CodCliente explícito como fallback — CodPersona é banido.
+            raw_code = str(get_val(['CodCliente', 'Cod Cliente']) or '').strip()
             account_raw = str(get_val(['Conta']) or '').strip()
             genes_code = normalize_account_to_client_code(account_raw)
             # Se não temos Conta reconhecível mas temos CodCliente explícito,

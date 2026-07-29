@@ -208,6 +208,73 @@ class TestMergeScript:
         finally:
             self._cleanup(master_id, dup_id, '89163', '2111189163')
 
+
+    def test_proef_scenario_codpersona_dup_merged_by_account_field(self):
+        """Cenário EXACTO do bug: duplicado com genes_code='120' mas
+        account='2111105163' deve ser fundido no master '5163' via
+        inferência do sufixo da Conta contabilística."""
+        async def _seed():
+            db = await _db()
+            master_id = str(uuid.uuid4())
+            dup_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            base = {
+                'name': 'PROEF EURICO FERREIRA',
+                'overdue_balance_collectable': 0,
+                'oldest_overdue_days': 0,
+                'financial_status': 'OK',
+                'is_blocked': False,
+                'manual_marks': [],
+                'created_at': now,
+                'updated_at': now,
+            }
+            await db.finance_clients.insert_one({
+                **base, 'id': master_id, 'genes_code': '5163',
+            })
+            await db.finance_clients.insert_one({
+                **base, 'id': dup_id, 'genes_code': '120',
+                'account': '2111105163',
+                'genes_account': '2111105163',
+                'carteira': 44109.18,
+            })
+            await db.finance_credit_evolution.insert_one({
+                'genes_code': '120', 'client_name': 'PROEF',
+                'periods': {'03-2026': 100},
+                'updated_at': now,
+            })
+            return master_id, dup_id
+        master_id, dup_id = asyncio.run(_seed())
+        try:
+            r = subprocess.run(
+                [sys.executable, self.SCRIPT, '--confirm'],
+                capture_output=True, text=True, timeout=45,
+            )
+            assert r.returncode == 0, r.stderr
+
+            async def _check():
+                db = await _db()
+                master = await db.finance_clients.find_one({'id': master_id})
+                dup = await db.finance_clients.find_one({'id': dup_id})
+                evo_master = await db.finance_credit_evolution.find_one({'genes_code': '5163'})
+                evo_dup = await db.finance_credit_evolution.find_one({'genes_code': '120'})
+                return master, dup, evo_master, evo_dup
+            master, dup, evo_master, evo_dup = asyncio.run(_check())
+
+            assert master['carteira'] == 44109.18, master
+            assert dup['is_merged_duplicate'] is True, dup
+            assert dup['merged_into'] == master_id, dup
+            assert dup['merged_into_genes_code'] == '5163', dup
+            assert evo_master is not None, 'Evolution não migrou para o master'
+            assert evo_dup is None, 'Evolution original ainda existe no genes_code errado'
+        finally:
+            async def _cleanup():
+                db = await _db()
+                await db.finance_clients.delete_many({'id': {'$in': [master_id, dup_id]}})
+                await db.finance_credit_evolution.delete_many(
+                    {'genes_code': {'$in': ['120', '5163']}}
+                )
+            asyncio.run(_cleanup())
+
     def test_confirm_merges_and_marks_duplicate(self):
         # Usa formato numérico real (só dígitos após 21111)
         master_id, dup_id = self._seed_pair('9163', '21111009163', 'PROEF MERGE')

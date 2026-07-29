@@ -57,7 +57,7 @@ CLIENT_REF_COLLECTIONS_BY_ID = [
     'finance_promises',
     'finance_regularizations',
     'finance_tasks',
-    'finance_blocks',
+    'finance_block_requests',
 ]
 
 # Campos "financial contacts" que só copiamos se master estiver vazio
@@ -99,8 +99,18 @@ async def _find_duplicate_groups(db) -> List[Dict[str, Any]]:
         code = c.get('genes_code') or ''
         if not code or c.get('is_merged_duplicate'):
             continue
-        # Candidato a duplicado: código bate com padrão 21111NNN
+        # Candidato a duplicado: 3 caminhos para inferir o sufixo
+        #   (a) genes_code = 21111NNN → sufixo NNN
+        #   (b) account/genes_account = 21111NNN → sufixo NNN
+        #       (caso PROEF: genes_code='120' mas account='2111100163' → 163)
         suffix = normalize_account_to_client_code(code)
+        if not suffix:
+            for account_field in ('account', 'genes_account', 'conta'):
+                acc = c.get(account_field)
+                if acc:
+                    suffix = normalize_account_to_client_code(acc)
+                    if suffix:
+                        break
         if not suffix or suffix == code:
             continue
         # Procura master
