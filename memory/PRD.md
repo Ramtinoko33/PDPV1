@@ -77,6 +77,13 @@ Ver `/app/memory/test_credentials.md`.
   - **Rejeitado explicitamente pelo user**: split de AdminSettings/TicketDetail/IntakePage/Layout/NotificationContext, refactor de `parse_client_info()` (acabou de ser tocado na iter 48), migração localStorage→httpOnly cookies (breaking auth), alteração de credenciais de teste (preview-only, sem risco).
   - Testes regressão iter 43+44+49+eval CI: **14/14 verdes**. Frontend HTTP 200. Nenhuma alteração funcional.
 - **Feb 2026 (iter 49) — Hash bypass reimport + cleanup silent-zero**.
+- **Feb 2026 (iter 54) — UI Merge Duplicados (frontend)**.
+  - Nova página em `/app/frontend/src/pages/finance/MergeDuplicates.js` registada em `App.js` como `/finance/merge-duplicates` (`requireFinanceAccess`) e no sidebar `Layout.js` (icon `GitMerge`, `financeRoles=['OWNER','FINANCE_REVIEWER']`).
+  - GET endpoints `/reports` e `/reports/{id}` relaxados para `require_finance_reviewer` (permite reviewer consultar; POSTs continuam OWNER-only). Novo campo `plan_summary` no report para listagem sem carregar `plan`.
+  - UI: banner de aviso obrigatório, botão "Gerar dry-run" (OWNER), tabela de últimos relatórios (data / estado / masters / duplicados / conflitos / criado por / aplicado por), card de detalhe com 4 tiles de summary + TTL countdown ao segundo + StatusBadge, ScrollArea de conflitos preservados com master↔dup + valor master preservado (verde) + valor duplicado (line-through), grupos master↔duplicado colapsíveis, pesquisa por nome/genes_code/master_id/duplicate_id, dialog de confirmação com input `merge-confirmation-input` que só activa o botão quando o texto é exactamente `APROVAR`. Após aplicar, Alert verde `merge-applied-summary` com stats por colecção, botão de re-aplicar desaparece.
+  - Todos os elementos interactivos com `data-testid` (`merge-*`).
+  - Testing agent: 20+ comportamentos verificados end-to-end incluindo prova em Mongo de `is_merged_duplicate=True`, `merged_into=master_id`, `finance_open_documents` remapeados para genes_code do master e `doc_key` reconstruído sem prefixo do duplicado. Zero bugs.
+
 - **Feb 2026 (iter 53) — Endpoints OWNER-only para Merge de Duplicados (utilizador sem consola PROD)**.
   - Extraiu a lógica de merge de `scripts/merge_duplicate_finance_clients.py` para novo serviço partilhado `modules/finance/services/merge_service.py` (`build_plan(db)`, `apply_plan(db, plan, actor)`).
   - Novos endpoints em `modules/finance/routes.py`, todos protegidos por `require_finance_owner`:
