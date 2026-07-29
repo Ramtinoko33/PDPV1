@@ -574,14 +574,22 @@ async def list_clients(
 ):
     """
     Lista clientes financeiros com filtros avançados e ordenação.
+    Duplicados consolidados (is_merged_duplicate=True) são sempre excluídos.
     """
-    query: dict = {}
+    query: dict = {
+        "$or": [
+            {"is_merged_duplicate": {"$exists": False}},
+            {"is_merged_duplicate": False},
+        ]
+    }
 
     if search:
-        query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"genes_code": {"$regex": search, "$options": "i"}},
-        ]
+        query["$and"] = [{
+            "$or": [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"genes_code": {"$regex": search, "$options": "i"}},
+            ]
+        }]
 
     if status:
         query["financial_status"] = status.value

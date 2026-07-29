@@ -122,7 +122,7 @@ class TestClientInfoParser:
 
         # Primeiro cliente conhecido
         first = result['clients'][0]
-        assert first['genes_code'] == '2111102130', first
+        assert first['genes_code'] == '2130', first
         assert first['name'].startswith('TRANSFRADELOS'), first
         assert first['saldo_conta'] == 162944.34, first
         # Novos campos iter 48
@@ -146,16 +146,16 @@ class TestClientInfoParser:
         ws.append(['Alm.', 'Conta', 'Cliente', 'Saldo Conta', 'Saldo Efec.',
                    'Saldo Desc.', 'Saldo Dev.', 'Carteira', 'Domiciliações',
                    'Risco', 'Albaranado', 'Forma Pagamento', 'Eventos'])
-        # cliente 1: risco normal 5000€
-        ws.append([1, 'C001', 'Cli Normal', 1000, 0, 0, 0, 1000, 0, 5000, 0, 'PP', ''])
-        # cliente 2: risco placeholder 999999999
-        ws.append([1, 'C002', 'Cli Sem Limite', 1000, 0, 0, 0, 1000, 0, 999_999_999, 0, 'PP', ''])
+        # cliente 1: risco normal 5000€ — conta 21111...9001 → genes_code 9001
+        ws.append([1, '2111109001', 'Cli Normal', 1000, 0, 0, 0, 1000, 0, 5000, 0, 'PP', ''])
+        # cliente 2: risco placeholder 999999999 — conta 21111...9002 → 9002
+        ws.append([1, '2111109002', 'Cli Sem Limite', 1000, 0, 0, 0, 1000, 0, 999_999_999, 0, 'PP', ''])
         buf = io.BytesIO(); wb.save(buf)
         result = parse_client_info(buf.getvalue())
 
         assert result['errors'] == []
-        c1 = next(c for c in result['clients'] if c['genes_code'] == 'C001')
-        c2 = next(c for c in result['clients'] if c['genes_code'] == 'C002')
+        c1 = next(c for c in result['clients'] if c['genes_code'] == '9001')
+        c2 = next(c for c in result['clients'] if c['genes_code'] == '9002')
 
         assert c1['risk_placeholder'] is False
         assert c1['risk_raw'] == 5000
@@ -178,7 +178,7 @@ class TestCreditEvolutionParser:
             '03-2025', '06-2025', '09-2025', '12-2025', '03-2026', '06-2026'
         }
         first = result['clients'][0]
-        assert first['genes_code'] == '2111102130', first
+        assert first['genes_code'] == '2130', first
         assert set(first['evolution'].keys()) == set(result['periods'])
         assert first['evolution']['03-2025'] == 166678.81
         assert first['evolution']['06-2026'] == 160690.49
@@ -239,12 +239,12 @@ def seed_matching_client():
     async def _go():
         db = await _db()
         # Remove qualquer cliente residual com este genes_code de runs anteriores.
-        await db.finance_clients.delete_many({'genes_code': '2111102130'})
+        await db.finance_clients.delete_many({'genes_code': '2130'})
         cid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         await db.finance_clients.insert_one({
             'id': cid,
-            'genes_code': '2111102130',
+            'genes_code': '2130',
             'name': 'TRANSFRADELOS, LDA.',
             'overdue_balance_collectable': 0,
             'oldest_overdue_days': 0,
@@ -259,7 +259,7 @@ def seed_matching_client():
     yield cid
     async def _cleanup():
         db = await _db()
-        await db.finance_clients.delete_many({'genes_code': '2111102130'})
+        await db.finance_clients.delete_many({'genes_code': '2130'})
     asyncio.run(_cleanup())
 
 

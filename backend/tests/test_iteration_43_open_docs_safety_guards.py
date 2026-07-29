@@ -44,9 +44,9 @@ TODAY = date.today().isoformat()
 
 # Test genes codes reserved for this suite (must be unique to avoid collision
 # with real data or with test_finance_phase2.TST90/TST91).
-TST_G1 = 'TST93'
-TST_G2 = 'TST94'
-TST_G3 = 'TST95'
+TST_G1 = '9993'
+TST_G2 = '9994'
+TST_G3 = '9995'
 TST_GS_PREFIX = 'TSTB'   # for shrinkage bulk seed
 
 session = requests.Session()
@@ -82,8 +82,20 @@ def _build_open_docs_xlsx(rows: List[Dict], marker: str) -> bytes:
                'Cobrado', 'Estado', 'Eventos']
     ws.append(headers)
     for r in rows:
+        # Iter 51: Conta segue padrão 21111NNN (5 dígitos fixos + código).
+        # Construímos a Conta a partir do genes_code do teste para que o
+        # parser normalizador devolva o mesmo genes_code.
+        gc = str(r['genes_code'])
+        # gc pode ser numérico ou não — se for numérico usamos como sufixo,
+        # senão inventamos um sufixo determinístico.
+        try:
+            int(gc)
+            conta_sufixo = gc.zfill(5)
+        except ValueError:
+            conta_sufixo = str(abs(hash(gc)) % 100000).zfill(5)
+        conta = r.get('conta', f'21111{conta_sufixo}')
         ws.append([
-            r['genes_code'], r.get('conta', '21100001'), 'TR', '30D',
+            r['genes_code'], conta, 'TR', '30D',
             r.get('data_fat', '2025-11-01'), r.get('data_venc', '2025-12-01'),
             r['client_name'], r['descritivo'], r['saldo'],
             '', '', '', r['quantia'], r['vencido'], r.get('cobrado', 0), 'Aberto', marker

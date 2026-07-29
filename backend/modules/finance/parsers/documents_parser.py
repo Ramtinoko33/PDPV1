@@ -10,6 +10,7 @@ from datetime import datetime, date
 from io import BytesIO
 import openpyxl
 import re
+from .account_normalizer import normalize_account_to_client_code
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ def parse_open_documents(file_content: bytes) -> Dict[str, Any]:
         
         # Processar dados
         processed_clients = set()
+        unmapped_accounts = set()
         
         for row in sheet.iter_rows(min_row=header_row + 1, values_only=True):
             row_list = list(row) if row else []
@@ -168,8 +170,13 @@ def parse_open_documents(file_content: bytes) -> Dict[str, Any]:
                     return row_list[idx]
                 return None
             
-            genes_code = str(get_val('CodPersona') or '').strip()
+            # Iter 51: NUNCA usar CodPersona como client_key — extrair sempre
+            # de Conta (conta contabilística) via normalizador.
+            account_raw = str(get_val('Conta') or '').strip()
+            genes_code = normalize_account_to_client_code(account_raw)
             if not genes_code:
+                if account_raw:
+                    unmapped_accounts.add(account_raw)
                 continue
             
             # Dados do documento
@@ -187,7 +194,7 @@ def parse_open_documents(file_content: bytes) -> Dict[str, Any]:
             
             document = {
                 'genes_code': genes_code,
-                'account': str(get_val('Conta') or '').strip(),
+                'account': account_raw,
                 'client_name': str(get_val('Cliente') or '').strip(),
                 'payment_type': str(get_val('Tipo D. Pagamento') or '').strip(),
                 'payment_terms': str(get_val('Forma Pagamento') or '').strip(),
@@ -247,6 +254,13 @@ def parse_open_documents(file_content: bytes) -> Dict[str, Any]:
                 client['credit_amount'] += abs(amount)
         
         result['totals']['client_count'] = len(processed_clients)
+        
+        if unmapped_accounts:
+            sample = list(sorted(unmapped_accounts))[:5]
+            result['warnings'].append(
+                f"{len(unmapped_accounts)} conta(s) não correspondem ao padrão "
+                f"21111NNN (linhas ignoradas). Exemplos: {sample}"
+            )
         
         # Usar o maior saldo como total_balance (já que se repete por cliente)
         unique_balances = set()

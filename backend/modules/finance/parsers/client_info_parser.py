@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from io import BytesIO
 import openpyxl
+from .account_normalizer import normalize_account_to_client_code
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +103,20 @@ def parse_client_info(file_content: bytes) -> Dict[str, Any]:
                             return val
                 return None
             
-            genes_code = str(get_val(['CodCliente', 'Cod Cliente', 'CodPersona', 'Conta']) or '').strip()
+            # Iter 51: NUNCA usar CodPersona/Conta inteira. Extrair código
+            # do cliente do sufixo da Conta (21111NNN → NNN).
+            raw_code = str(get_val(['CodCliente', 'Cod Cliente', 'CodPersona']) or '').strip()
+            account_raw = str(get_val(['Conta']) or '').strip()
+            genes_code = normalize_account_to_client_code(account_raw)
+            # Se não temos Conta reconhecível mas temos CodCliente explícito,
+            # aceitamos esse (fluxo alternativo para ficheiros GENES antigos).
+            if not genes_code and raw_code and not raw_code.startswith('21111'):
+                genes_code = raw_code.lstrip('0') or raw_code
             if not genes_code:
+                if account_raw:
+                    result['warnings'].append(
+                        f"Conta não reconhecida (padrão 21111NNN esperado): {account_raw!r}"
+                    )
                 continue
             
             # Skip linha de totais (última linha com soma)
