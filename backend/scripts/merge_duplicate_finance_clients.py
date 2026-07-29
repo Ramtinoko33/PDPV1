@@ -2,30 +2,11 @@
 CLEANUP MANUAL DE PRODUÇÃO — Consolidar clientes duplicados criados por
 uso incorrecto de CodPersona/Conta antes da iter 51.
 
-Antes desta iter, InfoClientes/Evolução Crédito passaram a usar `Conta`
-inteira (`2111100163`) como `genes_code`, criando duplicados dos clientes
-originais (código `163`). Documentos usava `CodPersona` (`120`), outro
-identificador inútil que também criava duplicados.
+Este CLI é um wrapper fino sobre `modules.finance.services.merge_service`
+que é a MESMA lógica exposta pelos endpoints OWNER-only:
 
-Este script:
-  1. Detecta pares/grupos por sufixo de Conta.
-  2. Master = documento cujo `genes_code` bate com o sufixo extraído.
-  3. Duplicados (com prefixo `21111` ou id numérico curto sem master
-     correspondente) são consolidados no master.
-  4. Migra colecções afectadas trocando `genes_code`/`client_id` para o
-     master:
-       - por genes_code:  finance_credit_evolution, finance_documents,
-                          finance_open_documents (com rebuild de doc_key)
-       - por client_id:   finance_documents, finance_actions,
-                          finance_promises, finance_regularizations,
-                          finance_tasks, finance_block_requests
-  5. Campos do master têm SEMPRE prioridade: só copiamos do duplicado se
-     o master tiver o campo vazio/nulo. Conflitos (master preenchido +
-     duplicado com valor diferente) NÃO substituem o master — são
-     registados em `merge_conflicts` do duplicado, no relatório stdout e
-     no dump JSON de auditoria.
-  6. Marca duplicado como `is_merged_duplicate=True, merged_into=<master.id>,
-     merged_at, merged_by, merged_reason, merge_conflicts`. NÃO apaga.
+  POST /api/finance/merge-duplicates/dry-run
+  POST /api/finance/merge-duplicates/confirm
 
 Dry-run por defeito. `--confirm` aplica.
 
@@ -38,183 +19,39 @@ import sys
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 load_dotenv('/app/backend/.env')
-from motor.motor_asyncio import AsyncIOMotorClient  # noqa
+from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-# Reusar o normalizador dos parsers
 sys.path.insert(0, '/app/backend')
-from modules.finance.parsers.account_normalizer import normalize_account_to_client_code  # noqa
+from modules.finance.services.merge_service import build_plan, apply_plan  # noqa: E402
+
 
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
-
-# Colecções que referem clientes via genes_code ou client_id
-CLIENT_REF_COLLECTIONS_BY_GENES = [
-    'finance_credit_evolution',
-    'finance_documents',
-    'finance_open_documents',   # PROD: docs em aberto ligados por genes_code
-]
-CLIENT_REF_COLLECTIONS_BY_ID = [
-    'finance_documents',        # tem também client_id em muitos casos
-    'finance_actions',
-    'finance_promises',
-    'finance_regularizations',
-    'finance_tasks',
-    'finance_block_requests',
-]
-
-# Campos "financial contacts" que só copiamos se master estiver vazio
-CONTACT_FIELDS_MERGE_IF_EMPTY = (
-    'finance_email', 'finance_mobile', 'finance_phone',
-    'finance_contact_name', 'finance_contact_role', 'finance_contact_tag',
-)
-
-# Campos de enriquecimento que copiamos apenas se master os tiver None/vazios.
-# Se master já tiver valor, NUNCA sobrepomos — registamos conflict.
-ENRICH_FIELDS_MERGE_IF_EMPTY = (
-    'saldo_conta', 'saldo_efec', 'saldo_desc', 'saldo_dev',
-    'carteira', 'domiciliacoes', 'albaranado', 'forma_pagamento',
-    'eventos_raw', 'risco_raw', 'risco_validado', 'risco_placeholder',
-    'customer_segment',
-    'last_infoclientes_import_id',
-    'annual_revenue', 'insured_risk_value', 'risk_percentage',
-    'portfolio', 'pending_delivery', 'risk_value', 'genes_account',
-    'credit_trend_percentage', 'credit_trend_absolute',
-)
-
-
-def _empty(v: Any) -> bool:
-    return v is None or (isinstance(v, str) and not v.strip()) or v == 0
-
-
-async def _find_duplicate_groups(db) -> List[Dict[str, Any]]:
-    """Constroi lista de {master, duplicates:[..], conflicts:[..]}."""
-    # Todos os clientes já em BD
-    all_clients: List[Dict[str, Any]] = []
-    async for c in db.finance_clients.find({}, {'_id': 0}):
-        all_clients.append(c)
-
-    # Indexa por genes_code
-    by_code: Dict[str, Dict[str, Any]] = {c.get('genes_code'): c for c in all_clients if c.get('genes_code')}
-
-    groups: List[Dict[str, Any]] = []
-    seen_dupes: set = set()
-
-    for c in all_clients:
-        code = c.get('genes_code') or ''
-        if not code or c.get('is_merged_duplicate'):
-            continue
-        # Candidato a duplicado: 3 caminhos para inferir o sufixo
-        #   (a) genes_code = 21111NNN → sufixo NNN
-        #   (b) account/genes_account = 21111NNN → sufixo NNN
-        #       (caso PROEF: genes_code='120' mas account='2111100163' → 163)
-        suffix = normalize_account_to_client_code(code)
-        if not suffix:
-            for account_field in ('account', 'genes_account', 'conta'):
-                acc = c.get(account_field)
-                if acc:
-                    suffix = normalize_account_to_client_code(acc)
-                    if suffix:
-                        break
-        if not suffix or suffix == code:
-            continue
-        # Procura master
-        master = by_code.get(suffix)
-        if not master:
-            # Sem master ainda — não fazemos merge (aguardar 1º import correcto)
-            continue
-        if master.get('id') == c.get('id') or c.get('id') in seen_dupes:
-            continue
-        # Adiciona ao grupo do master
-        group = next((g for g in groups if g['master']['id'] == master['id']), None)
-        if group is None:
-            group = {'master': master, 'duplicates': [], 'conflicts': []}
-            groups.append(group)
-        group['duplicates'].append(c)
-        seen_dupes.add(c.get('id'))
-
-    return groups
-
-
-def _compute_conflicts_and_updates(master: Dict, dup: Dict) -> Tuple[Dict, List[Dict[str, Any]]]:
-    """Devolve (updates_para_master, conflicts_report).
-
-    Regras (spec P0):
-      - master vazio + dup preenchido    → migrar
-      - master preenchido + dup diferente → preservar master + conflict
-      - master preenchido + dup vazio     → não mexer
-      - ambos vazios                      → não mexer
-    """
-    updates: Dict[str, Any] = {}
-    conflicts: List[Dict[str, Any]] = []
-    for field in CONTACT_FIELDS_MERGE_IF_EMPTY + ENRICH_FIELDS_MERGE_IF_EMPTY:
-        m_val = master.get(field)
-        d_val = dup.get(field)
-        if _empty(d_val):
-            # nada útil no duplicado, ignora
-            continue
-        if _empty(m_val):
-            updates[field] = d_val
-        elif m_val != d_val:
-            conflicts.append({
-                'field': field,
-                'master_value': m_val,
-                'duplicate_value': d_val,
-                'action': 'preserved_master',
-                'reason': 'master preenchido; duplicado ignorado',
-            })
-    return updates, conflicts
 
 
 async def main(confirm: bool):
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
 
-    groups = await _find_duplicate_groups(db)
-
-    # Pré-calcular conflicts e updates de cada duplicado ANTES do dump,
-    # para que o backup JSON inclua a matriz de conflitos preservados.
-    total_dupes = 0
-    total_conflicts: List[Dict[str, Any]] = []
-    for g in groups:
-        m = g['master']
-        for d in g['duplicates']:
-            updates, conflicts = _compute_conflicts_and_updates(m, d)
-            d['_updates_for_master'] = updates
-            d['_conflicts'] = conflicts
-            for c in conflicts:
-                total_conflicts.append({
-                    'master_id': m.get('id'),
-                    'master_genes_code': m.get('genes_code'),
-                    'duplicate_id': d.get('id'),
-                    'duplicate_genes_code': d.get('genes_code'),
-                    **c,
-                })
-        total_dupes += len(g['duplicates'])
+    plan = await build_plan(db)
 
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     dump_path = f'/tmp/finance_merge_backup_{ts}.json'
-    dump_payload = {
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        'mode': 'confirm' if confirm else 'dry-run',
-        'summary': {
-            'masters': len(groups),
-            'duplicates': total_dupes,
-            'conflicts_preserved': len(total_conflicts),
-        },
-        'conflicts': total_conflicts,
-        'groups': groups,
-    }
+    dump_payload = {**plan, 'mode': 'confirm' if confirm else 'dry-run'}
     with open(dump_path, 'w', encoding='utf-8') as f:
         json.dump(dump_payload, f, ensure_ascii=False, indent=2, default=str)
 
-    print(f'Encontrados {len(groups)} master(s) com {total_dupes} duplicado(s).')
+    summary = plan['summary']
+    print(
+        f'Encontrados {summary["masters"]} master(s) com '
+        f'{summary["duplicates"]} duplicado(s).'
+    )
     print(f'Backup completo em: {dump_path}')
     print()
-    for g in groups[:20]:
+    for g in plan['groups'][:20]:
         m = g['master']
         print(f'MASTER {m.get("genes_code")} — {m.get("name")}  (id={m.get("id")})')
         for d in g['duplicates']:
@@ -230,14 +67,14 @@ async def main(confirm: bool):
                         f'dup={c["duplicate_value"]!r} ignorado'
                     )
         print()
-    if len(groups) > 20:
-        print(f'... e mais {len(groups)-20} grupo(s).')
-    if total_conflicts:
-        print(f'⚠️  Total de {len(total_conflicts)} conflitos preservam valor do master.')
+    if len(plan['groups']) > 20:
+        print(f'... e mais {len(plan["groups"])-20} grupo(s).')
+    if summary['conflicts_preserved']:
+        print(f'⚠️  Total de {summary["conflicts_preserved"]} conflitos preservam valor do master.')
         print('    Ver detalhe completo no backup JSON acima.')
     print()
 
-    if not groups:
+    if summary['masters'] == 0:
         print('Nada a fazer.')
         return
 
@@ -245,103 +82,11 @@ async def main(confirm: bool):
         print('DRY-RUN. Passe --confirm para aplicar.')
         return
 
-    now = datetime.now(timezone.utc).isoformat()
-    merged_count = 0
-    remap_stats: Dict[str, int] = {}
-
-    for g in groups:
-        master = g['master']
-        master_id = master['id']
-        master_code = master['genes_code']
-        for dup in g['duplicates']:
-            dup_id = dup['id']
-            dup_code = dup['genes_code']
-
-            # 1) Aplicar updates ao master (só campos vazios no master)
-            if dup['_updates_for_master']:
-                await db.finance_clients.update_one(
-                    {'id': master_id},
-                    {'$set': {**dup['_updates_for_master'], 'updated_at': now}}
-                )
-
-            # 2) Remapear colecções por genes_code
-            for col in CLIENT_REF_COLLECTIONS_BY_GENES:
-                r = await db[col].update_many(
-                    {'genes_code': dup_code},
-                    {'$set': {'genes_code': master_code}}
-                )
-                remap_stats[f'{col}:genes_code'] = (
-                    remap_stats.get(f'{col}:genes_code', 0) + r.modified_count
-                )
-
-            # 2b) finance_open_documents usa doc_key = "<genes_code>_<num>".
-            #     Após remapear genes_code, rebuild doc_key para manter
-            #     consistência (import subsequente compara por doc_key).
-            async for od in db.finance_open_documents.find(
-                {'genes_code': master_code}, {'_id': 0, 'id': 1, 'doc_key': 1, 'document_number': 1}
-            ):
-                new_key = f'{master_code}_{od.get("document_number")}'
-                if od.get('doc_key') != new_key:
-                    # Update by id if present, else by old doc_key
-                    filter_ = {'id': od['id']} if od.get('id') else {'doc_key': od.get('doc_key')}
-                    await db.finance_open_documents.update_one(
-                        filter_, {'$set': {'doc_key': new_key}}
-                    )
-                    remap_stats['finance_open_documents:doc_key'] = (
-                        remap_stats.get('finance_open_documents:doc_key', 0) + 1
-                    )
-
-            # 3) Remapear colecções por client_id
-            for col in CLIENT_REF_COLLECTIONS_BY_ID:
-                r = await db[col].update_many(
-                    {'client_id': dup_id},
-                    {'$set': {'client_id': master_id}}
-                )
-                remap_stats[f'{col}:client_id'] = (
-                    remap_stats.get(f'{col}:client_id', 0) + r.modified_count
-                )
-
-            # 4) Colapsar duplicated credit_evolution (só master fica).
-            #    Depois do remap acima, podem existir 2 docs com mesmo
-            #    genes_code — mantemos o mais recente por updated_at.
-            evo_docs = []
-            async for e in db.finance_credit_evolution.find(
-                {'genes_code': master_code}, {'_id': 0}
-            ):
-                evo_docs.append(e)
-            if len(evo_docs) > 1:
-                evo_docs.sort(key=lambda e: e.get('updated_at') or '', reverse=True)
-                keep = evo_docs[0]
-                await db.finance_credit_evolution.delete_many({'genes_code': master_code})
-                await db.finance_credit_evolution.insert_one(keep)
-
-            # 5) Marcar duplicado (SOFT — nunca apaga)
-            await db.finance_clients.update_one(
-                {'id': dup_id},
-                {'$set': {
-                    'is_merged_duplicate': True,
-                    'merged_into': master_id,
-                    'merged_into_genes_code': master_code,
-                    'merged_at': now,
-                    'merged_by': 'merge_script_iter51',
-                    'merged_reason': (
-                        f'Duplicado detectado por sufixo da Conta ({dup_code} → {master_code}). '
-                        'CodPersona/Conta inteira nunca deveriam ter sido usadas como client_key.'
-                    ),
-                    # Alias legado (mantém consumidores antigos vivos)
-                    'merge_reason': (
-                        f'Duplicado detectado por sufixo da Conta ({dup_code} → {master_code}). '
-                        'CodPersona/Conta inteira nunca deveriam ter sido usadas como client_key.'
-                    ),
-                    'merge_conflicts': dup['_conflicts'],
-                }}
-            )
-            merged_count += 1
-
-    print(f'✅ Consolidados {merged_count} duplicado(s) em {len(groups)} master(s).')
-    if remap_stats:
+    stats = await apply_plan(db, plan, actor='merge_script_cli')
+    print(f'✅ Consolidados {stats["merged_count"]} duplicado(s) em {stats["masters_touched"]} master(s).')
+    if stats['remap_stats']:
         print('Remapeamentos aplicados:')
-        for k, v in sorted(remap_stats.items()):
+        for k, v in sorted(stats['remap_stats'].items()):
             print(f'  {k}: {v} doc(s)')
     print(f'Audit backup preservado em: {dump_path}')
 

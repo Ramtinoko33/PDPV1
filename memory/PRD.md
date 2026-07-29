@@ -77,6 +77,17 @@ Ver `/app/memory/test_credentials.md`.
   - **Rejeitado explicitamente pelo user**: split de AdminSettings/TicketDetail/IntakePage/Layout/NotificationContext, refactor de `parse_client_info()` (acabou de ser tocado na iter 48), migração localStorage→httpOnly cookies (breaking auth), alteração de credenciais de teste (preview-only, sem risco).
   - Testes regressão iter 43+44+49+eval CI: **14/14 verdes**. Frontend HTTP 200. Nenhuma alteração funcional.
 - **Feb 2026 (iter 49) — Hash bypass reimport + cleanup silent-zero**.
+- **Feb 2026 (iter 53) — Endpoints OWNER-only para Merge de Duplicados (utilizador sem consola PROD)**.
+  - Extraiu a lógica de merge de `scripts/merge_duplicate_finance_clients.py` para novo serviço partilhado `modules/finance/services/merge_service.py` (`build_plan(db)`, `apply_plan(db, plan, actor)`).
+  - Novos endpoints em `modules/finance/routes.py`, todos protegidos por `require_finance_owner`:
+    - `POST /api/finance/merge-duplicates/dry-run` → gera plano, persiste em `finance_merge_reports` com `id`, `expires_at` (TTL 30 min), `status='pending'`; devolve `report_id`, `summary`, `conflicts[]`, `groups[]`. NUNCA escreve em `finance_clients`/`finance_open_documents`/`finance_credit_evolution`.
+    - `GET /api/finance/merge-duplicates/reports` → últimos 20 (sem payload grande).
+    - `GET /api/finance/merge-duplicates/reports/{id}` → detalhe completo com `plan`.
+    - `POST /api/finance/merge-duplicates/confirm` (body `{report_id, confirmation}`) → aplica o plano gravado. Guardrails: `confirmation` tem de ser exactamente `"APROVAR"`; `report_id` válido; report em `status='pending'`; TTL ainda válido. `actor` gravado como `owner_confirm:<uid>:<name>`. Report actualizado para `applied` com `applied_at`, `applied_by`, `apply_stats`.
+  - CLI `scripts/merge_duplicate_finance_clients.py` reescrito como wrapper fino sobre o novo serviço; mesmo backup JSON `/tmp/finance_merge_backup_<ts>.json`.
+  - Testes: `test_iteration_53_merge_endpoints.py` (8/8 verdes): dry-run OWNER-only + intocado, 401/403 anónimo, confirm exige "APROVAR" literal, rejeita report inexistente, rejeita expirado (marca `expired`), não permite duplo confirm (409), aplica plano correctamente + soft-mark + remap `finance_open_documents` com doc_key rebuild + report `status='applied'`, listagem esconde payload e detalhe expõe.
+  - Regressão iter 51+52+53 = **21/21 verdes**.
+
 - **Feb 2026 (iter 52) — Merge Script P0 hardening (pré-deploy PROD)**.
   - `backend/scripts/merge_duplicate_finance_clients.py` agora inclui `finance_open_documents` no remapeamento por `genes_code` **e reconstrói `doc_key = "<genes_code>_<document_number>"`** com o code do master, garantindo consistência para importações posteriores.
   - Precedência do master é ABSOLUTA em todos os campos sensíveis (saldo_conta/efec/desc/dev, carteira, domiciliações, risco_raw/validado/placeholder, albaranado, forma_pagamento, eventos_raw, finance_email/mobile/phone/contact_*, customer_segment, portfolio, risk_*, credit_trend_*, annual_revenue, insured_risk_value, risk_percentage, genes_account, last_infoclientes_import_id): master vazio + dup preenchido → migra; master preenchido + dup diferente → preserva master + regista conflict; master preenchido + dup vazio → não mexe.

@@ -3405,3 +3405,179 @@ async def tasks_effectiveness(
         },
     }
 
+
+
+# ============== MERGE DE DUPLICADOS (OWNER-only) ==============
+#
+# Consolidação SAFE de duplicados PROEF/CodPersona/Conta.
+# Fluxo obrigatório:
+#   1) POST /finance/merge-duplicates/dry-run   → gera report_id + JSON
+#   2) OWNER revê o report em ecrã ou via GET  /finance/merge-duplicates/reports/{id}
+#   3) POST /finance/merge-duplicates/confirm   → aplica o plano do report_id,
+#      exigindo escrever "APROVAR" e que o report tenha sido gerado nos
+#      últimos MERGE_REPORT_TTL_MIN minutos.
+#
+# Nenhum caminho no dry-run escreve em `finance_*`; apenas escreve o
+# report em `finance_merge_reports`.
+
+from .services.merge_service import build_plan, apply_plan  # noqa: E402
+
+MERGE_REPORT_TTL_MIN = 30  # confirm só é aceite dentro desta janela
+
+
+class _MergeConfirmBody(BaseModel):
+    report_id: str
+    confirmation: str  # tem de ser exactamente "APROVAR"
+
+
+def _serialize_plan_for_storage(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove `_id` residual de qualquer subdoc do plan antes de persistir."""
+    def _clean(d):
+        if isinstance(d, dict):
+            return {k: _clean(v) for k, v in d.items() if k != '_id'}
+        if isinstance(d, list):
+            return [_clean(x) for x in d]
+        return d
+    return _clean(plan)
+
+
+@router.post("/merge-duplicates/dry-run")
+async def merge_duplicates_dry_run(
+    current_user: dict = Depends(require_finance_owner),
+):
+    """OWNER-only. Não altera nada. Devolve o plano e persiste-o em
+    `finance_merge_reports` para poder ser aplicado depois via /confirm."""
+    plan = await build_plan(db)
+    plan = _serialize_plan_for_storage(plan)
+
+    now = datetime.now(timezone.utc)
+    report_id = str(uuid.uuid4())
+    report = {
+        'id': report_id,
+        'created_at': now.isoformat(),
+        'created_by': current_user.get('id'),
+        'created_by_name': current_user.get('name') or current_user.get('email'),
+        'mode': 'dry-run',
+        'status': 'pending',   # pending | applied | expired
+        'ttl_minutes': MERGE_REPORT_TTL_MIN,
+        'expires_at': (now + timedelta(minutes=MERGE_REPORT_TTL_MIN)).isoformat(),
+        'plan': plan,
+    }
+    await db.finance_merge_reports.insert_one(dict(report))
+
+    logger.info(
+        f"Finance merge dry-run gerado por {current_user.get('id')} "
+        f"report_id={report_id} masters={plan['summary']['masters']} "
+        f"duplicates={plan['summary']['duplicates']} "
+        f"conflicts={plan['summary']['conflicts_preserved']}"
+    )
+
+    return {
+        'report_id': report_id,
+        'expires_at': report['expires_at'],
+        'ttl_minutes': MERGE_REPORT_TTL_MIN,
+        'summary': plan['summary'],
+        'conflicts': plan['conflicts'],
+        'groups': plan['groups'],
+    }
+
+
+@router.get("/merge-duplicates/reports/{report_id}")
+async def get_merge_report(
+    report_id: str,
+    current_user: dict = Depends(require_finance_owner),
+):
+    """OWNER-only. Consulta um relatório de merge anterior."""
+    report = await db.finance_merge_reports.find_one({'id': report_id}, {'_id': 0})
+    if not report:
+        raise HTTPException(404, 'Relatório não encontrado')
+    return report
+
+
+@router.get("/merge-duplicates/reports")
+async def list_merge_reports(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(require_finance_owner),
+):
+    """OWNER-only. Lista os últimos relatórios de merge."""
+    cursor = db.finance_merge_reports.find(
+        {}, {'_id': 0, 'plan': 0}   # esconde o payload grande na listagem
+    ).sort('created_at', -1).limit(limit)
+    items = await cursor.to_list(limit)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/merge-duplicates/confirm")
+async def merge_duplicates_confirm(
+    body: _MergeConfirmBody,
+    current_user: dict = Depends(require_finance_owner),
+):
+    """OWNER-only. Aplica o plano do report_id. Requer:
+      - `confirmation` == "APROVAR" (case-sensitive, sem espaços);
+      - report_id existir e status='pending';
+      - dry-run gerado nos últimos MERGE_REPORT_TTL_MIN minutos.
+    """
+    if body.confirmation != 'APROVAR':
+        raise HTTPException(
+            400,
+            'Confirmação inválida: escreva exactamente "APROVAR" (maiúsculas).',
+        )
+
+    report = await db.finance_merge_reports.find_one(
+        {'id': body.report_id}, {'_id': 0}
+    )
+    if not report:
+        raise HTTPException(404, 'Relatório não encontrado')
+    if report.get('status') == 'applied':
+        raise HTTPException(
+            409,
+            f'Este relatório já foi aplicado em {report.get("applied_at")}.',
+        )
+
+    now = datetime.now(timezone.utc)
+    expires_at = datetime.fromisoformat(report['expires_at'])
+    if now > expires_at:
+        await db.finance_merge_reports.update_one(
+            {'id': body.report_id}, {'$set': {'status': 'expired'}}
+        )
+        raise HTTPException(
+            410,
+            f'Relatório expirado (TTL de {MERGE_REPORT_TTL_MIN} min). '
+            'Gere um novo dry-run antes de confirmar.',
+        )
+
+    plan = report['plan']
+    summary = plan['summary']
+    if summary['masters'] == 0:
+        raise HTTPException(400, 'Este relatório não contém pares a consolidar.')
+
+    actor = (
+        f"owner_confirm:{current_user.get('id')}"
+        f":{current_user.get('name') or current_user.get('email')}"
+    )
+    stats = await apply_plan(db, plan, actor=actor)
+
+    await db.finance_merge_reports.update_one(
+        {'id': body.report_id},
+        {'$set': {
+            'status': 'applied',
+            'applied_at': now.isoformat(),
+            'applied_by': current_user.get('id'),
+            'applied_by_name': current_user.get('name') or current_user.get('email'),
+            'apply_stats': stats,
+            'mode': 'confirm',
+        }},
+    )
+
+    logger.warning(
+        f"Finance merge CONFIRMADO por {current_user.get('id')} "
+        f"report_id={body.report_id} merged={stats['merged_count']} "
+        f"masters_touched={stats['masters_touched']}"
+    )
+
+    return {
+        'report_id': body.report_id,
+        'applied_at': now.isoformat(),
+        'summary_before': summary,
+        'apply_stats': stats,
+    }
